@@ -191,6 +191,65 @@ try
 
     Console.WriteLine("  ✓ Multi-path restore restored files to their exact respective original paths!");
 
+    // Test 7: Project Root and Default DB Path & AppConfigService
+    Console.WriteLine("\n[7] Testing Project Root, Default DB Path & AppConfigService");
+    var projectRoot = DatabaseService.GetDefaultProjectRoot();
+    Console.WriteLine($"  ✓ Detected Project Root: {projectRoot}");
+    if (!File.Exists(Path.Combine(projectRoot, "SaveVault.slnx")) && !File.Exists(Path.Combine(projectRoot, "LaunchApp.bat")))
+        throw new Exception("Detected project root does not contain SaveVault solution files!");
+
+    var defaultDbPath = Path.Combine(projectRoot, "save_backup.db");
+    Console.WriteLine($"  ✓ Default DB Path: {defaultDbPath}");
+
+    // Test AppConfigService
+    var testCustomDbPath = Path.Combine(tempTestDir, "custom_configured_db.db");
+    AppConfigService.SaveDatabasePath(testCustomDbPath);
+    var loadedPath = AppConfigService.GetConfiguredDatabasePath();
+    if (loadedPath != testCustomDbPath)
+        throw new Exception($"AppConfigService failed: expected {testCustomDbPath} but got {loadedPath}");
+    Console.WriteLine($"  ✓ AppConfigService Save/Load OK: {loadedPath}");
+
+    // Reset config back so it doesn't pollute user environment
+    AppConfigService.SaveDatabasePath(string.Empty);
+
+    // Test 8: GetRestoreItemsFromBackup, Selective Restore & Custom Destination
+    Console.WriteLine("\n[8] Testing GetRestoreItemsFromBackup, Selective Restore & Custom Destination");
+    var restoreItems = backupService.GetRestoreItemsFromBackup(multiBackupRecord);
+    if (restoreItems.Count != 2)
+        throw new Exception($"Expected 2 restore items, but got {restoreItems.Count}");
+    Console.WriteLine($"  ✓ GetRestoreItemsFromBackup returned {restoreItems.Count} items.");
+    Console.WriteLine($"    Item 1: {restoreItems[0].OriginalSourcePath} ({restoreItems[0].FileCount} files, {restoreItems[0].FormattedSize})");
+    Console.WriteLine($"    Item 2: {restoreItems[1].OriginalSourcePath} ({restoreItems[1].FileCount} files, {restoreItems[1].FormattedSize})");
+
+    // Selective Restore: only restore item 1, ignore item 2
+    File.Delete(Path.Combine(multiSource1, "save1.bin"));
+    File.Delete(Path.Combine(multiSource2, "config.ini"));
+
+    restoreItems[0].IsSelected = true;
+    restoreItems[1].IsSelected = false; // Deselected!
+
+    await backupService.RestoreAsync(multiBackupRecord, restoreItems);
+
+    if (!File.Exists(Path.Combine(multiSource1, "save1.bin")))
+        throw new Exception("Selective restore: Selected Item 1 was not restored!");
+    if (File.Exists(Path.Combine(multiSource2, "config.ini")))
+        throw new Exception("Selective restore: Unselected Item 2 was restored when it should have been skipped!");
+    Console.WriteLine("  ✓ Selective restore OK (only item 1 restored, item 2 remained skipped)");
+
+    // Custom Destination Restore: restore item 2 to a custom destination directory
+    var customDestFolder = Path.Combine(tempTestDir, "CustomRestoredLocation");
+    Directory.CreateDirectory(customDestFolder);
+
+    restoreItems[0].IsSelected = false;
+    restoreItems[1].IsSelected = true;
+    restoreItems[1].RestoreDestinationPath = customDestFolder;
+
+    await backupService.RestoreAsync(multiBackupRecord, restoreItems);
+
+    if (!File.Exists(Path.Combine(customDestFolder, "config.ini")))
+        throw new Exception("Custom destination restore failed: file not found in custom destination!");
+    Console.WriteLine($"  ✓ Custom destination restore OK (restored to: {customDestFolder})");
+
     Console.WriteLine("\n=================================================");
     Console.WriteLine("  ALL INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");

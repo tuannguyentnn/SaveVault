@@ -223,14 +223,180 @@ public class BackupService
         return record;
     }
 
-    public async Task RestoreAsync(BackupRecord record, IProgress<BackupProgress>? progress = null, CancellationToken cancellationToken = default)
+    public List<RestoreItemTarget> GetRestoreItemsFromBackup(BackupRecord record)
     {
+        var result = new List<RestoreItemTarget>();
+
+        // 1. Try manifest from ZIP or Directory
+        if (record.IsCompressed && File.Exists(record.BackupPath))
+        {
+            try
+            {
+                using var archive = ZipFile.OpenRead(record.BackupPath);
+                var entry = archive.Entries.FirstOrDefault(e =>
+                    e.FullName.Equals(ManifestFileName, StringComparison.OrdinalIgnoreCase) ||
+                    e.Name.Equals(ManifestFileName, StringComparison.OrdinalIgnoreCase));
+
+                if (entry != null)
+                {
+                    using var stream = entry.Open();
+                    using var reader = new StreamReader(stream);
+                    var json = reader.ReadToEnd();
+                    var manifest = JsonSerializer.Deserialize<BackupManifest>(json);
+                    if (manifest != null && manifest.Items.Count > 0)
+                    {
+                        var recordPaths = record.SourcePathsList;
+                        for (int i = 0; i < manifest.Items.Count; i++)
+                        {
+                            var item = manifest.Items[i];
+                            string destPath;
+                            if (manifest.Items.Count == 1 && !string.IsNullOrWhiteSpace(record.SourcePath))
+                            {
+                                destPath = record.SourcePath;
+                            }
+                            else if (recordPaths.Count > i && !string.IsNullOrWhiteSpace(recordPaths[i]))
+                            {
+                                destPath = recordPaths[i];
+                            }
+                            else
+                            {
+                                destPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : record.SourcePath;
+                            }
+
+                            var origPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : destPath;
+
+                            result.Add(new RestoreItemTarget
+                            {
+                                IsSelected = true,
+                                OriginalSourcePath = origPath,
+                                RestoreDestinationPath = destPath,
+                                SubFolder = item.SubFolder,
+                                FileCount = item.FileCount,
+                                TotalSizeBytes = item.TotalSizeBytes
+                            });
+                        }
+                        return result;
+                    }
+                }
+            }
+            catch { /* fallback below */ }
+        }
+        else if (Directory.Exists(record.BackupPath))
+        {
+            var manifestPath = Path.Combine(record.BackupPath, ManifestFileName);
+            if (File.Exists(manifestPath))
+            {
+                try
+                {
+                    var json = File.ReadAllText(manifestPath);
+                    var manifest = JsonSerializer.Deserialize<BackupManifest>(json);
+                    if (manifest != null && manifest.Items.Count > 0)
+                    {
+                        var recordPaths = record.SourcePathsList;
+                        for (int i = 0; i < manifest.Items.Count; i++)
+                        {
+                            var item = manifest.Items[i];
+                            string destPath;
+                            if (manifest.Items.Count == 1 && !string.IsNullOrWhiteSpace(record.SourcePath))
+                            {
+                                destPath = record.SourcePath;
+                            }
+                            else if (recordPaths.Count > i && !string.IsNullOrWhiteSpace(recordPaths[i]))
+                            {
+                                destPath = recordPaths[i];
+                            }
+                            else
+                            {
+                                destPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : record.SourcePath;
+                            }
+
+                            var origPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : destPath;
+
+                            result.Add(new RestoreItemTarget
+                            {
+                                IsSelected = true,
+                                OriginalSourcePath = origPath,
+                                RestoreDestinationPath = destPath,
+                                SubFolder = item.SubFolder,
+                                FileCount = item.FileCount,
+                                TotalSizeBytes = item.TotalSizeBytes
+                            });
+                        }
+                        return result;
+                    }
+                }
+                catch { /* fallback below */ }
+            }
+        }
+
+        // 2. Fallback to SourcePathsList or SourcePath
+        var paths = record.SourcePathsList;
+        if (paths.Count > 0)
+        {
+            int avgFiles = Math.Max(1, record.FileCount / paths.Count);
+            long avgBytes = Math.Max(0, record.TotalSizeBytes / paths.Count);
+
+            for (int i = 0; i < paths.Count; i++)
+            {
+                var p = paths[i];
+                string subFolder = paths.Count > 1
+                    ? $"{i + 1}_{SanitizeFolderName(Path.GetFileName(p.TrimEnd('\\', '/')))}"
+                    : string.Empty;
+
+                result.Add(new RestoreItemTarget
+                {
+                    IsSelected = true,
+                    OriginalSourcePath = p,
+                    RestoreDestinationPath = p,
+                    SubFolder = subFolder,
+                    FileCount = avgFiles,
+                    TotalSizeBytes = avgBytes
+                });
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(record.SourcePath))
+        {
+            result.Add(new RestoreItemTarget
+            {
+                IsSelected = true,
+                OriginalSourcePath = record.SourcePath,
+                RestoreDestinationPath = record.SourcePath,
+                SubFolder = string.Empty,
+                FileCount = record.FileCount,
+                TotalSizeBytes = record.TotalSizeBytes
+            });
+        }
+
+        return result;
+    }
+
+    public Task RestoreAsync(BackupRecord record, IProgress<BackupProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var items = GetRestoreItemsFromBackup(record);
+        return RestoreAsync(record, items, progress, cancellationToken);
+    }
+
+    public async Task RestoreAsync(
+        BackupRecord record,
+        List<RestoreItemTarget> itemsToRestore,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var selectedItems = itemsToRestore
+            .Where(i => i.IsSelected && !string.IsNullOrWhiteSpace(i.RestoreDestinationPath))
+            .ToList();
+
+        if (selectedItems.Count == 0)
+        {
+            throw new InvalidOperationException("Không có vị trí lưu nào được chọn để khôi phục!");
+        }
+
         if (record.IsCompressed)
         {
             if (!File.Exists(record.BackupPath))
                 throw new FileNotFoundException($"Không tìm thấy file zip backup: {record.BackupPath}");
 
-            progress?.Report(new BackupProgress { Percent = 10, Message = "Đang giải nén dữ liệu sao lưu..." });
+            progress?.Report(new BackupProgress { Percent = 10, Message = "Đang giải nén dữ liệu sao lưu tạm thời..." });
 
             var tempExtractDir = Path.Combine(Path.GetTempPath(), "SaveBackup_Restore_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempExtractDir);
@@ -238,7 +404,7 @@ public class BackupService
             try
             {
                 ZipFile.ExtractToDirectory(record.BackupPath, tempExtractDir);
-                await RestoreFromDirectoryAsync(tempExtractDir, record, progress, cancellationToken);
+                await RestoreSelectedFromDirectoryAsync(tempExtractDir, selectedItems, progress, cancellationToken);
             }
             finally
             {
@@ -250,67 +416,63 @@ public class BackupService
             if (!Directory.Exists(record.BackupPath))
                 throw new DirectoryNotFoundException($"Không tìm thấy thư mục backup: {record.BackupPath}");
 
-            await RestoreFromDirectoryAsync(record.BackupPath, record, progress, cancellationToken);
+            await RestoreSelectedFromDirectoryAsync(record.BackupPath, selectedItems, progress, cancellationToken);
         }
 
-        progress?.Report(new BackupProgress { Percent = 100, Message = "Khôi phục thành công!" });
+        progress?.Report(new BackupProgress { Percent = 100, Message = "Khôi phục hoàn tất!" });
     }
 
-    private static async Task RestoreFromDirectoryAsync(string backupDir, BackupRecord record, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
+    private static async Task RestoreSelectedFromDirectoryAsync(
+        string backupDir,
+        List<RestoreItemTarget> selectedItems,
+        IProgress<BackupProgress>? progress,
+        CancellationToken cancellationToken)
     {
-        var manifestPath = Path.Combine(backupDir, ManifestFileName);
-        if (File.Exists(manifestPath))
+        for (int i = 0; i < selectedItems.Count; i++)
         {
-            try
+            var item = selectedItems[i];
+            var destPath = item.RestoreDestinationPath;
+            if (string.IsNullOrWhiteSpace(destPath)) continue;
+
+            string itemSourceDir = string.IsNullOrEmpty(item.SubFolder)
+                ? backupDir
+                : Path.Combine(backupDir, item.SubFolder);
+
+            if (!Directory.Exists(itemSourceDir))
             {
-                var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
-                var manifest = JsonSerializer.Deserialize<BackupManifest>(json);
-
-                if (manifest != null && manifest.Items.Count > 0)
+                if (selectedItems.Count == 1 && Directory.Exists(backupDir))
                 {
-                    var recordPaths = record.SourcePathsList;
-                    for (int i = 0; i < manifest.Items.Count; i++)
+                    itemSourceDir = backupDir;
+                }
+                else
+                {
+                    var matchingDir = Directory.GetDirectories(backupDir, $"{i + 1}_*").FirstOrDefault();
+                    if (matchingDir != null)
                     {
-                        var item = manifest.Items[i];
-                        var itemSourceDir = string.IsNullOrEmpty(item.SubFolder)
-                            ? backupDir
-                            : Path.Combine(backupDir, item.SubFolder);
-
-                        string destPath;
-                        if (manifest.Items.Count == 1 && !string.IsNullOrWhiteSpace(record.SourcePath))
-                        {
-                            destPath = record.SourcePath;
-                        }
-                        else if (recordPaths.Count > i && !string.IsNullOrWhiteSpace(recordPaths[i]))
-                        {
-                            destPath = recordPaths[i];
-                        }
-                        else
-                        {
-                            destPath = item.SourcePath;
-                        }
-
-                        if (Directory.Exists(itemSourceDir))
-                        {
-                            await CopyAllFilesAsync(itemSourceDir, destPath, progress, cancellationToken, skipManifest: string.IsNullOrEmpty(item.SubFolder));
-                        }
+                        itemSourceDir = matchingDir;
                     }
-                    return;
+                    else
+                    {
+                        continue;
+                    }
                 }
             }
-            catch
-            {
-                // Fallback to record.SourcePath if manifest parsing fails
-            }
-        }
 
-        // Legacy fallback without manifest
-        var paths = record.SourcePathsList;
-        if (paths.Count > 0)
-        {
-            await CopyAllFilesAsync(backupDir, paths[0], progress, cancellationToken, skipManifest: true);
+            var itemProgress = new Progress<BackupProgress>(p =>
+            {
+                var overallPct = (int)((i * 100.0 / selectedItems.Count) + (p.Percent / (double)selectedItems.Count));
+                progress?.Report(new BackupProgress
+                {
+                    Percent = Math.Min(overallPct, 99),
+                    CurrentFile = p.CurrentFile,
+                    Message = $"[{i + 1}/{selectedItems.Count}] {p.Message}"
+                });
+            });
+
+            await CopyAllFilesAsync(itemSourceDir, destPath, itemProgress, cancellationToken, skipManifest: string.IsNullOrEmpty(item.SubFolder));
         }
     }
+
 
     private static async Task CopyAllFilesAsync(string sourceDir, string destinationDir, IProgress<BackupProgress>? progress, CancellationToken cancellationToken, bool skipManifest = false)
     {

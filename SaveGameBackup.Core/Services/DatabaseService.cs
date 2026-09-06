@@ -17,9 +17,21 @@ public class DatabaseService
         }
         else
         {
-            var appFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SaveGameBackup");
-            Directory.CreateDirectory(appFolder);
-            _dbPath = Path.Combine(appFolder, "save_backup.db");
+            var configuredPath = AppConfigService.GetConfiguredDatabasePath();
+            if (!string.IsNullOrWhiteSpace(configuredPath))
+            {
+                _dbPath = configuredPath;
+            }
+            else
+            {
+                _dbPath = Path.Combine(GetDefaultProjectRoot(), "save_backup.db");
+            }
+        }
+
+        var dir = Path.GetDirectoryName(_dbPath);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
         }
 
         _connectionString = new SqliteConnectionStringBuilder
@@ -32,6 +44,26 @@ public class DatabaseService
     }
 
     public string DbPath => _dbPath;
+
+    public static string GetDefaultProjectRoot()
+    {
+        var current = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+        while (current != null)
+        {
+            if (current.GetFiles("*.slnx").Length > 0 ||
+                current.GetFiles("*.sln").Length > 0 ||
+                current.GetFiles("LaunchApp.bat").Length > 0 ||
+                current.GetFiles("*.exe").Length > 0 ||
+                Directory.Exists(Path.Combine(current.FullName, ".git")))
+            {
+                return current.FullName;
+            }
+            current = current.Parent;
+        }
+
+        return AppDomain.CurrentDomain.BaseDirectory;
+    }
+
 
     private void InitializeDatabase()
     {
@@ -273,3 +305,60 @@ public class DatabaseService
         return new string(chars);
     }
 }
+
+public class AppConfigFile
+{
+    public string? DatabasePath { get; set; }
+}
+
+public static class AppConfigService
+{
+    private const string ConfigFileName = "app_config.json";
+
+    public static string GetConfigFilePath()
+    {
+        return Path.Combine(DatabaseService.GetDefaultProjectRoot(), ConfigFileName);
+    }
+
+    public static AppConfigFile LoadConfig()
+    {
+        try
+        {
+            var path = GetConfigFilePath();
+            if (File.Exists(path))
+            {
+                var json = File.ReadAllText(path);
+                var config = JsonSerializer.Deserialize<AppConfigFile>(json);
+                if (config != null) return config;
+            }
+        }
+        catch { }
+
+        return new AppConfigFile();
+    }
+
+    public static string? GetConfiguredDatabasePath()
+    {
+        var config = LoadConfig();
+        return !string.IsNullOrWhiteSpace(config.DatabasePath) ? config.DatabasePath : null;
+    }
+
+    public static void SaveConfig(AppConfigFile config)
+    {
+        try
+        {
+            var path = GetConfigFilePath();
+            var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(path, json);
+        }
+        catch { }
+    }
+
+    public static void SaveDatabasePath(string dbPath)
+    {
+        var config = LoadConfig();
+        config.DatabasePath = dbPath;
+        SaveConfig(config);
+    }
+}
+

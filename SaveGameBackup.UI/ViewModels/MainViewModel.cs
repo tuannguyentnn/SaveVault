@@ -12,10 +12,13 @@ namespace SaveGameBackup.UI.ViewModels;
 
 public class MainViewModel : INotifyPropertyChanged
 {
-    private readonly DatabaseService _databaseService;
-    private readonly GameSearchCoordinator _searchCoordinator;
-    private readonly BackupService _backupService;
+    private DatabaseService _databaseService;
+    private GameSearchCoordinator _searchCoordinator;
+    private BackupService _backupService;
     private readonly LudusaviDatabaseService _ludusaviService;
+
+    // Database path property
+    private string _databaseLocation = string.Empty;
 
     // Search properties
     private string _searchQuery = string.Empty;
@@ -61,6 +64,7 @@ public class MainViewModel : INotifyPropertyChanged
         Directory.CreateDirectory(defaultBackupsFolder);
 
         _databaseService = new DatabaseService();
+        _databaseLocation = _databaseService.DbPath;
         _searchCoordinator = new GameSearchCoordinator(_databaseService);
         _backupService = new BackupService(_databaseService);
         _ludusaviService = new LudusaviDatabaseService();
@@ -83,6 +87,9 @@ public class MainViewModel : INotifyPropertyChanged
         OpenRecordFolderCommand = new RelayCommand(param => ExecuteOpenRecordFolder(param as BackupRecord));
         SaveSettingsCommand = new RelayCommand(async _ => await ExecuteSaveSettingsAsync());
         BrowseBackupDirectoryCommand = new RelayCommand(_ => ExecuteBrowseBackupDirectory());
+        BrowseDatabaseFileCommand = new RelayCommand(_ => ExecuteBrowseDatabaseFile());
+        ApplyDatabaseLocationCommand = new RelayCommand(async _ => await ExecuteApplyDatabaseLocationAsync());
+        ResetDatabaseLocationCommand = new RelayCommand(_ => ExecuteResetDatabaseLocation());
         AddCustomPathCommand = new RelayCommand(_ => ExecuteAddCustomPath());
         SelectAllPathsCommand = new RelayCommand(_ => ExecuteSelectAllPaths(), _ => DetectedPathItems.Count > 0);
         DeselectAllPathsCommand = new RelayCommand(_ => ExecuteDeselectAllPaths(), _ => DetectedPathItems.Count > 0);
@@ -272,40 +279,31 @@ public class MainViewModel : INotifyPropertyChanged
         record ??= SelectedHistoryRecord;
         if (record == null) return;
 
-        var targetPaths = record.SourcePathsList;
-        var targetPathsFormatted = targetPaths.Count > 0
-            ? string.Join("\n", targetPaths.Select(p => $"  • {p}"))
-            : $"  • {record.SourcePath}";
-
-        var msg = $"Bạn có chắc chắn muốn khôi phục bản sao lưu của '{record.GameName}'?\n\n" +
-                  $"Nguồn sao lưu: {record.BackupPath}\n\n" +
-                  $"Vị trí khôi phục ({targetPaths.Count} thư mục):\n{targetPathsFormatted}\n\n" +
-                  $"Lưu ý: Các file hiện tại trong thư mục save trên máy sẽ được khôi phục nguyên trạng theo vị trí ban đầu.";
-
-        var confirm = MessageBox.Show(msg, "Xác nhận khôi phục", MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (confirm != MessageBoxResult.Yes) return;
-
-        IsBackingUp = true;
         try
         {
-            var progress = new Progress<BackupProgress>(p =>
+            var items = _backupService.GetRestoreItemsFromBackup(record);
+            if (items.Count == 0)
             {
-                BackupProgressPercent = p.Percent;
-                BackupProgressText = p.Message;
-            });
+                MessageBox.Show("Không tìm thấy dữ liệu vị trí lưu nào trong bản sao lưu!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
 
-            await _backupService.RestoreAsync(record, progress);
-            StatusMessage = $"✓ Đã khôi phục thành công save game cho '{record.GameName}'!";
-            MessageBox.Show($"Khôi phục save game '{record.GameName}' thành công về các vị trí gốc!", "Khôi phục thành tất", MessageBoxButton.OK, MessageBoxImage.Information);
+            var dialog = new RestoreDialog(record, _backupService, items)
+            {
+                Owner = Application.Current?.MainWindow
+            };
+
+            var result = dialog.ShowDialog();
+            if (result == true && dialog.RestoreConfirmed)
+            {
+                StatusMessage = $"✓ Đã khôi phục thành công save game cho '{record.GameName}'!";
+                await RefreshHistoryAsync();
+            }
         }
         catch (Exception ex)
         {
             StatusMessage = $"Lỗi khôi phục: {ex.Message}";
             MessageBox.Show($"Lỗi khôi phục: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            IsBackingUp = false;
         }
     }
 
@@ -355,6 +353,67 @@ public class MainViewModel : INotifyPropertyChanged
         if (dialog.ShowDialog() == true)
         {
             BackupDestinationRoot = dialog.FolderName;
+        }
+    }
+
+    public void ExecuteBrowseDatabaseFile()
+    {
+        var currentDir = !string.IsNullOrWhiteSpace(DatabaseLocation) && Directory.Exists(Path.GetDirectoryName(DatabaseLocation))
+            ? Path.GetDirectoryName(DatabaseLocation)
+            : DatabaseService.GetDefaultProjectRoot();
+
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Chọn hoặc đặt tên file cơ sở dữ liệu SQLite (.db)",
+            Filter = "SQLite Database (*.db)|*.db|Tất cả tệp (*.*)|*.*",
+            DefaultExt = ".db",
+            CheckFileExists = false,
+            InitialDirectory = currentDir
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            DatabaseLocation = dialog.FileName;
+        }
+    }
+
+    public void ExecuteResetDatabaseLocation()
+    {
+        var defaultPath = Path.Combine(DatabaseService.GetDefaultProjectRoot(), "save_backup.db");
+        DatabaseLocation = defaultPath;
+    }
+
+    public async Task ExecuteApplyDatabaseLocationAsync()
+    {
+        if (string.IsNullOrWhiteSpace(DatabaseLocation))
+        {
+            MessageBox.Show("Vui lòng nhập đường dẫn file cơ sở dữ liệu SQLite hợp lệ!", "Cảnh báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            var dir = Path.GetDirectoryName(DatabaseLocation);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+
+            AppConfigService.SaveDatabasePath(DatabaseLocation);
+
+            _databaseService = new DatabaseService(DatabaseLocation);
+            _searchCoordinator = new GameSearchCoordinator(_databaseService);
+            _backupService = new BackupService(_databaseService);
+
+            await RefreshHistoryAsync();
+
+            StatusMessage = $"✓ Đã chuyển Database sang: {DatabaseLocation}";
+            MessageBox.Show($"Đã áp dụng và chuyển cơ sở dữ liệu sang:\n{DatabaseLocation}", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi cập nhật Database: {ex.Message}";
+            MessageBox.Show($"Không thể chuyển đường dẫn Database:\n{ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -587,7 +646,11 @@ public class MainViewModel : INotifyPropertyChanged
         set => SetField(ref _selectedHistoryRecord, value);
     }
 
-    public string DatabaseLocation => _databaseService.DbPath;
+    public string DatabaseLocation
+    {
+        get => _databaseLocation;
+        set => SetField(ref _databaseLocation, value);
+    }
 
     public int SelectedPathCount
     {
@@ -626,6 +689,9 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenRecordFolderCommand { get; }
     public ICommand SaveSettingsCommand { get; }
     public ICommand BrowseBackupDirectoryCommand { get; }
+    public ICommand BrowseDatabaseFileCommand { get; }
+    public ICommand ApplyDatabaseLocationCommand { get; }
+    public ICommand ResetDatabaseLocationCommand { get; }
     public ICommand AddCustomPathCommand { get; }
     public ICommand SelectAllPathsCommand { get; }
     public ICommand DeselectAllPathsCommand { get; }
