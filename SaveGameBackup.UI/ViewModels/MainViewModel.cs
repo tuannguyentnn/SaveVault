@@ -25,6 +25,7 @@ public class MainViewModel : INotifyPropertyChanged
     private bool _isSearching;
     private bool _forceOnlineSearch;
     private string _statusMessage = "Sẵn sàng. Hãy nhập tên game để tìm kiếm vị trí save game.";
+    private int _selectedTabIndex;
 
     // Detected Game Info
     private GameSaveInfo? _currentGame;
@@ -50,12 +51,26 @@ public class MainViewModel : INotifyPropertyChanged
 
     // Collections
     public ObservableCollection<BackupRecord> BackupHistory { get; } = new();
+    public ObservableCollection<GameBackupSummary> GroupedBackupHistory { get; } = new();
     public ObservableCollection<string> PopularGameSuggestions { get; } = new();
     public ObservableCollection<string> DetectedPathsList { get; } = new();
     public ObservableCollection<DetectedPathItem> DetectedPathItems { get; } = new();
     public ObservableCollection<string> OnlinePatternsList { get; } = new();
 
     private BackupRecord? _selectedHistoryRecord;
+    private GameBackupSummary? _selectedGameSummary;
+
+    // In-App Modal States
+    private bool _isModalOpen;
+    private bool _isHistoryDetailsModalOpen;
+    private bool _isRestoreModalOpen;
+    private BackupRecord? _activeRestoreRecord;
+    public ObservableCollection<RestoreItemTarget> ActiveRestoreItems { get; } = new();
+    private bool _isModalRestoring;
+    private int _modalRestoreProgressPercent;
+    private string _modalRestoreProgressMessage = string.Empty;
+    private string _modalRestoreSelectedCountText = string.Empty;
+    private bool _canConfirmModalRestore;
 
     public MainViewModel()
     {
@@ -82,7 +97,8 @@ public class MainViewModel : INotifyPropertyChanged
         BackupCommand = new RelayCommand(async _ => await ExecuteBackupAsync(), _ => !IsBackingUp && HasGame && HasSelectedPaths);
         OpenBackupFolderCommand = new RelayCommand(_ => ExecuteOpenBackupFolder(), _ => !string.IsNullOrEmpty(LastBackupPath));
         OpenSourceFolderCommand = new RelayCommand(_ => ExecuteOpenSourceFolder(), _ => HasGame && DetectedPathItems.Count > 0);
-        RestoreRecordCommand = new RelayCommand(async param => await ExecuteRestoreAsync(param as BackupRecord), _ => !IsBackingUp);
+        OpenRestoreModalCommand = new RelayCommand(param => ExecuteOpenRestoreModal(param), _ => !IsBackingUp);
+        RestoreRecordCommand = OpenRestoreModalCommand;
         DeleteRecordCommand = new RelayCommand(async param => await ExecuteDeleteRecordAsync(param as BackupRecord));
         OpenRecordFolderCommand = new RelayCommand(param => ExecuteOpenRecordFolder(param as BackupRecord));
         SaveSettingsCommand = new RelayCommand(async _ => await ExecuteSaveSettingsAsync());
@@ -93,6 +109,18 @@ public class MainViewModel : INotifyPropertyChanged
         AddCustomPathCommand = new RelayCommand(_ => ExecuteAddCustomPath());
         SelectAllPathsCommand = new RelayCommand(_ => ExecuteSelectAllPaths(), _ => DetectedPathItems.Count > 0);
         DeselectAllPathsCommand = new RelayCommand(_ => ExecuteDeselectAllPaths(), _ => DetectedPathItems.Count > 0);
+
+        // Modal Commands
+        OpenGameDetailsCommand = new RelayCommand(param => ExecuteOpenGameDetails(param as GameBackupSummary));
+        CloseModalCommand = new RelayCommand(_ => ExecuteCloseModal(), _ => !IsModalRestoring);
+        CloseRestoreModalCommand = new RelayCommand(_ => ExecuteCloseRestoreModal(), _ => !IsModalRestoring);
+        ModalRestoreConfirmCommand = new RelayCommand(async _ => await ExecuteModalRestoreConfirmAsync(), _ => !IsModalRestoring && CanConfirmModalRestore);
+        ModalSelectAllRestoreItemsCommand = new RelayCommand(_ => ExecuteModalSelectAllRestoreItems(), _ => !IsModalRestoring);
+        ModalDeselectAllRestoreItemsCommand = new RelayCommand(_ => ExecuteModalDeselectAllRestoreItems(), _ => !IsModalRestoring);
+        ModalResetRestorePathsCommand = new RelayCommand(_ => ExecuteModalResetRestorePaths(), _ => !IsModalRestoring);
+        ModalToggleRestoreItemCommand = new RelayCommand(param => ExecuteModalToggleRestoreItem(param as RestoreItemTarget), _ => !IsModalRestoring);
+        ModalBrowseRestoreDestCommand = new RelayCommand(param => ExecuteModalBrowseRestoreDest(param as RestoreItemTarget), _ => !IsModalRestoring);
+        LoadBackupPathsForGameCommand = new RelayCommand(param => ExecuteLoadBackupPathsForGame(param), _ => !IsBackingUp);
 
         // Load initial data
         _ = LoadInitialDataAsync();
@@ -124,6 +152,52 @@ public class MainViewModel : INotifyPropertyChanged
             foreach (var r in records)
             {
                 BackupHistory.Add(r);
+            }
+
+            var groups = records
+                .GroupBy(r => r.GameName.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    var ordered = g.OrderByDescending(r => r.BackupDate).ToList();
+                    var latest = ordered.First();
+                    return new GameBackupSummary
+                    {
+                        GameName = latest.GameName,
+                        BackupCount = ordered.Count,
+                        LatestBackupDate = latest.BackupDate,
+                        LatestSizeBytes = latest.TotalSizeBytes,
+                        TotalSizeBytes = ordered.Sum(r => r.TotalSizeBytes),
+                        LatestBackupType = latest.BackupTypeFormatted,
+                        LatestBackupPath = latest.BackupPath,
+                        LatestRecord = latest,
+                        Records = ordered
+                    };
+                })
+                .OrderByDescending(s => s.LatestBackupDate)
+                .ToList();
+
+            GroupedBackupHistory.Clear();
+            foreach (var grp in groups)
+            {
+                GroupedBackupHistory.Add(grp);
+            }
+
+            // Sync currently selected game in modal if open
+            if (SelectedGameSummary != null)
+            {
+                var updated = GroupedBackupHistory.FirstOrDefault(g => g.GameName.Equals(SelectedGameSummary.GameName, StringComparison.OrdinalIgnoreCase));
+                if (updated != null)
+                {
+                    SelectedGameSummary = updated;
+                }
+                else
+                {
+                    SelectedGameSummary = null;
+                    if (IsHistoryDetailsModalOpen)
+                    {
+                        ExecuteCloseModal();
+                    }
+                }
             }
         }
         catch (Exception ex)
@@ -274,37 +348,325 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public async Task ExecuteRestoreAsync(BackupRecord? record)
+    public void ExecuteOpenGameDetails(GameBackupSummary? summary)
     {
-        record ??= SelectedHistoryRecord;
-        if (record == null) return;
+        summary ??= SelectedGameSummary;
+        if (summary == null) return;
+
+        SelectedGameSummary = summary;
+        IsRestoreModalOpen = false;
+        IsHistoryDetailsModalOpen = true;
+        IsModalOpen = true;
+    }
+
+    public void ExecuteLoadBackupPathsForGame(object? param)
+    {
+        BackupRecord? record = null;
+        if (param is BackupRecord br)
+        {
+            record = br;
+        }
+        else if (param is GameBackupSummary gbs)
+        {
+            record = gbs.LatestRecord ?? gbs.Records.FirstOrDefault();
+        }
+        else
+        {
+            record = SelectedHistoryRecord ?? SelectedGameSummary?.LatestRecord ?? SelectedGameSummary?.Records.FirstOrDefault();
+        }
+
+        if (record == null)
+        {
+            MessageBox.Show("Vui lòng chọn một game trong danh sách lịch sử sao lưu!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            // 1. Get save paths from backup manifest / record
+            var restoreItems = _backupService.GetRestoreItemsFromBackup(record);
+            var paths = restoreItems
+                .Select(i => !string.IsNullOrWhiteSpace(i.OriginalSourcePath) ? i.OriginalSourcePath : i.RestoreDestinationPath)
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (paths.Count == 0 && record.SourcePathsList.Count > 0)
+            {
+                paths = record.SourcePathsList;
+            }
+
+            if (paths.Count == 0)
+            {
+                MessageBox.Show($"Không tìm thấy thông tin vị trí save trong bản sao lưu của game '{record.GameName}'!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // 2. Populate Tab 1: Game name and detected save paths
+            SearchQuery = record.GameName;
+            DetectedPathsList.Clear();
+            DetectedPathItems.Clear();
+
+            int totalFoundFiles = 0;
+            long totalFoundBytes = 0;
+
+            foreach (var p in paths)
+            {
+                int fileCount = 0;
+                long totalBytes = 0;
+
+                if (Directory.Exists(p))
+                {
+                    try
+                    {
+                        var files = Directory.GetFiles(p, "*", SearchOption.AllDirectories);
+                        fileCount = files.Length;
+                        totalBytes = files.Sum(f => new FileInfo(f).Length);
+                    }
+                    catch { }
+                }
+                else if (File.Exists(p))
+                {
+                    fileCount = 1;
+                    totalBytes = new FileInfo(p).Length;
+                }
+
+                totalFoundFiles += fileCount;
+                totalFoundBytes += totalBytes;
+
+                var item = new DetectedPathItem
+                {
+                    Path = p,
+                    FileCount = fileCount,
+                    TotalSizeBytes = totalBytes,
+                    IsSelected = true
+                };
+                item.PropertyChanged += OnDetectedItemPropertyChanged;
+                DetectedPathItems.Add(item);
+                DetectedPathsList.Add(p);
+            }
+
+            CurrentGame = new GameSaveInfo
+            {
+                GameName = record.GameName,
+                NormalizedName = record.GameName.ToLowerInvariant(),
+                Source = "Lịch sử sao lưu (Manifest)",
+                DetectedPathsOnDisk = paths,
+                DetectedPathItems = DetectedPathItems.ToList(),
+                TotalSizeBytes = totalFoundBytes,
+                FileCount = totalFoundFiles,
+                LastScanned = DateTime.Now
+            };
+
+            HasGame = true;
+            IsGameFoundOnDisk = DetectedPathItems.Any(p => Directory.Exists(p.Path) || File.Exists(p.Path));
+            UpdateSelectedStats();
+
+            // 3. Close modal if open
+            IsModalOpen = false;
+            IsHistoryDetailsModalOpen = false;
+            IsRestoreModalOpen = false;
+
+            // 4. Switch to Tab 1 (Search & Backup)
+            SelectedTabIndex = 0;
+
+            StatusMessage = $"✓ Đã nạp {DetectedPathItems.Count} vị trí save từ bản sao lưu gần nhất của '{record.GameName}'. Sẵn sàng sao lưu ngay!";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi nạp vị trí sao lưu: {ex.Message}";
+            MessageBox.Show($"Lỗi nạp vị trí sao lưu: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    public void ExecuteCloseModal()
+    {
+        if (IsModalRestoring) return;
+        IsModalOpen = false;
+        IsHistoryDetailsModalOpen = false;
+        IsRestoreModalOpen = false;
+    }
+
+    public void ExecuteCloseRestoreModal()
+    {
+        if (IsModalRestoring) return;
+
+        IsRestoreModalOpen = false;
+        if (SelectedGameSummary != null)
+        {
+            IsHistoryDetailsModalOpen = true;
+        }
+        else
+        {
+            IsModalOpen = false;
+        }
+    }
+
+    public void ExecuteOpenRestoreModal(object? param)
+    {
+        BackupRecord? record = null;
+        if (param is BackupRecord br)
+        {
+            record = br;
+        }
+        else if (param is GameBackupSummary gbs)
+        {
+            record = gbs.LatestRecord ?? gbs.Records.FirstOrDefault();
+        }
+        else
+        {
+            record = SelectedHistoryRecord ?? SelectedGameSummary?.LatestRecord;
+        }
+
+        if (record == null)
+        {
+            MessageBox.Show("Vui lòng chọn một game hoặc bản sao lưu để khôi phục!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
 
         try
         {
             var items = _backupService.GetRestoreItemsFromBackup(record);
             if (items.Count == 0)
             {
-                MessageBox.Show("Không tìm thấy dữ liệu vị trí lưu nào trong bản sao lưu!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Không tìm thấy thông tin vị trí lưu nào trong bản sao lưu!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            var dialog = new RestoreDialog(record, _backupService, items)
+            ActiveRestoreRecord = record;
+            ActiveRestoreItems.Clear();
+            foreach (var item in items)
             {
-                Owner = Application.Current?.MainWindow
-            };
-
-            var result = dialog.ShowDialog();
-            if (result == true && dialog.RestoreConfirmed)
-            {
-                StatusMessage = $"✓ Đã khôi phục thành công save game cho '{record.GameName}'!";
-                await RefreshHistoryAsync();
+                item.PropertyChanged += (_, e) =>
+                {
+                    if (e.PropertyName == nameof(RestoreItemTarget.IsSelected) || e.PropertyName == nameof(RestoreItemTarget.RestoreDestinationPath))
+                    {
+                        UpdateModalRestoreSelectedCount();
+                    }
+                };
+                ActiveRestoreItems.Add(item);
             }
+
+            UpdateModalRestoreSelectedCount();
+            IsModalRestoring = false;
+            ModalRestoreProgressPercent = 0;
+            ModalRestoreProgressMessage = string.Empty;
+
+            IsHistoryDetailsModalOpen = false;
+            IsRestoreModalOpen = true;
+            IsModalOpen = true;
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Lỗi khôi phục: {ex.Message}";
+            StatusMessage = $"Lỗi chuẩn bị khôi phục: {ex.Message}";
+            MessageBox.Show($"Lỗi chuẩn bị khôi phục: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    public async Task ExecuteModalRestoreConfirmAsync()
+    {
+        if (ActiveRestoreRecord == null) return;
+
+        var activeItems = ActiveRestoreItems
+            .Where(i => i.IsSelected && !string.IsNullOrWhiteSpace(i.RestoreDestinationPath))
+            .ToList();
+
+        if (activeItems.Count == 0)
+        {
+            MessageBox.Show("Vui lòng chọn ít nhất 1 vị trí lưu để khôi phục!", "Chưa chọn", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        IsModalRestoring = true;
+        ModalRestoreProgressPercent = 0;
+        ModalRestoreProgressMessage = "Đang bắt đầu khôi phục...";
+
+        try
+        {
+            var progress = new Progress<BackupProgress>(p =>
+            {
+                ModalRestoreProgressPercent = p.Percent;
+                ModalRestoreProgressMessage = string.IsNullOrEmpty(p.Message) ? "Đang khôi phục..." : p.Message;
+            });
+
+            await _backupService.RestoreAsync(ActiveRestoreRecord, activeItems, progress);
+
+            StatusMessage = $"✓ Đã khôi phục thành công save game cho '{ActiveRestoreRecord.GameName}'!";
+            MessageBox.Show($"Khôi phục thành công {activeItems.Count} vị trí lưu cho game '{ActiveRestoreRecord.GameName}'!", "Khôi phục thành công", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            IsRestoreModalOpen = false;
+            if (SelectedGameSummary != null)
+            {
+                IsHistoryDetailsModalOpen = true;
+            }
+            else
+            {
+                IsModalOpen = false;
+            }
+
+            await RefreshHistoryAsync();
+        }
+        catch (Exception ex)
+        {
+            ModalRestoreProgressMessage = $"Lỗi: {ex.Message}";
             MessageBox.Show($"Lỗi khôi phục: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+        finally
+        {
+            IsModalRestoring = false;
+        }
+    }
+
+    public void ExecuteModalSelectAllRestoreItems()
+    {
+        foreach (var item in ActiveRestoreItems) item.IsSelected = true;
+        UpdateModalRestoreSelectedCount();
+    }
+
+    public void ExecuteModalDeselectAllRestoreItems()
+    {
+        foreach (var item in ActiveRestoreItems) item.IsSelected = false;
+        UpdateModalRestoreSelectedCount();
+    }
+
+    public void ExecuteModalResetRestorePaths()
+    {
+        foreach (var item in ActiveRestoreItems)
+        {
+            item.RestoreDestinationPath = item.OriginalSourcePath;
+        }
+    }
+
+    public void ExecuteModalToggleRestoreItem(RestoreItemTarget? item)
+    {
+        if (item == null || IsModalRestoring) return;
+        item.IsSelected = !item.IsSelected;
+        UpdateModalRestoreSelectedCount();
+    }
+
+    public void ExecuteModalBrowseRestoreDest(RestoreItemTarget? item)
+    {
+        if (item == null || IsModalRestoring) return;
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Chọn thư mục đích để khôi phục save game vào",
+            InitialDirectory = Directory.Exists(item.RestoreDestinationPath) ? item.RestoreDestinationPath : null
+        };
+
+        if (dialog.ShowDialog() == true && !string.IsNullOrEmpty(dialog.FolderName))
+        {
+            item.RestoreDestinationPath = dialog.FolderName;
+        }
+    }
+
+    private void UpdateModalRestoreSelectedCount()
+    {
+        var selected = ActiveRestoreItems.Count(i => i.IsSelected);
+        ModalRestoreSelectedCountText = $"Đã chọn {selected} / {ActiveRestoreItems.Count} vị trí lưu";
+        CanConfirmModalRestore = selected > 0;
+        OnPropertyChanged(nameof(CanConfirmModalRestore));
+        OnPropertyChanged(nameof(ModalRestoreSelectedCountText));
+        CommandManager.InvalidateRequerySuggested();
     }
 
     public async Task ExecuteDeleteRecordAsync(BackupRecord? record)
@@ -646,6 +1008,78 @@ public class MainViewModel : INotifyPropertyChanged
         set => SetField(ref _selectedHistoryRecord, value);
     }
 
+    public GameBackupSummary? SelectedGameSummary
+    {
+        get => _selectedGameSummary;
+        set => SetField(ref _selectedGameSummary, value);
+    }
+
+    public bool IsModalOpen
+    {
+        get => _isModalOpen;
+        set => SetField(ref _isModalOpen, value);
+    }
+
+    public bool IsHistoryDetailsModalOpen
+    {
+        get => _isHistoryDetailsModalOpen;
+        set => SetField(ref _isHistoryDetailsModalOpen, value);
+    }
+
+    public bool IsRestoreModalOpen
+    {
+        get => _isRestoreModalOpen;
+        set => SetField(ref _isRestoreModalOpen, value);
+    }
+
+    public BackupRecord? ActiveRestoreRecord
+    {
+        get => _activeRestoreRecord;
+        set => SetField(ref _activeRestoreRecord, value);
+    }
+
+    public bool IsModalRestoring
+    {
+        get => _isModalRestoring;
+        set
+        {
+            if (SetField(ref _isModalRestoring, value))
+            {
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+    }
+
+    public int ModalRestoreProgressPercent
+    {
+        get => _modalRestoreProgressPercent;
+        set => SetField(ref _modalRestoreProgressPercent, value);
+    }
+
+    public string ModalRestoreProgressMessage
+    {
+        get => _modalRestoreProgressMessage;
+        set => SetField(ref _modalRestoreProgressMessage, value);
+    }
+
+    public string ModalRestoreSelectedCountText
+    {
+        get => _modalRestoreSelectedCountText;
+        set => SetField(ref _modalRestoreSelectedCountText, value);
+    }
+
+    public bool CanConfirmModalRestore
+    {
+        get => _canConfirmModalRestore;
+        set
+        {
+            if (SetField(ref _canConfirmModalRestore, value))
+            {
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+    }
+
     public string DatabaseLocation
     {
         get => _databaseLocation;
@@ -679,6 +1113,12 @@ public class MainViewModel : INotifyPropertyChanged
     public bool HasDetectedPaths => DetectedPathItems.Count > 0;
     public bool HasNoDetectedPaths => DetectedPathItems.Count == 0;
 
+    public int SelectedTabIndex
+    {
+        get => _selectedTabIndex;
+        set => SetField(ref _selectedTabIndex, value);
+    }
+
     // Commands
     public ICommand SearchCommand { get; }
     public ICommand BackupCommand { get; }
@@ -695,6 +1135,19 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand AddCustomPathCommand { get; }
     public ICommand SelectAllPathsCommand { get; }
     public ICommand DeselectAllPathsCommand { get; }
+
+    // Modal Commands
+    public ICommand OpenGameDetailsCommand { get; }
+    public ICommand OpenRestoreModalCommand { get; }
+    public ICommand CloseModalCommand { get; }
+    public ICommand CloseRestoreModalCommand { get; }
+    public ICommand ModalRestoreConfirmCommand { get; }
+    public ICommand ModalSelectAllRestoreItemsCommand { get; }
+    public ICommand ModalDeselectAllRestoreItemsCommand { get; }
+    public ICommand ModalResetRestorePathsCommand { get; }
+    public ICommand ModalToggleRestoreItemCommand { get; }
+    public ICommand ModalBrowseRestoreDestCommand { get; }
+    public ICommand LoadBackupPathsForGameCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

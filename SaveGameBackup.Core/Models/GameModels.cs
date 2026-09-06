@@ -180,8 +180,115 @@ public class RestoreItemTarget : INotifyPropertyChanged
         }
     }
 
+    public string DisplayTitle
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(SubFolder)) return SubFolder;
+            if (!string.IsNullOrWhiteSpace(OriginalSourcePath))
+            {
+                var trimmed = OriginalSourcePath.TrimEnd('\\', '/');
+                var folderName = Path.GetFileName(trimmed);
+                return !string.IsNullOrWhiteSpace(folderName) ? folderName : OriginalSourcePath;
+            }
+            return "Vị trí save game";
+        }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
+
+public class GameBackupSummary : INotifyPropertyChanged
+{
+    private string _gameName = string.Empty;
+    private int _backupCount;
+    private DateTime _latestBackupDate;
+    private long _latestSizeBytes;
+    private long _totalSizeBytes;
+    private string _latestBackupType = string.Empty;
+    private string _latestBackupPath = string.Empty;
+    private BackupRecord? _latestRecord;
+    private List<BackupRecord> _records = new();
+
+    public string GameName
+    {
+        get => _gameName;
+        set => SetField(ref _gameName, value);
+    }
+
+    public int BackupCount
+    {
+        get => _backupCount;
+        set => SetField(ref _backupCount, value);
+    }
+
+    public DateTime LatestBackupDate
+    {
+        get => _latestBackupDate;
+        set => SetField(ref _latestBackupDate, value);
+    }
+
+    public long LatestSizeBytes
+    {
+        get => _latestSizeBytes;
+        set => SetField(ref _latestSizeBytes, value);
+    }
+
+    public long TotalSizeBytes
+    {
+        get => _totalSizeBytes;
+        set => SetField(ref _totalSizeBytes, value);
+    }
+
+    public string LatestBackupType
+    {
+        get => _latestBackupType;
+        set => SetField(ref _latestBackupType, value);
+    }
+
+    public string LatestBackupPath
+    {
+        get => _latestBackupPath;
+        set => SetField(ref _latestBackupPath, value);
+    }
+
+    public BackupRecord? LatestRecord
+    {
+        get => _latestRecord;
+        set => SetField(ref _latestRecord, value);
+    }
+
+    public List<BackupRecord> Records
+    {
+        get => _records;
+        set => SetField(ref _records, value);
+    }
+
+    public string FormattedLatestSize => FormatBytes(LatestSizeBytes);
+    public string FormattedTotalSize => FormatBytes(TotalSizeBytes);
+    public string FormattedLatestDate => LatestBackupDate != DateTime.MinValue ? LatestBackupDate.ToString("dd/MM/yyyy HH:mm") : "-";
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
+}
+
 

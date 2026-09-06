@@ -250,6 +250,53 @@ try
         throw new Exception("Custom destination restore failed: file not found in custom destination!");
     Console.WriteLine($"  ✓ Custom destination restore OK (restored to: {customDestFolder})");
 
+    // [9] Testing GroupedBackupHistory and GameBackupSummary Aggregation
+    Console.WriteLine("\n[9] Testing GroupedBackupHistory & GameBackupSummary Aggregation");
+    var testRecords = new List<BackupRecord>
+    {
+        new() { Id = 101, GameName = "Cyberpunk 2077", TotalSizeBytes = 1000, BackupDate = DateTime.Now.AddHours(-3), BackupPath = "c:\\cp1" },
+        new() { Id = 102, GameName = "Cyberpunk 2077", TotalSizeBytes = 2500, BackupDate = DateTime.Now.AddHours(-1), BackupPath = "c:\\cp2" },
+        new() { Id = 103, GameName = "Cyberpunk 2077", TotalSizeBytes = 1500, BackupDate = DateTime.Now.AddHours(-2), BackupPath = "c:\\cp3" },
+        new() { Id = 104, GameName = "Elden Ring", TotalSizeBytes = 5000, BackupDate = DateTime.Now.AddHours(-4), BackupPath = "c:\\er1" }
+    };
+
+    var groups = testRecords
+        .GroupBy(r => r.GameName.Trim(), StringComparer.OrdinalIgnoreCase)
+        .Select(g =>
+        {
+            var ordered = g.OrderByDescending(r => r.BackupDate).ToList();
+            var latest = ordered.First();
+            return new GameBackupSummary
+            {
+                GameName = latest.GameName,
+                BackupCount = ordered.Count,
+                LatestBackupDate = latest.BackupDate,
+                LatestSizeBytes = latest.TotalSizeBytes,
+                TotalSizeBytes = ordered.Sum(r => r.TotalSizeBytes),
+                LatestBackupType = latest.BackupTypeFormatted,
+                LatestBackupPath = latest.BackupPath,
+                LatestRecord = latest,
+                Records = ordered
+            };
+        })
+        .OrderByDescending(g => g.LatestBackupDate)
+        .ToList();
+
+    if (groups.Count != 2)
+        throw new Exception($"Expected 2 unique game groups, got {groups.Count}");
+
+    var cpSummary = groups.FirstOrDefault(g => g.GameName == "Cyberpunk 2077");
+    if (cpSummary == null) throw new Exception("Cyberpunk 2077 group not found");
+    if (cpSummary.BackupCount != 3) throw new Exception($"Expected 3 backups for Cyberpunk, got {cpSummary.BackupCount}");
+    if (cpSummary.TotalSizeBytes != 5000) throw new Exception($"Expected total size 5000, got {cpSummary.TotalSizeBytes}");
+    if (cpSummary.LatestSizeBytes != 2500) throw new Exception($"Expected latest size 2500, got {cpSummary.LatestSizeBytes}");
+    if (cpSummary.LatestRecord?.Id != 102) throw new Exception($"Expected latest record ID 102, got {cpSummary.LatestRecord?.Id}");
+    if (cpSummary.Records.Count != 3) throw new Exception($"Expected 3 snapshot records, got {cpSummary.Records.Count}");
+
+    Console.WriteLine($"  ✓ Grouped {testRecords.Count} records into {groups.Count} game rows.");
+    Console.WriteLine($"  ✓ Cyberpunk 2077: {cpSummary.BackupCount} snapshots, Total Size: {cpSummary.FormattedTotalSize}, Latest: {cpSummary.FormattedLatestDate}");
+    Console.WriteLine("  ✓ GameBackupSummary aggregation verified successfully!");
+
     Console.WriteLine("\n=================================================");
     Console.WriteLine("  ALL INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
