@@ -120,7 +120,9 @@ public class MainViewModel : INotifyPropertyChanged
         ModalResetRestorePathsCommand = new RelayCommand(_ => ExecuteModalResetRestorePaths(), _ => !IsModalRestoring);
         ModalToggleRestoreItemCommand = new RelayCommand(param => ExecuteModalToggleRestoreItem(param as RestoreItemTarget), _ => !IsModalRestoring);
         ModalBrowseRestoreDestCommand = new RelayCommand(param => ExecuteModalBrowseRestoreDest(param as RestoreItemTarget), _ => !IsModalRestoring);
-        LoadBackupPathsForGameCommand = new RelayCommand(param => ExecuteLoadBackupPathsForGame(param), _ => !IsBackingUp);
+        LoadBackupPathsFromHistoryCommand = new RelayCommand(param => ExecuteLoadBackupPathsFromHistory(param), _ => !IsBackingUp);
+        LoadBackupPathsFromManifestCommand = new RelayCommand(param => ExecuteLoadBackupPathsFromManifest(param), _ => !IsBackingUp);
+        LoadBackupPathsForGameCommand = LoadBackupPathsFromHistoryCommand;
 
         // Load initial data
         _ = LoadInitialDataAsync();
@@ -359,7 +361,7 @@ public class MainViewModel : INotifyPropertyChanged
         IsModalOpen = true;
     }
 
-    public void ExecuteLoadBackupPathsForGame(object? param)
+    public void ExecuteLoadBackupPathsFromHistory(object? param)
     {
         BackupRecord? record = null;
         if (param is BackupRecord br)
@@ -383,7 +385,65 @@ public class MainViewModel : INotifyPropertyChanged
 
         try
         {
-            // 1. Get save paths from backup manifest / record
+            // Mode 1: Use save_paths directly without reading manifest
+            var paths = record.SavePathsList;
+            if (paths.Count == 0 && record.SourcePathsList.Count > 0)
+            {
+                paths = record.SourcePathsList;
+            }
+
+            if (paths.Count == 0)
+            {
+                // Fallback to manifest if legacy record has no save_paths
+                var restoreItems = _backupService.GetRestoreItemsFromBackup(record);
+                paths = restoreItems
+                    .Select(i => !string.IsNullOrWhiteSpace(i.OriginalSourcePath) ? i.OriginalSourcePath : i.RestoreDestinationPath)
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+
+            if (paths.Count == 0)
+            {
+                MessageBox.Show($"Không tìm thấy thông tin trường save_paths trong bản sao lưu của game '{record.GameName}'!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            ApplyPathsToTab1(record.GameName, paths, "Lịch sử sao lưu (save_paths)");
+            StatusMessage = $"✓ Đã nạp {DetectedPathItems.Count} vị trí save từ trường save_paths của '{record.GameName}'. Sẵn sàng sao lưu ngay!";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi nạp vị trí sao lưu: {ex.Message}";
+            MessageBox.Show($"Lỗi nạp vị trí sao lưu: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    public void ExecuteLoadBackupPathsFromManifest(object? param)
+    {
+        BackupRecord? record = null;
+        if (param is BackupRecord br)
+        {
+            record = br;
+        }
+        else if (param is GameBackupSummary gbs)
+        {
+            record = gbs.LatestRecord ?? gbs.Records.FirstOrDefault();
+        }
+        else
+        {
+            record = SelectedHistoryRecord ?? SelectedGameSummary?.LatestRecord ?? SelectedGameSummary?.Records.FirstOrDefault();
+        }
+
+        if (record == null)
+        {
+            MessageBox.Show("Vui lòng chọn một bản ghi sao lưu trong chi tiết lịch sử!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            // Mode 2: Read manifest from the specific snapshot backup (ZIP or directory)
             var restoreItems = _backupService.GetRestoreItemsFromBackup(record);
             var paths = restoreItems
                 .Select(i => !string.IsNullOrWhiteSpace(i.OriginalSourcePath) ? i.OriginalSourcePath : i.RestoreDestinationPath)
@@ -398,85 +458,88 @@ public class MainViewModel : INotifyPropertyChanged
 
             if (paths.Count == 0)
             {
-                MessageBox.Show($"Không tìm thấy thông tin vị trí save trong bản sao lưu của game '{record.GameName}'!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"Không tìm thấy thông tin manifest vị trí save trong bản sao lưu của game '{record.GameName}'!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            // 2. Populate Tab 1: Game name and detected save paths
-            SearchQuery = record.GameName;
-            DetectedPathsList.Clear();
-            DetectedPathItems.Clear();
-
-            int totalFoundFiles = 0;
-            long totalFoundBytes = 0;
-
-            foreach (var p in paths)
-            {
-                int fileCount = 0;
-                long totalBytes = 0;
-
-                if (Directory.Exists(p))
-                {
-                    try
-                    {
-                        var files = Directory.GetFiles(p, "*", SearchOption.AllDirectories);
-                        fileCount = files.Length;
-                        totalBytes = files.Sum(f => new FileInfo(f).Length);
-                    }
-                    catch { }
-                }
-                else if (File.Exists(p))
-                {
-                    fileCount = 1;
-                    totalBytes = new FileInfo(p).Length;
-                }
-
-                totalFoundFiles += fileCount;
-                totalFoundBytes += totalBytes;
-
-                var item = new DetectedPathItem
-                {
-                    Path = p,
-                    FileCount = fileCount,
-                    TotalSizeBytes = totalBytes,
-                    IsSelected = true
-                };
-                item.PropertyChanged += OnDetectedItemPropertyChanged;
-                DetectedPathItems.Add(item);
-                DetectedPathsList.Add(p);
-            }
-
-            CurrentGame = new GameSaveInfo
-            {
-                GameName = record.GameName,
-                NormalizedName = record.GameName.ToLowerInvariant(),
-                Source = "Lịch sử sao lưu (Manifest)",
-                DetectedPathsOnDisk = paths,
-                DetectedPathItems = DetectedPathItems.ToList(),
-                TotalSizeBytes = totalFoundBytes,
-                FileCount = totalFoundFiles,
-                LastScanned = DateTime.Now
-            };
-
-            HasGame = true;
-            IsGameFoundOnDisk = DetectedPathItems.Any(p => Directory.Exists(p.Path) || File.Exists(p.Path));
-            UpdateSelectedStats();
-
-            // 3. Close modal if open
-            IsModalOpen = false;
-            IsHistoryDetailsModalOpen = false;
-            IsRestoreModalOpen = false;
-
-            // 4. Switch to Tab 1 (Search & Backup)
-            SelectedTabIndex = 0;
-
-            StatusMessage = $"✓ Đã nạp {DetectedPathItems.Count} vị trí save từ bản sao lưu gần nhất của '{record.GameName}'. Sẵn sàng sao lưu ngay!";
+            ApplyPathsToTab1(record.GameName, paths, "Lịch sử sao lưu (Manifest)");
+            StatusMessage = $"✓ Đã đọc manifest và nạp {DetectedPathItems.Count} vị trí save của bản snapshot '{record.GameName}'. Sẵn sàng sao lưu ngay!";
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Lỗi nạp vị trí sao lưu: {ex.Message}";
-            MessageBox.Show($"Lỗi nạp vị trí sao lưu: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+            StatusMessage = $"Lỗi đọc manifest sao lưu: {ex.Message}";
+            MessageBox.Show($"Lỗi đọc manifest sao lưu: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private void ApplyPathsToTab1(string gameName, List<string> paths, string sourceLabel)
+    {
+        SearchQuery = gameName;
+        DetectedPathsList.Clear();
+        DetectedPathItems.Clear();
+
+        int totalFoundFiles = 0;
+        long totalFoundBytes = 0;
+
+        foreach (var p in paths)
+        {
+            int fileCount = 0;
+            long totalBytes = 0;
+
+            if (Directory.Exists(p))
+            {
+                try
+                {
+                    var files = Directory.GetFiles(p, "*", SearchOption.AllDirectories);
+                    fileCount = files.Length;
+                    totalBytes = files.Sum(f => new FileInfo(f).Length);
+                }
+                catch { }
+            }
+            else if (File.Exists(p))
+            {
+                fileCount = 1;
+                totalBytes = new FileInfo(p).Length;
+            }
+
+            totalFoundFiles += fileCount;
+            totalFoundBytes += totalBytes;
+
+            var item = new DetectedPathItem
+            {
+                Path = p,
+                FileCount = fileCount,
+                TotalSizeBytes = totalBytes,
+                IsSelected = true
+            };
+            item.PropertyChanged += OnDetectedItemPropertyChanged;
+            DetectedPathItems.Add(item);
+            DetectedPathsList.Add(p);
+        }
+
+        CurrentGame = new GameSaveInfo
+        {
+            GameName = gameName,
+            NormalizedName = gameName.ToLowerInvariant(),
+            Source = sourceLabel,
+            DetectedPathsOnDisk = paths,
+            DetectedPathItems = DetectedPathItems.ToList(),
+            TotalSizeBytes = totalFoundBytes,
+            FileCount = totalFoundFiles,
+            LastScanned = DateTime.Now
+        };
+
+        HasGame = true;
+        IsGameFoundOnDisk = DetectedPathItems.Any(p => Directory.Exists(p.Path) || File.Exists(p.Path));
+        UpdateSelectedStats();
+
+        // Close modals if open
+        IsModalOpen = false;
+        IsHistoryDetailsModalOpen = false;
+        IsRestoreModalOpen = false;
+
+        // Switch to Tab 1 (Search & Backup)
+        SelectedTabIndex = 0;
     }
 
     public void ExecuteCloseModal()
@@ -1147,6 +1210,8 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand ModalResetRestorePathsCommand { get; }
     public ICommand ModalToggleRestoreItemCommand { get; }
     public ICommand ModalBrowseRestoreDestCommand { get; }
+    public ICommand LoadBackupPathsFromHistoryCommand { get; }
+    public ICommand LoadBackupPathsFromManifestCommand { get; }
     public ICommand LoadBackupPathsForGameCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;

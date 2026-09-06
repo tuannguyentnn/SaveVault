@@ -297,6 +297,31 @@ try
     Console.WriteLine($"  ✓ Cyberpunk 2077: {cpSummary.BackupCount} snapshots, Total Size: {cpSummary.FormattedTotalSize}, Latest: {cpSummary.FormattedLatestDate}");
     Console.WriteLine("  ✓ GameBackupSummary aggregation verified successfully!");
 
+    // [10] Testing SavePaths field persistence & loading modes
+    Console.WriteLine("\n[10] Testing SavePaths field persistence & loading modes");
+    var customPaths = new List<string> { @"C:\Games\RPG\Save1", @"C:\Games\RPG\Save2" };
+    var recWithSavePaths = new BackupRecord
+    {
+        GameName = "Custom Path Game",
+        BackupPath = @"C:\Backups\CustomRPG",
+        SourcePath = string.Join(" | ", customPaths),
+        SavePaths = System.Text.Json.JsonSerializer.Serialize(customPaths),
+        FileCount = 10,
+        TotalSizeBytes = 2048,
+        BackupDate = DateTime.Now
+    };
+
+    var insertedId = await db.InsertBackupRecordAsync(recWithSavePaths);
+    var retrievedList = await db.GetBackupHistoryAsync();
+    var foundRec = retrievedList.FirstOrDefault(r => r.Id == insertedId);
+
+    if (foundRec == null) throw new Exception("Failed to retrieve inserted backup record with SavePaths");
+    if (foundRec.SavePathsList.Count != 2 || foundRec.SavePathsList[0] != @"C:\Games\RPG\Save1")
+        throw new Exception($"SavePathsList mismatch! Expected 2 paths, got {foundRec.SavePathsList.Count}");
+
+    Console.WriteLine($"  ✓ Inserted & retrieved record with SavePaths column: {foundRec.SavePaths}");
+    Console.WriteLine($"  ✓ SavePathsList parsed correctly: {foundRec.SavePathsList.Count} paths");
+
     Console.WriteLine("\n=================================================");
     Console.WriteLine("  ALL INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");

@@ -122,6 +122,36 @@ public class BackupRecord
             return new List<string> { SourcePath.Trim() };
         }
     }
+
+    public string SavePaths { get; set; } = string.Empty;
+
+    public List<string> SavePathsList
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(SavePaths))
+            {
+                try
+                {
+                    if (SavePaths.TrimStart().StartsWith("["))
+                    {
+                        var list = JsonSerializer.Deserialize<List<string>>(SavePaths);
+                        if (list != null && list.Count > 0) return list;
+                    }
+                }
+                catch { }
+
+                if (SavePaths.Contains('|'))
+                {
+                    return SavePaths.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+                }
+
+                return new List<string> { SavePaths.Trim() };
+            }
+
+            return SourcePathsList;
+        }
+    }
 }
 
 public class AppSettings
@@ -269,6 +299,9 @@ public class GameBackupSummary : INotifyPropertyChanged
     public string FormattedLatestSize => FormatBytes(LatestSizeBytes);
     public string FormattedTotalSize => FormatBytes(TotalSizeBytes);
     public string FormattedLatestDate => LatestBackupDate != DateTime.MinValue ? LatestBackupDate.ToString("dd/MM/yyyy HH:mm") : "-";
+
+    public string SavePaths => LatestRecord?.SavePaths ?? string.Empty;
+    public List<string> SavePathsList => LatestRecord?.SavePathsList ?? new List<string>();
 
     private static string FormatBytes(long bytes)
     {

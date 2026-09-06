@@ -208,6 +208,7 @@ public class BackupService
             GameName = gameInfo.GameName,
             BackupPath = finalBackupPath,
             SourcePath = sourcePathRecord,
+            SavePaths = JsonSerializer.Serialize(pathsToBackup),
             FileCount = totalCopiedFiles,
             TotalSizeBytes = totalCopiedBytes,
             BackupDate = DateTime.Now,

@@ -93,6 +93,7 @@ public class DatabaseService
                 GameName TEXT NOT NULL,
                 BackupPath TEXT NOT NULL,
                 SourcePath TEXT NOT NULL,
+                SavePaths TEXT,
                 FileCount INTEGER NOT NULL,
                 TotalSizeBytes INTEGER NOT NULL,
                 BackupDate TEXT NOT NULL,
@@ -107,6 +108,14 @@ public class DatabaseService
             );
         ";
         command.ExecuteNonQuery();
+
+        try
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = "ALTER TABLE backup_history ADD COLUMN SavePaths TEXT;";
+            alterCmd.ExecuteNonQuery();
+        }
+        catch { /* Column already exists */ }
     }
 
     public async Task<GameSaveInfo?> GetCachedGameAsync(string gameName)
@@ -187,7 +196,7 @@ public class DatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT Id, GameName, BackupPath, SourcePath, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note
+            SELECT Id, GameName, BackupPath, SourcePath, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, SavePaths
             FROM backup_history
             ORDER BY Id DESC;
         ";
@@ -206,7 +215,8 @@ public class DatabaseService
                 BackupDate = DateTime.TryParse(reader.GetString(6), out var dt) ? dt : DateTime.MinValue,
                 IsCompressed = reader.GetInt32(7) == 1,
                 Status = reader.GetString(8),
-                Note = reader.IsDBNull(9) ? null : reader.GetString(9)
+                Note = reader.IsDBNull(9) ? null : reader.GetString(9),
+                SavePaths = reader.FieldCount > 10 && !reader.IsDBNull(10) ? reader.GetString(10) : string.Empty
             });
         }
 
@@ -220,13 +230,14 @@ public class DatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            INSERT INTO backup_history (GameName, BackupPath, SourcePath, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note)
-            VALUES ($game, $backup, $source, $files, $size, $date, $comp, $status, $note);
+            INSERT INTO backup_history (GameName, BackupPath, SourcePath, SavePaths, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note)
+            VALUES ($game, $backup, $source, $save_paths, $files, $size, $date, $comp, $status, $note);
             SELECT last_insert_rowid();
         ";
         command.Parameters.AddWithValue("$game", record.GameName);
         command.Parameters.AddWithValue("$backup", record.BackupPath);
         command.Parameters.AddWithValue("$source", record.SourcePath);
+        command.Parameters.AddWithValue("$save_paths", (object?)record.SavePaths ?? DBNull.Value);
         command.Parameters.AddWithValue("$files", record.FileCount);
         command.Parameters.AddWithValue("$size", record.TotalSizeBytes);
         command.Parameters.AddWithValue("$date", record.BackupDate.ToString("o"));
