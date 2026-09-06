@@ -404,7 +404,18 @@
                                             <ItemsControl ItemsSource="{Binding DetectedPathItems}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Border Background="#131C2E" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,3">
+                                                        <Border BorderBrush="#1E293B" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,3" Cursor="Hand" MouseLeftButtonUp="DetectedPathItem_MouseLeftButtonUp">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="#131C2E"/>
+                                                                    <Style.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter Property="Background" Value="#1E293B"/>
+                                                                            <Setter Property="BorderBrush" Value="#38BDF8"/>
+                                                                        </Trigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
                                                             <Grid>
                                                                 <Grid.ColumnDefinitions>
                                                                     <ColumnDefinition Width="Auto"/>
@@ -415,6 +426,7 @@
                                                                 <!-- Selection Checkbox -->
                                                                 <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" 
                                                                           VerticalAlignment="Center" 
+                                                                          Cursor="Hand"
                                                                           Margin="0,0,12,0"/>
 
                                                                 <!-- Path Details -->

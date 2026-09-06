@@ -50,10 +50,15 @@ public class DatabaseService
         var current = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
         while (current != null)
         {
+            var isInsideBuildOutput = current.FullName.Contains(@"\bin\", StringComparison.OrdinalIgnoreCase) ||
+                                      current.FullName.EndsWith(@"\bin", StringComparison.OrdinalIgnoreCase) ||
+                                      current.FullName.Contains(@"\obj\", StringComparison.OrdinalIgnoreCase) ||
+                                      current.FullName.EndsWith(@"\obj", StringComparison.OrdinalIgnoreCase);
+
             if (current.GetFiles("*.slnx").Length > 0 ||
                 current.GetFiles("*.sln").Length > 0 ||
                 current.GetFiles("LaunchApp.bat").Length > 0 ||
-                current.GetFiles("*.exe").Length > 0 ||
+                (!isInsideBuildOutput && current.GetFiles("*.exe").Length > 0) ||
                 Directory.Exists(Path.Combine(current.FullName, ".git")))
             {
                 return current.FullName;

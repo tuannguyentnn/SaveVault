@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using SaveGameBackup.Core.Models;
 using SaveGameBackup.Core.Services;
@@ -67,12 +68,14 @@ public partial class RestoreDialog : Window
     private void SelectAllBtn_Click(object sender, RoutedEventArgs e)
     {
         foreach (var item in _items) item.IsSelected = true;
+        foreach (var row in _rows) row.RefreshSelection();
         UpdateSelectedCount();
     }
 
     private void DeselectAllBtn_Click(object sender, RoutedEventArgs e)
     {
         foreach (var item in _items) item.IsSelected = false;
+        foreach (var row in _rows) row.RefreshSelection();
         UpdateSelectedCount();
     }
 
@@ -146,6 +149,8 @@ public class RestoreItemRowControl : Border
     private readonly RestoreItemTarget _item;
     private TextBox _destPathBox = null!;
     private CheckBox _selectChk = null!;
+    private readonly SolidColorBrush _baseBg;
+    private readonly SolidColorBrush _hoverBg;
 
     public event EventHandler? SelectionChanged;
 
@@ -153,15 +158,52 @@ public class RestoreItemRowControl : Border
     {
         _item = item;
 
-        Background = new SolidColorBrush(index % 2 == 0
+        _baseBg = new SolidColorBrush(index % 2 == 0
             ? Color.FromRgb(0x0F, 0x17, 0x2A)
             : Color.FromRgb(0x13, 0x1C, 0x2E));
+        _hoverBg = new SolidColorBrush(Color.FromRgb(0x1E, 0x29, 0x3B));
+
+        Background = _baseBg;
         BorderBrush = new SolidColorBrush(Color.FromRgb(0x1E, 0x29, 0x3B));
         BorderThickness = new Thickness(0, 0, 0, 1);
         Padding = new Thickness(20, 12, 20, 12);
         CornerRadius = new CornerRadius(0);
+        Cursor = System.Windows.Input.Cursors.Hand;
+
+        MouseEnter += (_, _) => Background = _hoverBg;
+        MouseLeave += (_, _) => Background = _baseBg;
+        MouseLeftButtonUp += Row_MouseLeftButtonUp;
 
         BuildContent();
+
+        // Listen for item property changes to update checkbox
+        _item.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(RestoreItemTarget.IsSelected))
+            {
+                RefreshSelection();
+            }
+        };
+    }
+
+    private void Row_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject dep)
+        {
+            DependencyObject? current = dep;
+            while (current != null && current != this)
+            {
+                if (current is CheckBox || current is TextBox || current is Button)
+                {
+                    return; // Interactive child handles its own click
+                }
+                current = VisualTreeHelper.GetParent(current);
+            }
+        }
+
+        _item.IsSelected = !_item.IsSelected;
+        RefreshSelection();
+        SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private void BuildContent()
@@ -176,7 +218,8 @@ public class RestoreItemRowControl : Border
         {
             IsChecked = _item.IsSelected,
             VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 16, 0)
+            Margin = new Thickness(0, 0, 16, 0),
+            Cursor = System.Windows.Input.Cursors.Hand
         };
         _selectChk.Checked += (_, _) => { _item.IsSelected = true; SelectionChanged?.Invoke(this, EventArgs.Empty); };
         _selectChk.Unchecked += (_, _) => { _item.IsSelected = false; SelectionChanged?.Invoke(this, EventArgs.Empty); };
@@ -324,5 +367,13 @@ public class RestoreItemRowControl : Border
     public void RefreshDestPath()
     {
         _destPathBox.Text = _item.RestoreDestinationPath;
+    }
+
+    public void RefreshSelection()
+    {
+        if (_selectChk != null && _selectChk.IsChecked != _item.IsSelected)
+        {
+            _selectChk.IsChecked = _item.IsSelected;
+        }
     }
 }
