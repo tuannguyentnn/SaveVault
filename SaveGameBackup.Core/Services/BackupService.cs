@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json;
 using SaveGameBackup.Core.Models;
 
 namespace SaveGameBackup.Core.Services;
@@ -12,6 +13,7 @@ public class BackupProgress
 
 public class BackupService
 {
+    private const string ManifestFileName = "backup_manifest.json";
     private readonly DatabaseService _databaseService;
 
     public BackupService(DatabaseService databaseService)
@@ -27,15 +29,34 @@ public class BackupService
         return string.IsNullOrWhiteSpace(sanitized) ? "Game_Backup" : sanitized;
     }
 
-    public async Task<BackupRecord> BackupGameAsync(
+    public Task<BackupRecord> BackupGameAsync(
         GameSaveInfo gameInfo,
         AppSettings settings,
         IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        if (gameInfo.DetectedPathsOnDisk.Count == 0)
+        return BackupGameAsync(gameInfo, settings, null, progress, cancellationToken);
+    }
+
+    public async Task<BackupRecord> BackupGameAsync(
+        GameSaveInfo gameInfo,
+        AppSettings settings,
+        List<string>? selectedPaths,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var pathsToBackup = selectedPaths != null && selectedPaths.Count > 0
+            ? selectedPaths
+            : gameInfo.DetectedPathItems.Where(p => p.IsSelected).Select(p => p.Path).ToList();
+
+        if (pathsToBackup.Count == 0)
         {
-            throw new InvalidOperationException($"Không tìm thấy file save nào của game '{gameInfo.GameName}' trên máy tính!");
+            pathsToBackup = gameInfo.DetectedPathsOnDisk;
+        }
+
+        if (pathsToBackup.Count == 0)
+        {
+            throw new InvalidOperationException($"Vui lòng chọn ít nhất 1 thư mục save của game '{gameInfo.GameName}' để sao lưu!");
         }
 
         var sanitizedName = SanitizeFolderName(gameInfo.GameName);
@@ -66,23 +87,33 @@ public class BackupService
 
         int totalCopiedFiles = 0;
         long totalCopiedBytes = 0;
-        var primarySource = gameInfo.DetectedPathsOnDisk[0];
 
-        progress?.Report(new BackupProgress { Percent = 5, Message = "Chuẩn bị sao lưu các tệp..." });
-
-        for (int i = 0; i < gameInfo.DetectedPathsOnDisk.Count; i++)
+        var manifest = new BackupManifest
         {
-            var src = gameInfo.DetectedPathsOnDisk[i];
+            GameName = gameInfo.GameName,
+            BackupDate = DateTime.Now
+        };
+
+        progress?.Report(new BackupProgress { Percent = 5, Message = "Chuẩn bị sao lưu các vị trí đã chọn..." });
+
+        for (int i = 0; i < pathsToBackup.Count; i++)
+        {
+            var src = pathsToBackup[i];
+            int itemFiles = 0;
+            long itemBytes = 0;
+
+            string subFolder = pathsToBackup.Count > 1
+                ? $"{i + 1}_{SanitizeFolderName(Path.GetFileName(src.TrimEnd('\\', '/')))}"
+                : string.Empty;
+
+            var destSubDir = string.IsNullOrEmpty(subFolder)
+                ? targetFolder
+                : Path.Combine(targetFolder, subFolder);
+
+            Directory.CreateDirectory(destSubDir);
+
             if (Directory.Exists(src))
             {
-                var dirName = Path.GetFileName(src.TrimEnd('\\', '/'));
-                // If multiple detected sources, place in subfolders named after source dir
-                var destSubDir = gameInfo.DetectedPathsOnDisk.Count > 1 
-                    ? Path.Combine(targetFolder, dirName)
-                    : targetFolder;
-
-                Directory.CreateDirectory(destSubDir);
-
                 var allFiles = Directory.GetFiles(src, "*", SearchOption.AllDirectories);
                 for (int fIndex = 0; fIndex < allFiles.Length; fIndex++)
                 {
@@ -99,34 +130,50 @@ public class BackupService
                     var fInfo = new FileInfo(file);
                     totalCopiedFiles++;
                     totalCopiedBytes += fInfo.Length;
+                    itemFiles++;
+                    itemBytes += fInfo.Length;
 
-                    var pct = 5 + (int)((fIndex + 1.0) / allFiles.Length * 85);
+                    var pct = 5 + (int)((fIndex + 1.0) / allFiles.Length * (80.0 / pathsToBackup.Count) + (i * 80.0 / pathsToBackup.Count));
                     progress?.Report(new BackupProgress
                     {
-                        Percent = pct,
+                        Percent = Math.Min(pct, 90),
                         CurrentFile = relative,
-                        Message = $"Đang sao lưu: {Path.GetFileName(file)}"
+                        Message = $"Đang sao lưu: {Path.GetFileName(file)} ({i + 1}/{pathsToBackup.Count})"
                     });
                 }
             }
             else if (File.Exists(src))
             {
                 var fileName = Path.GetFileName(src);
-                var destFilePath = Path.Combine(targetFolder, fileName);
+                var destFilePath = Path.Combine(destSubDir, fileName);
                 File.Copy(src, destFilePath, true);
 
                 var fInfo = new FileInfo(src);
                 totalCopiedFiles++;
                 totalCopiedBytes += fInfo.Length;
+                itemFiles++;
+                itemBytes += fInfo.Length;
 
                 progress?.Report(new BackupProgress
                 {
-                    Percent = 90,
+                    Percent = 85,
                     CurrentFile = fileName,
                     Message = $"Đang sao lưu file: {fileName}"
                 });
             }
+
+            manifest.Items.Add(new BackupManifestItem
+            {
+                SubFolder = subFolder,
+                SourcePath = src,
+                FileCount = itemFiles,
+                TotalSizeBytes = itemBytes
+            });
         }
+
+        // Write manifest file
+        var manifestJson = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(Path.Combine(targetFolder, ManifestFileName), manifestJson);
 
         string finalBackupPath;
 
@@ -152,17 +199,21 @@ public class BackupService
             finalBackupPath = targetFolder;
         }
 
+        var sourcePathRecord = pathsToBackup.Count == 1
+            ? pathsToBackup[0]
+            : string.Join(" | ", pathsToBackup);
+
         var record = new BackupRecord
         {
             GameName = gameInfo.GameName,
             BackupPath = finalBackupPath,
-            SourcePath = primarySource,
+            SourcePath = sourcePathRecord,
             FileCount = totalCopiedFiles,
             TotalSizeBytes = totalCopiedBytes,
             BackupDate = DateTime.Now,
             IsCompressed = settings.AutoCompressZip,
             Status = "Thành công",
-            Note = $"Đã backup {totalCopiedFiles} file từ {gameInfo.DetectedPathsOnDisk.Count} vị trí lưu."
+            Note = $"Đã backup {totalCopiedFiles} file từ {pathsToBackup.Count} vị trí lưu."
         };
 
         var id = await _databaseService.InsertBackupRecordAsync(record);
@@ -187,7 +238,7 @@ public class BackupService
             try
             {
                 ZipFile.ExtractToDirectory(record.BackupPath, tempExtractDir);
-                await CopyAllFilesAsync(tempExtractDir, record.SourcePath, progress, cancellationToken);
+                await RestoreFromDirectoryAsync(tempExtractDir, record, progress, cancellationToken);
             }
             finally
             {
@@ -199,13 +250,69 @@ public class BackupService
             if (!Directory.Exists(record.BackupPath))
                 throw new DirectoryNotFoundException($"Không tìm thấy thư mục backup: {record.BackupPath}");
 
-            await CopyAllFilesAsync(record.BackupPath, record.SourcePath, progress, cancellationToken);
+            await RestoreFromDirectoryAsync(record.BackupPath, record, progress, cancellationToken);
         }
 
         progress?.Report(new BackupProgress { Percent = 100, Message = "Khôi phục thành công!" });
     }
 
-    private static async Task CopyAllFilesAsync(string sourceDir, string destinationDir, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
+    private static async Task RestoreFromDirectoryAsync(string backupDir, BackupRecord record, IProgress<BackupProgress>? progress, CancellationToken cancellationToken)
+    {
+        var manifestPath = Path.Combine(backupDir, ManifestFileName);
+        if (File.Exists(manifestPath))
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(manifestPath, cancellationToken);
+                var manifest = JsonSerializer.Deserialize<BackupManifest>(json);
+
+                if (manifest != null && manifest.Items.Count > 0)
+                {
+                    var recordPaths = record.SourcePathsList;
+                    for (int i = 0; i < manifest.Items.Count; i++)
+                    {
+                        var item = manifest.Items[i];
+                        var itemSourceDir = string.IsNullOrEmpty(item.SubFolder)
+                            ? backupDir
+                            : Path.Combine(backupDir, item.SubFolder);
+
+                        string destPath;
+                        if (manifest.Items.Count == 1 && !string.IsNullOrWhiteSpace(record.SourcePath))
+                        {
+                            destPath = record.SourcePath;
+                        }
+                        else if (recordPaths.Count > i && !string.IsNullOrWhiteSpace(recordPaths[i]))
+                        {
+                            destPath = recordPaths[i];
+                        }
+                        else
+                        {
+                            destPath = item.SourcePath;
+                        }
+
+                        if (Directory.Exists(itemSourceDir))
+                        {
+                            await CopyAllFilesAsync(itemSourceDir, destPath, progress, cancellationToken, skipManifest: string.IsNullOrEmpty(item.SubFolder));
+                        }
+                    }
+                    return;
+                }
+            }
+            catch
+            {
+                // Fallback to record.SourcePath if manifest parsing fails
+            }
+        }
+
+        // Legacy fallback without manifest
+        var paths = record.SourcePathsList;
+        if (paths.Count > 0)
+        {
+            await CopyAllFilesAsync(backupDir, paths[0], progress, cancellationToken, skipManifest: true);
+        }
+    }
+
+    private static async Task CopyAllFilesAsync(string sourceDir, string destinationDir, IProgress<BackupProgress>? progress, CancellationToken cancellationToken, bool skipManifest = false)
     {
         Directory.CreateDirectory(destinationDir);
         var files = Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories);
@@ -214,6 +321,12 @@ public class BackupService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var file = files[i];
+
+            if (skipManifest && Path.GetFileName(file).Equals(ManifestFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             var relative = Path.GetRelativePath(sourceDir, file);
             var destPath = Path.Combine(destinationDir, relative);
 
@@ -222,7 +335,7 @@ public class BackupService
 
             File.Copy(file, destPath, true);
 
-            var pct = (int)((i + 1.0) / files.Length * 90);
+            var pct = (int)((i + 1.0) / files.Length * 95);
             progress?.Report(new BackupProgress
             {
                 Percent = pct,

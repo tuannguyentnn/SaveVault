@@ -104,10 +104,11 @@ public class GameSearchCoordinator
         gameInfo.ResolvedPaths = resolved.ToList();
 
         // Step 5: Check which ones actually exist on disk right now
-        var (existing, size, files) = _pathResolver.InspectExistingData(gameInfo.ResolvedPaths);
-        gameInfo.DetectedPathsOnDisk = existing;
-        gameInfo.TotalSizeBytes = size;
-        gameInfo.FileCount = files;
+        var detectedItems = _pathResolver.InspectDetectedPathItems(gameInfo.ResolvedPaths);
+        gameInfo.DetectedPathItems = detectedItems;
+        gameInfo.DetectedPathsOnDisk = detectedItems.Select(i => i.Path).ToList();
+        gameInfo.TotalSizeBytes = detectedItems.Sum(i => i.TotalSizeBytes);
+        gameInfo.FileCount = detectedItems.Sum(i => i.FileCount);
         gameInfo.LastScanned = DateTime.Now;
 
         // Step 6: Cache into SQLite

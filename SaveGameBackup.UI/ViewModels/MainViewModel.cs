@@ -30,6 +30,12 @@ public class MainViewModel : INotifyPropertyChanged
     private int _detectedFileCount;
     private bool _isGameFoundOnDisk;
 
+    // Selected Paths Stats
+    private int _selectedPathCount;
+    private int _selectedFileCount;
+    private string _selectedSizeFormatted = "0 B";
+    private bool _hasSelectedPaths;
+
     // Backup Options & Progress
     private string _backupDestinationRoot = string.Empty;
     private bool _createTimestampSubfolder = true;
@@ -39,10 +45,11 @@ public class MainViewModel : INotifyPropertyChanged
     private string _backupProgressText = string.Empty;
     private string? _lastBackupPath;
 
-    // History
+    // Collections
     public ObservableCollection<BackupRecord> BackupHistory { get; } = new();
     public ObservableCollection<string> PopularGameSuggestions { get; } = new();
     public ObservableCollection<string> DetectedPathsList { get; } = new();
+    public ObservableCollection<DetectedPathItem> DetectedPathItems { get; } = new();
     public ObservableCollection<string> OnlinePatternsList { get; } = new();
 
     private BackupRecord? _selectedHistoryRecord;
@@ -68,15 +75,17 @@ public class MainViewModel : INotifyPropertyChanged
 
         // Initialize Commands
         SearchCommand = new RelayCommand(async _ => await ExecuteSearchAsync(), _ => !IsSearching && !IsBackingUp && !string.IsNullOrWhiteSpace(SearchQuery));
-        BackupCommand = new RelayCommand(async _ => await ExecuteBackupAsync(), _ => !IsBackingUp && HasGame && IsGameFoundOnDisk);
+        BackupCommand = new RelayCommand(async _ => await ExecuteBackupAsync(), _ => !IsBackingUp && HasGame && HasSelectedPaths);
         OpenBackupFolderCommand = new RelayCommand(_ => ExecuteOpenBackupFolder(), _ => !string.IsNullOrEmpty(LastBackupPath));
-        OpenSourceFolderCommand = new RelayCommand(_ => ExecuteOpenSourceFolder(), _ => HasGame && DetectedPathsList.Count > 0);
+        OpenSourceFolderCommand = new RelayCommand(_ => ExecuteOpenSourceFolder(), _ => HasGame && DetectedPathItems.Count > 0);
         RestoreRecordCommand = new RelayCommand(async param => await ExecuteRestoreAsync(param as BackupRecord), _ => !IsBackingUp);
         DeleteRecordCommand = new RelayCommand(async param => await ExecuteDeleteRecordAsync(param as BackupRecord));
         OpenRecordFolderCommand = new RelayCommand(param => ExecuteOpenRecordFolder(param as BackupRecord));
         SaveSettingsCommand = new RelayCommand(async _ => await ExecuteSaveSettingsAsync());
         BrowseBackupDirectoryCommand = new RelayCommand(_ => ExecuteBrowseBackupDirectory());
         AddCustomPathCommand = new RelayCommand(_ => ExecuteAddCustomPath());
+        SelectAllPathsCommand = new RelayCommand(_ => ExecuteSelectAllPaths(), _ => DetectedPathItems.Count > 0);
+        DeselectAllPathsCommand = new RelayCommand(_ => ExecuteDeselectAllPaths(), _ => DetectedPathItems.Count > 0);
 
         // Load initial data
         _ = LoadInitialDataAsync();
@@ -140,15 +149,25 @@ public class MainViewModel : INotifyPropertyChanged
                 OnlinePatternsList.Add(p);
             }
 
-            DetectedPathsList.Clear();
-            foreach (var p in result.DetectedPathsOnDisk)
+            foreach (var item in DetectedPathItems)
             {
-                DetectedPathsList.Add(p);
+                item.PropertyChanged -= OnDetectedItemPropertyChanged;
             }
+            DetectedPathItems.Clear();
+            DetectedPathsList.Clear();
+
+            foreach (var item in result.DetectedPathItems)
+            {
+                item.PropertyChanged += OnDetectedItemPropertyChanged;
+                DetectedPathItems.Add(item);
+                DetectedPathsList.Add(item.Path);
+            }
+
+            UpdateSelectedStats();
 
             if (result.IsFoundOnDisk)
             {
-                StatusMessage = $"✓ Đã tìm thấy {result.FileCount} file ({DetectedSizeFormatted}) tại {result.DetectedPathsOnDisk.Count} vị trí!";
+                StatusMessage = $"✓ Đã tìm thấy {result.FileCount} file ({DetectedSizeFormatted}) tại {result.DetectedPathItems.Count} vị trí!";
             }
             else
             {
@@ -169,6 +188,13 @@ public class MainViewModel : INotifyPropertyChanged
     {
         if (CurrentGame == null || !IsGameFoundOnDisk) return;
 
+        var selectedPaths = DetectedPathItems.Where(p => p.IsSelected).Select(p => p.Path).ToList();
+        if (selectedPaths.Count == 0)
+        {
+            MessageBox.Show("Vui lòng tick chọn ít nhất 1 thư mục save để sao lưu!", "Chưa chọn thư mục", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         IsBackingUp = true;
         BackupProgressPercent = 0;
         BackupProgressText = "Bắt đầu sao lưu...";
@@ -188,13 +214,13 @@ public class MainViewModel : INotifyPropertyChanged
                 BackupProgressText = p.Message;
             });
 
-            var record = await _backupService.BackupGameAsync(CurrentGame, settings, progress);
+            var record = await _backupService.BackupGameAsync(CurrentGame, settings, selectedPaths, progress);
             LastBackupPath = record.BackupPath;
 
-            StatusMessage = $"✓ Sao lưu thành công {record.FileCount} file ({record.FormattedSize}) vào: {record.BackupPath}";
+            StatusMessage = $"✓ Sao lưu thành công {record.FileCount} file ({record.FormattedSize}) từ {selectedPaths.Count} vị trí vào: {record.BackupPath}";
             await RefreshHistoryAsync();
 
-            MessageBox.Show($"Sao lưu game '{CurrentGame.GameName}' thành công!\n\nVị trí sao lưu: {record.BackupPath}\nDung lượng: {record.FormattedSize}",
+            MessageBox.Show($"Sao lưu game '{CurrentGame.GameName}' thành công!\n\nSố vị trí đã lưu: {selectedPaths.Count}\nVị trí sao lưu: {record.BackupPath}\nDung lượng: {record.FormattedSize}",
                 "Sao lưu hoàn tất", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
@@ -224,16 +250,19 @@ public class MainViewModel : INotifyPropertyChanged
 
     public void ExecuteOpenSourceFolder()
     {
-        if (DetectedPathsList.Count > 0)
+        var target = DetectedPathItems.FirstOrDefault(p => p.IsSelected)?.Path 
+            ?? (DetectedPathItems.Count > 0 ? DetectedPathItems[0].Path : null)
+            ?? (DetectedPathsList.Count > 0 ? DetectedPathsList[0] : null);
+
+        if (!string.IsNullOrEmpty(target))
         {
-            var path = DetectedPathsList[0];
-            if (Directory.Exists(path))
+            if (Directory.Exists(target))
             {
-                Process.Start("explorer.exe", $"\"{path}\"");
+                Process.Start("explorer.exe", $"\"{target}\"");
             }
-            else if (File.Exists(path))
+            else if (File.Exists(target))
             {
-                Process.Start("explorer.exe", $"/select,\"{path}\"");
+                Process.Start("explorer.exe", $"/select,\"{target}\"");
             }
         }
     }
@@ -243,7 +272,16 @@ public class MainViewModel : INotifyPropertyChanged
         record ??= SelectedHistoryRecord;
         if (record == null) return;
 
-        var msg = $"Bạn có chắc chắn muốn khôi phục bản sao lưu của '{record.GameName}'?\n\nNguồn sao lưu: {record.BackupPath}\nVị trí khôi phục: {record.SourcePath}\n\nLưu ý: Các file hiện tại trong thư mục game có thể bị ghi đè.";
+        var targetPaths = record.SourcePathsList;
+        var targetPathsFormatted = targetPaths.Count > 0
+            ? string.Join("\n", targetPaths.Select(p => $"  • {p}"))
+            : $"  • {record.SourcePath}";
+
+        var msg = $"Bạn có chắc chắn muốn khôi phục bản sao lưu của '{record.GameName}'?\n\n" +
+                  $"Nguồn sao lưu: {record.BackupPath}\n\n" +
+                  $"Vị trí khôi phục ({targetPaths.Count} thư mục):\n{targetPathsFormatted}\n\n" +
+                  $"Lưu ý: Các file hiện tại trong thư mục save trên máy sẽ được khôi phục nguyên trạng theo vị trí ban đầu.";
+
         var confirm = MessageBox.Show(msg, "Xác nhận khôi phục", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (confirm != MessageBoxResult.Yes) return;
 
@@ -258,7 +296,7 @@ public class MainViewModel : INotifyPropertyChanged
 
             await _backupService.RestoreAsync(record, progress);
             StatusMessage = $"✓ Đã khôi phục thành công save game cho '{record.GameName}'!";
-            MessageBox.Show($"Khôi phục save game '{record.GameName}' thành công!", "Khôi phục thành tất", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"Khôi phục save game '{record.GameName}' thành công về các vị trí gốc!", "Khôi phục thành tất", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
@@ -329,28 +367,92 @@ public class MainViewModel : INotifyPropertyChanged
 
         if (dialog.ShowDialog() == true && !string.IsNullOrEmpty(dialog.FolderName))
         {
-            if (!DetectedPathsList.Contains(dialog.FolderName))
+            var folder = dialog.FolderName.Trim();
+            var existing = DetectedPathItems.FirstOrDefault(p => p.Path.Equals(folder, StringComparison.OrdinalIgnoreCase));
+            if (existing == null)
             {
-                DetectedPathsList.Add(dialog.FolderName);
+                int fileCount = 0;
+                long totalBytes = 0;
+                if (Directory.Exists(folder))
+                {
+                    try
+                    {
+                        var files = Directory.GetFiles(folder, "*", SearchOption.AllDirectories);
+                        fileCount = files.Length;
+                        totalBytes = files.Sum(f => new FileInfo(f).Length);
+                    }
+                    catch { }
+                }
+
+                var newItem = new DetectedPathItem
+                {
+                    Path = folder,
+                    FileCount = fileCount,
+                    TotalSizeBytes = totalBytes,
+                    IsSelected = true
+                };
+                newItem.PropertyChanged += OnDetectedItemPropertyChanged;
+                DetectedPathItems.Add(newItem);
+                if (!DetectedPathsList.Contains(folder))
+                {
+                    DetectedPathsList.Add(folder);
+                }
+            }
+            else
+            {
+                existing.IsSelected = true;
             }
 
             if (CurrentGame != null)
             {
-                if (!CurrentGame.DetectedPathsOnDisk.Contains(dialog.FolderName))
+                if (!CurrentGame.DetectedPathsOnDisk.Contains(folder, StringComparer.OrdinalIgnoreCase))
                 {
-                    CurrentGame.DetectedPathsOnDisk.Add(dialog.FolderName);
+                    CurrentGame.DetectedPathsOnDisk.Add(folder);
                 }
-
-                var files = Directory.GetFiles(dialog.FolderName, "*", SearchOption.AllDirectories);
-                CurrentGame.FileCount += files.Length;
-                CurrentGame.TotalSizeBytes += files.Sum(f => new FileInfo(f).Length);
-
-                DetectedFileCount = CurrentGame.FileCount;
-                DetectedSizeFormatted = FormatBytes(CurrentGame.TotalSizeBytes);
-                IsGameFoundOnDisk = true;
-                HasGame = true;
             }
+
+            IsGameFoundOnDisk = true;
+            HasGame = true;
+            UpdateSelectedStats();
         }
+    }
+
+    public void ExecuteSelectAllPaths()
+    {
+        foreach (var item in DetectedPathItems)
+        {
+            item.IsSelected = true;
+        }
+        UpdateSelectedStats();
+    }
+
+    public void ExecuteDeselectAllPaths()
+    {
+        foreach (var item in DetectedPathItems)
+        {
+            item.IsSelected = false;
+        }
+        UpdateSelectedStats();
+    }
+
+    private void OnDetectedItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(DetectedPathItem.IsSelected))
+        {
+            UpdateSelectedStats();
+        }
+    }
+
+    private void UpdateSelectedStats()
+    {
+        var selected = DetectedPathItems.Where(p => p.IsSelected).ToList();
+        SelectedPathCount = selected.Count;
+        SelectedFileCount = selected.Sum(p => p.FileCount);
+        SelectedSizeFormatted = FormatBytes(selected.Sum(p => p.TotalSizeBytes));
+        HasSelectedPaths = selected.Count > 0;
+        OnPropertyChanged(nameof(HasDetectedPaths));
+        OnPropertyChanged(nameof(HasNoDetectedPaths));
+        CommandManager.InvalidateRequerySuggested();
     }
 
     public async Task ExecuteSaveSettingsAsync()
@@ -487,6 +589,33 @@ public class MainViewModel : INotifyPropertyChanged
 
     public string DatabaseLocation => _databaseService.DbPath;
 
+    public int SelectedPathCount
+    {
+        get => _selectedPathCount;
+        set => SetField(ref _selectedPathCount, value);
+    }
+
+    public int SelectedFileCount
+    {
+        get => _selectedFileCount;
+        set => SetField(ref _selectedFileCount, value);
+    }
+
+    public string SelectedSizeFormatted
+    {
+        get => _selectedSizeFormatted;
+        set => SetField(ref _selectedSizeFormatted, value);
+    }
+
+    public bool HasSelectedPaths
+    {
+        get => _hasSelectedPaths;
+        set => SetField(ref _hasSelectedPaths, value);
+    }
+
+    public bool HasDetectedPaths => DetectedPathItems.Count > 0;
+    public bool HasNoDetectedPaths => DetectedPathItems.Count == 0;
+
     // Commands
     public ICommand SearchCommand { get; }
     public ICommand BackupCommand { get; }
@@ -498,6 +627,8 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand SaveSettingsCommand { get; }
     public ICommand BrowseBackupDirectoryCommand { get; }
     public ICommand AddCustomPathCommand { get; }
+    public ICommand SelectAllPathsCommand { get; }
+    public ICommand DeselectAllPathsCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

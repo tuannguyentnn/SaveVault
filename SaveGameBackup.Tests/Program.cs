@@ -149,6 +149,48 @@ try
         throw new Exception("Restored slot1.sav not found!");
     Console.WriteLine("  ✓ Restore succeeded!");
 
+    // Test Multi-Path Backup & Multi-Path Restore
+    Console.WriteLine("\n[6] Testing Multi-Path Backup & Multi-Path Restore");
+    var multiSource1 = Path.Combine(tempTestDir, "MultiGame_SaveDir1");
+    var multiSource2 = Path.Combine(tempTestDir, "MultiGame_SaveDir2");
+    Directory.CreateDirectory(multiSource1);
+    Directory.CreateDirectory(multiSource2);
+    File.WriteAllText(Path.Combine(multiSource1, "save1.bin"), "Multi Save Data 1");
+    File.WriteAllText(Path.Combine(multiSource2, "config.ini"), "Resolution=1920x1080");
+
+    var multiGameInfo = new GameSaveInfo
+    {
+        GameName = "Multi Path RPG",
+        DetectedPathsOnDisk = new List<string> { multiSource1, multiSource2 }
+    };
+
+    var multiBackupSettings = new AppSettings
+    {
+        BackupRootDirectory = Path.Combine(tempTestDir, "MultiBackups"),
+        AutoCompressZip = false,
+        CreateTimestampSubfolder = true
+    };
+
+    var multiBackupRecord = await backupService.BackupGameAsync(multiGameInfo, multiBackupSettings, new List<string> { multiSource1, multiSource2 });
+    Console.WriteLine($"  ✓ Multi-path backup created at: {multiBackupRecord.BackupPath}");
+    Console.WriteLine($"    Source paths recorded: {multiBackupRecord.SourcePath}");
+
+    if (!multiBackupRecord.SourcePath.Contains(multiSource1) || !multiBackupRecord.SourcePath.Contains(multiSource2))
+        throw new Exception("Multi-path backup record does not record both paths!");
+
+    // Delete original files to test restore
+    File.Delete(Path.Combine(multiSource1, "save1.bin"));
+    File.Delete(Path.Combine(multiSource2, "config.ini"));
+
+    await backupService.RestoreAsync(multiBackupRecord);
+
+    if (!File.Exists(Path.Combine(multiSource1, "save1.bin")))
+        throw new Exception("Multi-path restore failed for source 1!");
+    if (!File.Exists(Path.Combine(multiSource2, "config.ini")))
+        throw new Exception("Multi-path restore failed for source 2!");
+
+    Console.WriteLine("  ✓ Multi-path restore restored files to their exact respective original paths!");
+
     Console.WriteLine("\n=================================================");
     Console.WriteLine("  ALL INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");

@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
+using SaveGameBackup.Core.Models;
 
 namespace SaveGameBackup.Core.Services;
 
@@ -209,46 +210,76 @@ public class PathResolverService
         }
     }
 
-    public (List<string> ExistingPaths, long TotalSizeBytes, int FileCount) InspectExistingData(IEnumerable<string> candidatePaths)
+    public List<DetectedPathItem> InspectDetectedPathItems(IEnumerable<string> candidatePaths)
     {
-        var existing = new List<string>();
-        long totalBytes = 0;
-        int fileCount = 0;
+        var items = new List<DetectedPathItem>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var p in candidatePaths)
         {
             if (string.IsNullOrWhiteSpace(p)) continue;
+            var normalized = p.Trim().TrimEnd('\\', '/');
+            if (seen.Contains(normalized)) continue;
 
             if (Directory.Exists(p))
             {
-                existing.Add(p);
+                seen.Add(normalized);
+                int fileCount = 0;
+                long totalBytes = 0;
                 try
                 {
                     var dirInfo = new DirectoryInfo(p);
                     var files = dirInfo.GetFiles("*", SearchOption.AllDirectories);
-                    fileCount += files.Length;
-                    totalBytes += files.Sum(f => f.Length);
+                    fileCount = files.Length;
+                    totalBytes = files.Sum(f => f.Length);
                 }
                 catch
                 {
                     // Permission or read error
                 }
+
+                items.Add(new DetectedPathItem
+                {
+                    Path = p,
+                    FileCount = fileCount,
+                    TotalSizeBytes = totalBytes,
+                    IsSelected = true
+                });
             }
             else if (File.Exists(p))
             {
-                existing.Add(p);
+                seen.Add(normalized);
+                int fileCount = 1;
+                long totalBytes = 0;
                 try
                 {
                     var fileInfo = new FileInfo(p);
-                    fileCount++;
-                    totalBytes += fileInfo.Length;
+                    totalBytes = fileInfo.Length;
                 }
                 catch
                 {
                     // Ignore
                 }
+
+                items.Add(new DetectedPathItem
+                {
+                    Path = p,
+                    FileCount = fileCount,
+                    TotalSizeBytes = totalBytes,
+                    IsSelected = true
+                });
             }
         }
+
+        return items;
+    }
+
+    public (List<string> ExistingPaths, long TotalSizeBytes, int FileCount) InspectExistingData(IEnumerable<string> candidatePaths)
+    {
+        var items = InspectDetectedPathItems(candidatePaths);
+        var existing = items.Select(i => i.Path).ToList();
+        var totalBytes = items.Sum(i => i.TotalSizeBytes);
+        var fileCount = items.Sum(i => i.FileCount);
 
         return (existing, totalBytes, fileCount);
     }
