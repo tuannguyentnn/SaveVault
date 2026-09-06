@@ -1,0 +1,166 @@
+using SaveGameBackup.Core.Models;
+using SaveGameBackup.Core.Services;
+
+Console.WriteLine("=================================================");
+Console.WriteLine("  GAME SAVE BACKUP TOOL - INTEGRATION TESTS");
+Console.WriteLine("=================================================");
+
+var tempTestDir = Path.Combine(Path.GetTempPath(), "SaveGameBackup_Test_" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(tempTestDir);
+
+try
+{
+    var testDbPath = Path.Combine(tempTestDir, "test_save_backup.db");
+    Console.WriteLine($"[1] Testing SQLite Database at: {testDbPath}");
+    var db = new DatabaseService(testDbPath);
+
+    // Test caching
+    var testGame = new GameSaveInfo
+    {
+        GameName = "Test Adventure",
+        NormalizedName = DatabaseService.NormalizeGameName("Test Adventure"),
+        RawPatterns = new List<string> { @"%LOCALAPPDATA%\TestAdventure\Saves" },
+        Source = "Test"
+    };
+
+    await db.SaveGameCacheAsync(testGame);
+    var cached = await db.GetCachedGameAsync("test adventure");
+    if (cached == null || cached.RawPatterns.Count != 1)
+        throw new Exception("SQLite cache save/retrieve failed!");
+    Console.WriteLine("  ✓ SQLite Game Cache OK!");
+
+    // Test Backup History in SQLite
+    var testRecord = new BackupRecord
+    {
+        GameName = "Test Adventure",
+        BackupPath = Path.Combine(tempTestDir, "Backups", "Test Adventure"),
+        SourcePath = Path.Combine(tempTestDir, "SourceSave"),
+        FileCount = 3,
+        TotalSizeBytes = 1024 * 50,
+        BackupDate = DateTime.Now,
+        IsCompressed = false,
+        Status = "Success"
+    };
+    var recordId = await db.InsertBackupRecordAsync(testRecord);
+    var history = await db.GetBackupHistoryAsync();
+    if (history.Count == 0 || history[0].Id != recordId)
+        throw new Exception("SQLite Backup History insertion failed!");
+    Console.WriteLine($"  ✓ SQLite Backup History OK! (Inserted ID: {recordId})");
+
+    // Test 2: Ludusavi Catalog
+    Console.WriteLine("\n[2] Testing Ludusavi Built-in Catalog");
+    var catalog = new LudusaviDatabaseService();
+    var elden = catalog.FindMatchingGame("Elden Ring");
+    if (elden == null || elden.RawPatterns.Count == 0)
+        throw new Exception("Elden Ring not found in catalog!");
+    Console.WriteLine($"  ✓ Elden Ring found: {elden.RawPatterns[0]} (Steam AppID: {elden.SteamAppId})");
+
+    var wukong = catalog.FindMatchingGame("Black Myth Wukong");
+    if (wukong == null || wukong.RawPatterns.Count == 0)
+        throw new Exception("Black Myth: Wukong not found in catalog!");
+    Console.WriteLine($"  ✓ Black Myth: Wukong found: {wukong.RawPatterns[0]}");
+
+    // Test 3: PCGamingWiki Online Search
+    Console.WriteLine("\n[3] Testing PCGamingWiki Online API");
+    var wiki = new PCGamingWikiService();
+    var onlineResult = await wiki.SearchAndFetchSaveInfoAsync("Hades");
+    if (onlineResult != null)
+    {
+        Console.WriteLine($"  ✓ Online search Hades: {onlineResult.GameName}, Patterns found: {onlineResult.RawPatterns.Count}");
+        foreach (var p in onlineResult.RawPatterns)
+        {
+            Console.WriteLine($"    - {p}");
+        }
+    }
+    else
+    {
+        Console.WriteLine("  ⚠ Online Hades lookup returned null (network might be restricted or slow), skipping.");
+    }
+
+    // Test 4: Path Resolver
+    Console.WriteLine("\n[4] Testing Path Resolver");
+    var resolver = new PathResolverService();
+    var steamPath = resolver.GetSteamPath();
+    Console.WriteLine($"  ✓ Detected Steam Path: {steamPath}");
+
+    var resolvedPaths = resolver.ResolveRawPattern(@"{{p|appdata}}\MyTestGame\save.dat");
+    if (resolvedPaths.Count == 0 || !resolvedPaths[0].Contains(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)))
+        throw new Exception("Pattern resolution for appdata failed!");
+    Console.WriteLine($"  ✓ Resolved AppData: {resolvedPaths[0]}");
+
+    // Test 5: End-to-End Backup & Restore simulation
+    Console.WriteLine("\n[5] Testing End-to-End Backup & Restore");
+    var mockSourceDir = Path.Combine(tempTestDir, "MockSourceSave", "SavedGames");
+    Directory.CreateDirectory(mockSourceDir);
+    File.WriteAllText(Path.Combine(mockSourceDir, "slot1.sav"), "SAVEGAME_HEADER_DATA_SLOT_1");
+    File.WriteAllText(Path.Combine(mockSourceDir, "slot2.sav"), "SAVEGAME_HEADER_DATA_SLOT_2");
+    var subDir = Path.Combine(mockSourceDir, "Profiles");
+    Directory.CreateDirectory(subDir);
+    File.WriteAllText(Path.Combine(subDir, "settings.cfg"), "GRAPHICS_LEVEL=HIGH");
+
+    var mockGameInfo = new GameSaveInfo
+    {
+        GameName = "Awesome RPG Game",
+        DetectedPathsOnDisk = new List<string> { mockSourceDir },
+        TotalSizeBytes = 100,
+        FileCount = 3
+    };
+
+    var backupDestRoot = Path.Combine(tempTestDir, "ActualBackups");
+    var appSettings = new AppSettings
+    {
+        BackupRootDirectory = backupDestRoot,
+        CreateTimestampSubfolder = false,
+        AutoCompressZip = false
+    };
+
+    var backupService = new BackupService(db);
+    var progress = new Progress<BackupProgress>(p =>
+    {
+        Console.WriteLine($"    [{p.Percent}%] {p.Message}");
+    });
+
+    Console.WriteLine("  Starting folder backup...");
+    var backupResult = await backupService.BackupGameAsync(mockGameInfo, appSettings, progress);
+    Console.WriteLine($"  ✓ Backup completed to: {backupResult.BackupPath}");
+    Console.WriteLine($"    Files copied: {backupResult.FileCount}, Total size: {backupResult.FormattedSize}");
+
+    if (!Directory.Exists(backupResult.BackupPath))
+        throw new Exception("Target backup folder does not exist!");
+    if (!File.Exists(Path.Combine(backupResult.BackupPath, "slot1.sav")))
+        throw new Exception("slot1.sav was not copied to backup folder!");
+    if (!File.Exists(Path.Combine(backupResult.BackupPath, "Profiles", "settings.cfg")))
+        throw new Exception("Profiles/settings.cfg was not copied recursively!");
+
+    // Test ZIP compression backup
+    Console.WriteLine("\n  Testing Zip archive backup...");
+    appSettings.AutoCompressZip = true;
+    var zipResult = await backupService.BackupGameAsync(mockGameInfo, appSettings, progress);
+    Console.WriteLine($"  ✓ Zip Backup completed: {zipResult.BackupPath}");
+    if (!File.Exists(zipResult.BackupPath))
+        throw new Exception("Backup zip file does not exist!");
+
+    // Test Restore
+    Console.WriteLine("\n  Testing Restore from Zip...");
+    var restoreTargetDir = Path.Combine(tempTestDir, "RestoredSave");
+    zipResult.SourcePath = restoreTargetDir;
+    await backupService.RestoreAsync(zipResult, progress);
+    if (!File.Exists(Path.Combine(restoreTargetDir, "slot1.sav")))
+        throw new Exception("Restored slot1.sav not found!");
+    Console.WriteLine("  ✓ Restore succeeded!");
+
+    Console.WriteLine("\n=================================================");
+    Console.WriteLine("  ALL INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("=================================================");
+}
+finally
+{
+    try
+    {
+        Directory.Delete(tempTestDir, true);
+    }
+    catch
+    {
+        // Cleanup best effort
+    }
+}
