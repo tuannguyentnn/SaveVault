@@ -47,18 +47,30 @@ try
         throw new Exception("SQLite Backup History insertion failed!");
     Console.WriteLine($"  ✓ SQLite Backup History OK! (Inserted ID: {recordId})");
 
-    // Test 2: Ludusavi Catalog
-    Console.WriteLine("\n[2] Testing Ludusavi Built-in Catalog");
-    var catalog = new LudusaviDatabaseService();
-    var elden = catalog.FindMatchingGame("Elden Ring");
-    if (elden == null || elden.RawPatterns.Count == 0)
-        throw new Exception("Elden Ring not found in catalog!");
-    Console.WriteLine($"  ✓ Elden Ring found: {elden.RawPatterns[0]} (Steam AppID: {elden.SteamAppId})");
+    // Test 2: AppConfigService (In-Memory RAM Cache & app_config.json)
+    Console.WriteLine("\n[2] Testing AppConfigService (In-Memory RAM Cache & app_config.json)");
+    var sampleConfig = new AppConfigFile
+    {
+        DatabasePath = Path.Combine(tempTestDir, "test_app_config.db"),
+        BackupRootDirectory = Path.Combine(tempTestDir, "MyCustomBackups"),
+        CreateTimestampSubfolder = true,
+        AutoCompressZip = true
+    };
+    AppConfigService.SaveConfig(sampleConfig);
 
-    var wukong = catalog.FindMatchingGame("Black Myth Wukong");
-    if (wukong == null || wukong.RawPatterns.Count == 0)
-        throw new Exception("Black Myth: Wukong not found in catalog!");
-    Console.WriteLine($"  ✓ Black Myth: Wukong found: {wukong.RawPatterns[0]}");
+    var memCached = AppConfigService.GetConfig();
+    if (memCached.DatabasePath != sampleConfig.DatabasePath ||
+        memCached.BackupRootDirectory != sampleConfig.BackupRootDirectory ||
+        memCached.AutoCompressZip != true)
+    {
+        throw new Exception("AppConfig RAM Cache does not match saved config!");
+    }
+    Console.WriteLine($"  ✓ AppConfig RAM cache verified OK: BackupRoot={memCached.BackupRootDirectory}, AutoZip={memCached.AutoCompressZip}");
+
+    // Test Search Coordinator: Cache-then-PCGamingWiki logic
+    var searchCoordinator = new GameSearchCoordinator(db);
+    var searchResult = await searchCoordinator.SearchAndDetectGameAsync("Test Adventure");
+    Console.WriteLine($"  ✓ GameSearchCoordinator successfully retrieved: {searchResult.GameName} (Source: {searchResult.Source})");
 
     // Test 3: PCGamingWiki Online Search
     Console.WriteLine("\n[3] Testing PCGamingWiki Online API");

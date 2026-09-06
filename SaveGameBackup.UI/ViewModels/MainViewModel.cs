@@ -15,7 +15,14 @@ public class MainViewModel : INotifyPropertyChanged
     private DatabaseService _databaseService;
     private GameSearchCoordinator _searchCoordinator;
     private BackupService _backupService;
-    private readonly LudusaviDatabaseService _ludusaviService;
+
+    private static readonly string[] DefaultPopularGames = new[]
+    {
+        "Elden Ring", "Cyberpunk 2077", "Black Myth: Wukong", "Baldur's Gate 3",
+        "The Witcher 3", "Hades", "Dark Souls III", "Sekiro: Shadows Die Twice",
+        "God of War", "Palworld", "Monster Hunter: World", "Grand Theft Auto V",
+        "Red Dead Redemption 2", "Hogwarts Legacy", "Fallout 4"
+    };
 
     // Database path property
     private string _databaseLocation = string.Empty;
@@ -23,7 +30,6 @@ public class MainViewModel : INotifyPropertyChanged
     // Search properties
     private string _searchQuery = string.Empty;
     private bool _isSearching;
-    private bool _forceOnlineSearch;
     private string _statusMessage = "Sẵn sàng. Hãy nhập tên game để tìm kiếm vị trí save game.";
     private int _selectedTabIndex;
 
@@ -43,7 +49,7 @@ public class MainViewModel : INotifyPropertyChanged
     // Backup Options & Progress
     private string _backupDestinationRoot = string.Empty;
     private bool _createTimestampSubfolder = true;
-    private bool _autoCompressZip = false;
+    private bool _autoCompressZip;
     private bool _isBackingUp;
     private int _backupProgressPercent;
     private string _backupProgressText = string.Empty;
@@ -78,16 +84,22 @@ public class MainViewModel : INotifyPropertyChanged
         var defaultBackupsFolder = Path.Combine(baseDir, "Backups");
         Directory.CreateDirectory(defaultBackupsFolder);
 
+        // Đọc cấu hình từ cache RAM
+        var config = AppConfigService.GetConfig();
+
         _databaseService = new DatabaseService();
         _databaseLocation = _databaseService.DbPath;
         _searchCoordinator = new GameSearchCoordinator(_databaseService);
         _backupService = new BackupService(_databaseService);
-        _ludusaviService = new LudusaviDatabaseService();
 
-        _backupDestinationRoot = defaultBackupsFolder;
+        _backupDestinationRoot = !string.IsNullOrWhiteSpace(config.BackupRootDirectory)
+            ? config.BackupRootDirectory
+            : defaultBackupsFolder;
+        _createTimestampSubfolder = config.CreateTimestampSubfolder;
+        _autoCompressZip = config.AutoCompressZip;
 
         // Load suggestions
-        foreach (var g in _ludusaviService.GetAllKnownGameNames().Take(20))
+        foreach (var g in DefaultPopularGames)
         {
             PopularGameSuggestions.Add(g);
         }
@@ -132,16 +144,52 @@ public class MainViewModel : INotifyPropertyChanged
     {
         try
         {
-            var settings = await _databaseService.LoadSettingsAsync(_backupDestinationRoot);
-            BackupDestinationRoot = settings.BackupRootDirectory;
-            CreateTimestampSubfolder = settings.CreateTimestampSubfolder;
-            AutoCompressZip = settings.AutoCompressZip;
-
+            ReloadSettingsFromConfigCache();
             await RefreshHistoryAsync();
         }
         catch (Exception ex)
         {
             StatusMessage = $"Lỗi tải dữ liệu ban đầu: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Đọc cấu hình mới nhất từ bộ nhớ đệm RAM của AppConfigService khi chuyển tab hoặc khởi tạo
+    /// </summary>
+    public void ReloadSettingsFromConfigCache()
+    {
+        var config = AppConfigService.GetConfig();
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        var defaultBackupsFolder = Path.Combine(baseDir, "Backups");
+        var defaultDbPath = Path.Combine(DatabaseService.GetDefaultProjectRoot(), "save_backup.db");
+
+        BackupDestinationRoot = !string.IsNullOrWhiteSpace(config.BackupRootDirectory)
+            ? config.BackupRootDirectory
+            : defaultBackupsFolder;
+
+        CreateTimestampSubfolder = config.CreateTimestampSubfolder;
+        AutoCompressZip = config.AutoCompressZip;
+
+        var targetDb = !string.IsNullOrWhiteSpace(config.DatabasePath)
+            ? config.DatabasePath
+            : defaultDbPath;
+
+        if (DatabaseLocation != targetDb)
+        {
+            DatabaseLocation = targetDb;
+        }
+
+        // Tự động đồng bộ DatabaseService nếu config DB khác với service hiện tại
+        if (_databaseService.DbPath != targetDb && !string.IsNullOrWhiteSpace(targetDb))
+        {
+            try
+            {
+                _databaseService = new DatabaseService(targetDb);
+                _searchCoordinator = new GameSearchCoordinator(_databaseService);
+                _backupService = new BackupService(_databaseService);
+                _ = RefreshHistoryAsync();
+            }
+            catch { }
         }
     }
 
@@ -218,7 +266,7 @@ public class MainViewModel : INotifyPropertyChanged
         try
         {
             var progress = new Progress<string>(msg => StatusMessage = msg);
-            var result = await _searchCoordinator.SearchAndDetectGameAsync(SearchQuery, ForceOnlineSearch, progress);
+            var result = await _searchCoordinator.SearchAndDetectGameAsync(SearchQuery, progress);
 
             CurrentGame = result;
             HasGame = true;
@@ -943,6 +991,13 @@ public class MainViewModel : INotifyPropertyChanged
     {
         try
         {
+            var config = AppConfigService.GetConfig();
+            config.BackupRootDirectory = BackupDestinationRoot;
+            config.CreateTimestampSubfolder = CreateTimestampSubfolder;
+            config.AutoCompressZip = AutoCompressZip;
+
+            AppConfigService.SaveConfig(config);
+
             var settings = new AppSettings
             {
                 BackupRootDirectory = BackupDestinationRoot,
@@ -951,8 +1006,8 @@ public class MainViewModel : INotifyPropertyChanged
             };
 
             await _databaseService.SaveSettingsAsync(settings);
-            StatusMessage = "✓ Đã lưu cài đặt thành công!";
-            MessageBox.Show("Cài đặt đã được lưu thành công!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Information);
+            StatusMessage = "✓ Đã lưu cài đặt vào app_config.json và cập nhật bộ nhớ!";
+            MessageBox.Show("Cài đặt đã được lưu thành công vào app_config.json!", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
@@ -979,12 +1034,6 @@ public class MainViewModel : INotifyPropertyChanged
     {
         get => _isSearching;
         set => SetField(ref _isSearching, value);
-    }
-
-    public bool ForceOnlineSearch
-    {
-        get => _forceOnlineSearch;
-        set => SetField(ref _forceOnlineSearch, value);
     }
 
     public string StatusMessage
@@ -1179,7 +1228,14 @@ public class MainViewModel : INotifyPropertyChanged
     public int SelectedTabIndex
     {
         get => _selectedTabIndex;
-        set => SetField(ref _selectedTabIndex, value);
+        set
+        {
+            if (SetField(ref _selectedTabIndex, value))
+            {
+                // Khi chuyển tab thì đọc config cache trong RAM để luôn có config mới nhất
+                ReloadSettingsFromConfigCache();
+            }
+        }
     }
 
     // Commands

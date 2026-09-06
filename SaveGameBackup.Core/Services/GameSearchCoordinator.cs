@@ -6,24 +6,20 @@ public class GameSearchCoordinator
 {
     private readonly DatabaseService _databaseService;
     private readonly PCGamingWikiService _wikiService;
-    private readonly LudusaviDatabaseService _ludusaviService;
     private readonly PathResolverService _pathResolver;
 
     public GameSearchCoordinator(
         DatabaseService databaseService,
         PCGamingWikiService? wikiService = null,
-        LudusaviDatabaseService? ludusaviService = null,
         PathResolverService? pathResolver = null)
     {
         _databaseService = databaseService;
         _wikiService = wikiService ?? new PCGamingWikiService();
-        _ludusaviService = ludusaviService ?? new LudusaviDatabaseService();
         _pathResolver = pathResolver ?? new PathResolverService();
     }
 
     public async Task<GameSaveInfo> SearchAndDetectGameAsync(
         string gameName,
-        bool forceOnline = false,
         IProgress<string>? statusProgress = null,
         CancellationToken cancellationToken = default)
     {
@@ -34,49 +30,18 @@ public class GameSearchCoordinator
 
         GameSaveInfo? gameInfo = null;
 
-        // Step 1: Check Local Cache if not forcing online
-        if (!forceOnline)
-        {
-            statusProgress?.Report("Đang kiểm tra dữ liệu trong bộ nhớ đệm SQLite...");
-            gameInfo = await _databaseService.GetCachedGameAsync(gameName);
-        }
+        // Step 1: Check Local Cache in SQLite
+        statusProgress?.Report("Đang kiểm tra dữ liệu trong bộ nhớ đệm SQLite...");
+        gameInfo = await _databaseService.GetCachedGameAsync(gameName);
 
-        // Step 2: Check Ludusavi Catalog
+        // Step 2: If not found in cache, fetch online from PCGamingWiki
         if (gameInfo == null || gameInfo.RawPatterns.Count == 0)
         {
-            statusProgress?.Report("Đang đối chiếu cơ sở dữ liệu game phổ biến...");
-            var catalogMatch = _ludusaviService.FindMatchingGame(gameName);
-            if (catalogMatch != null)
-            {
-                gameInfo = catalogMatch;
-            }
-        }
-
-        // Step 3: Fetch online from PCGamingWiki
-        if (gameInfo == null || gameInfo.RawPatterns.Count == 0 || forceOnline)
-        {
-            statusProgress?.Report($"Đang tìm kiếm thông tin game '{gameName}' trên mạng...");
+            statusProgress?.Report($"Đang tìm kiếm thông tin game '{gameName}' trên PCGamingWiki...");
             var onlineInfo = await _wikiService.SearchAndFetchSaveInfoAsync(gameName, cancellationToken);
             if (onlineInfo != null && onlineInfo.RawPatterns.Count > 0)
             {
-                if (gameInfo != null)
-                {
-                    // Merge patterns
-                    foreach (var p in onlineInfo.RawPatterns)
-                    {
-                        if (!gameInfo.RawPatterns.Contains(p, StringComparer.OrdinalIgnoreCase))
-                        {
-                            gameInfo.RawPatterns.Add(p);
-                        }
-                    }
-                    gameInfo.WikiPageTitle = onlineInfo.WikiPageTitle;
-                    gameInfo.SteamAppId ??= onlineInfo.SteamAppId;
-                    gameInfo.Source = "PCGamingWiki (Online)";
-                }
-                else
-                {
-                    gameInfo = onlineInfo;
-                }
+                gameInfo = onlineInfo;
             }
         }
 

@@ -292,31 +292,17 @@
                                 </Grid>
 
                                 <!-- Quick Suggestions & Online Checkbox -->
-                                <Grid Margin="0,12,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="Gợi ý nhanh:" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        <WrapPanel>
-                                            <Button Content="Elden Ring" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
-                                            <Button Content="Cyberpunk 2077" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
-                                            <Button Content="Black Myth: Wukong" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
-                                            <Button Content="Baldur's Gate 3" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
-                                            <Button Content="The Witcher 3" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
-                                            <Button Content="Hades" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
-                                        </WrapPanel>
-                                    </StackPanel>
-
-                                    <CheckBox Grid.Column="1" 
-                                              IsChecked="{Binding ForceOnlineSearch}" 
-                                              Content="Buộc tìm mới trên mạng (PCGamingWiki)" 
-                                              Foreground="#94A3B8" 
-                                              FontSize="12" 
-                                              VerticalAlignment="Center"/>
-                                </Grid>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,12,0,0">
+                                    <TextBlock Text="Gợi ý nhanh:" FontSize="12" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <WrapPanel>
+                                        <Button Content="Elden Ring" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
+                                        <Button Content="Cyberpunk 2077" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
+                                        <Button Content="Black Myth: Wukong" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
+                                        <Button Content="Baldur's Gate 3" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
+                                        <Button Content="The Witcher 3" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
+                                        <Button Content="Hades" Style="{StaticResource SecondaryButtonStyle}" Padding="8,3" FontSize="11" Margin="0,0,6,0" Click="SuggestionButton_Click"/>
+                                    </WrapPanel>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
