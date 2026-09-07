@@ -66,7 +66,8 @@ public class BackupService
         }
 
         var sanitizedName = SanitizeFolderName(gameInfo.GameName);
-        var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+        var backupDateTime = DateTime.Now;
+        var timestamp = backupDateTime.ToString("yyyy-MM-dd_HH-mm-ss");
 
         var rootBackupDir = string.IsNullOrWhiteSpace(settings.BackupRootDirectory)
             ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups")
@@ -74,21 +75,8 @@ public class BackupService
 
         Directory.CreateDirectory(rootBackupDir);
 
-        string targetFolder;
-
-        if (settings.AutoCompressZip)
-        {
-            targetFolder = Path.Combine(Path.GetTempPath(), "SaveBackup_Stage_" + Guid.NewGuid().ToString("N"));
-        }
-        else if (settings.CreateTimestampSubfolder)
-        {
-            targetFolder = Path.Combine(rootBackupDir, sanitizedName, timestamp);
-        }
-        else
-        {
-            targetFolder = Path.Combine(rootBackupDir, sanitizedName);
-        }
-
+        // Bắt buộc nén zip 100%: Mọi bản sao lưu đều nạp dữ liệu vào thư mục tạm stage trước khi nén thành zip
+        string targetFolder = Path.Combine(Path.GetTempPath(), "SaveBackup_Stage_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(targetFolder);
 
         int totalCopiedFiles = 0;
@@ -118,10 +106,10 @@ public class BackupService
         var manifest = new BackupManifest
         {
             GameName = gameInfo.GameName,
-            BackupDate = DateTime.Now
+            BackupDate = backupDateTime
         };
 
-        int copyMaxPercent = settings.AutoCompressZip ? 50 : 95;
+        int copyMaxPercent = 50;
         progress?.Report(new BackupProgress 
         { 
             Percent = 5, 
@@ -222,29 +210,30 @@ public class BackupService
         string finalBackupPath;
 
         // Auto compress to Zip if enabled (nén với tiến trình % chính xác từ 50% -> 95%)
-        if (settings.AutoCompressZip)
+        var zipDir = Path.Combine(rootBackupDir, sanitizedName);
+        Directory.CreateDirectory(zipDir);
+        var zipFilePath = Path.Combine(zipDir, $"{sanitizedName}_{timestamp}.zip");
+
+        await CreateZipFromDirectoryWithProgressAsync(
+            targetFolder, 
+            zipFilePath, 
+            progress, 
+            startPercent: 50, 
+            endPercent: 95, 
+            cancellationToken);
+
+        // Clean up staging/temp uncompressed folder
+        try { Directory.Delete(targetFolder, true); } catch { /* Ignore */ }
+
+        finalBackupPath = zipFilePath;
+
+        // Chuẩn hóa thuộc tính thời gian file zip trên ổ đĩa trùng khớp từng giây với backupDateTime
+        try
         {
-            var zipDir = Path.Combine(rootBackupDir, sanitizedName);
-            Directory.CreateDirectory(zipDir);
-            var zipFilePath = Path.Combine(zipDir, $"{sanitizedName}_{timestamp}.zip");
-
-            await CreateZipFromDirectoryWithProgressAsync(
-                targetFolder, 
-                zipFilePath, 
-                progress, 
-                startPercent: 50, 
-                endPercent: 95, 
-                cancellationToken);
-
-            // Clean up staging/temp uncompressed folder
-            try { Directory.Delete(targetFolder, true); } catch { /* Ignore */ }
-
-            finalBackupPath = zipFilePath;
+            File.SetLastWriteTime(finalBackupPath, backupDateTime);
+            File.SetCreationTime(finalBackupPath, backupDateTime);
         }
-        else
-        {
-            finalBackupPath = targetFolder;
-        }
+        catch { /* Ignore */ }
 
         var sourcePathRecord = pathsToBackup.Count == 1
             ? pathsToBackup[0]
@@ -260,8 +249,8 @@ public class BackupService
             ManifestJson = manifestJson,
             FileCount = totalCopiedFiles,
             TotalSizeBytes = totalCopiedBytes,
-            BackupDate = DateTime.Now,
-            IsCompressed = settings.AutoCompressZip,
+            BackupDate = backupDateTime,
+            IsCompressed = true,
             Status = "Thành công",
             Note = $"Đã backup {totalCopiedFiles} file từ {pathsToBackup.Count} vị trí lưu."
         };
@@ -279,8 +268,8 @@ public class BackupService
             SavePaths = JsonSerializer.Serialize(pathsToBackup),
             FileCount = totalCopiedFiles,
             TotalSizeBytes = totalCopiedBytes,
-            BackupDate = detail.BackupDate,
-            IsCompressed = settings.AutoCompressZip,
+            BackupDate = backupDateTime,
+            IsCompressed = true,
             Status = "Thành công",
             Note = detail.Note
         };
@@ -322,19 +311,43 @@ public class BackupService
             if (uploadResult.Success)
             {
                 var syncDate = DateTime.UtcNow;
-                await _databaseService.UpdateCloudSyncDetailAsync(
-                    detail.Id,
-                    true,
-                    cloudService.ProviderName,
-                    uploadResult.FileId,
-                    uploadResult.FileName,
-                    syncDate);
 
+                // Cập nhật hoặc thêm mới provider vào CloudSyncList
+                var existing = detail.CloudSyncList.FirstOrDefault(c => c.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase));
+                if (existing != null)
+                {
+                    existing.FileId = uploadResult.FileId;
+                    existing.FileName = uploadResult.FileName;
+                    existing.SyncDate = syncDate;
+                    existing.WebViewUrl = uploadResult.WebUrl;
+                }
+                else
+                {
+                    detail.CloudSyncList.Add(new CloudSyncInfo
+                    {
+                        Provider = cloudService.ProviderName,
+                        FileId = uploadResult.FileId,
+                        FileName = uploadResult.FileName,
+                        SyncDate = syncDate,
+                        WebViewUrl = uploadResult.WebUrl
+                    });
+                }
+
+                detail.CloudSyncJson = JsonSerializer.Serialize(detail.CloudSyncList);
                 detail.IsCloudSynced = true;
-                detail.CloudProvider = cloudService.ProviderName;
+                detail.CloudProvider = string.Join(", ", detail.CloudSyncList.Select(c => c.Provider));
                 detail.CloudFileId = uploadResult.FileId;
                 detail.CloudFileName = uploadResult.FileName;
                 detail.CloudSyncDate = syncDate;
+
+                await _databaseService.UpdateCloudSyncDetailAsync(
+                    detail.Id,
+                    true,
+                    detail.CloudProvider,
+                    detail.CloudFileId,
+                    detail.CloudFileName,
+                    syncDate,
+                    detail.CloudSyncJson);
             }
 
             return uploadResult;
@@ -628,9 +641,11 @@ public class BackupService
             {
                 throw new InvalidOperationException("Chưa cấu hình dịch vụ lưu trữ đám mây để tải bản sao lưu!");
             }
-            if (string.IsNullOrEmpty(detail.CloudFileId))
+            var syncInfo = detail.CloudSyncList.FirstOrDefault(c => c.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase));
+            var cloudFileId = syncInfo?.FileId ?? detail.CloudFileId;
+            if (string.IsNullOrEmpty(cloudFileId))
             {
-                throw new InvalidOperationException("Bản sao lưu này chưa có mã tệp trên Cloud!");
+                throw new InvalidOperationException($"Bản sao lưu này chưa có mã tệp trên {cloudService.DisplayName}!");
             }
 
             tempDownloadedZip = Path.Combine(Path.GetTempPath(), $"SaveVault_CloudDl_{Guid.NewGuid():N}.zip");

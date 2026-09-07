@@ -244,8 +244,8 @@
             </Grid>
         </Border>
 
-        <!-- Main Content with Tabs -->
-        <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedTabIndex}" Background="Transparent" BorderThickness="0" Margin="16,8,16,0">
+        <!-- Main Content with Tabs (Disabled when backing up) -->
+        <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedTabIndex}" IsEnabled="{Binding IsNotBackingUp}" Background="Transparent" BorderThickness="0" Margin="16,8,16,0">
             
             <!-- TAB 1: SEARCH & BACKUP -->
             <TabItem Header="🔍 Tìm kiếm &amp; Sao lưu">
@@ -363,7 +363,7 @@
                                         <!-- Status Details -->
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding CurrentGame.GameName, FallbackValue='Chưa chọn game nào'}" FontSize="15" FontWeight="Bold" Foreground="White"/>
-                                            <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#94A3B8" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                                            <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#94A3B8" Margin="0,2,0,0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" MaxHeight="20" ToolTip="{Binding StatusMessage}"/>
                                         </StackPanel>
 
                                         <!-- Size and Files Info -->
@@ -455,14 +455,30 @@
                                                                     </StackPanel>
                                                                 </StackPanel>
 
-                                                                <!-- Badges: File Count & Size -->
+                                                                <!-- Badges & Action Buttons -->
                                                                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                                                     <Border Background="#0F172A" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
                                                                         <TextBlock Text="{Binding FileCount, StringFormat='{}{0} tệp'}" FontSize="11" Foreground="#94A3B8"/>
                                                                     </Border>
-                                                                    <Border Background="#0F172A" CornerRadius="4" Padding="6,2">
+                                                                    <Border Background="#0F172A" CornerRadius="4" Padding="6,2" Margin="0,0,8,0">
                                                                         <TextBlock Text="{Binding FormattedSize}" FontSize="11" FontWeight="SemiBold" Foreground="#34D399"/>
                                                                     </Border>
+
+                                                                    <!-- Open folder button -->
+                                                                    <Button Content="📂 Mở"
+                                                                            Command="{Binding DataContext.OpenSpecificDetectedPathCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                            CommandParameter="{Binding Path}"
+                                                                            Style="{StaticResource SecondaryButtonStyle}"
+                                                                            Padding="8,3" FontSize="11" Height="26" Margin="0,0,5,0"
+                                                                            ToolTip="Mở thư mục save này trong Windows Explorer"/>
+
+                                                                    <!-- Delete path button -->
+                                                                    <Button Content="🗑 Xóa"
+                                                                            Command="{Binding DataContext.RemoveDetectedPathCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                            CommandParameter="{Binding}"
+                                                                            Style="{StaticResource DangerButtonStyle}"
+                                                                            Padding="8,3" FontSize="11" Height="26"
+                                                                            ToolTip="Xóa vị trí save này khỏi danh sách sao lưu"/>
                                                                 </StackPanel>
                                                             </Grid>
                                                         </Border>
@@ -521,26 +537,12 @@
                                     <CheckBox IsChecked="{Binding CreateTimestampSubfolder}" 
                                               Content="Tạo thư mục con kèm ngày giờ (Snapshot)" 
                                               Foreground="#E2E8F0" Margin="0,0,24,0"/>
-
-                                    <CheckBox IsChecked="{Binding AutoCompressZip}" 
-                                              Content="Nén thành file .ZIP tiết kiệm dung lượng" 
-                                              Foreground="#E2E8F0"/>
-                                </StackPanel>
-
-                                <!-- Progress Bar -->
-                                <StackPanel Visibility="{Binding IsBackingUp, Converter={StaticResource BoolToVis}}" Margin="0,0,0,14">
-                                    <Grid Margin="0,0,0,4">
-                                        <TextBlock Text="{Binding BackupProgressText}" FontSize="12" Foreground="#38BDF8" FontWeight="SemiBold"/>
-                                        <TextBlock Text="{Binding BackupProgressPercent, StringFormat='{}{0}%'}" FontSize="12" FontWeight="Bold" Foreground="#38BDF8" HorizontalAlignment="Right"/>
-                                    </Grid>
-                                    <ProgressBar Value="{Binding BackupProgressPercent}" Maximum="100" Height="8" Background="#1E293B" Foreground="#38BDF8"/>
                                 </StackPanel>
 
                                 <!-- Action Buttons -->
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
 
@@ -554,19 +556,11 @@
                                         </StackPanel>
                                     </Button>
 
-                                    <!-- Open Source Folder Button -->
-                                    <Button Grid.Column="1" 
-                                            Command="{Binding OpenSourceFolderCommand}"
-                                            Style="{StaticResource SecondaryButtonStyle}" 
-                                            Height="48" Padding="16,0" Margin="0,0,8,0">
-                                        <TextBlock Text="📂 Mở vị trí Save gốc"/>
-                                    </Button>
-
                                     <!-- Open Backup Folder Button -->
-                                    <Button Grid.Column="2" 
+                                    <Button Grid.Column="1" 
                                             Command="{Binding OpenBackupFolderCommand}"
                                             Style="{StaticResource SecondaryButtonStyle}" 
-                                            Height="48" Padding="16,0">
+                                            Height="48" Padding="18,0">
                                         <TextBlock Text="📦 Mở thư mục Backup"/>
                                     </Button>
                                 </Grid>
@@ -625,7 +619,7 @@
                             </DataGrid.ColumnHeaderStyle>
 
                             <DataGrid.Columns>
-                                <DataGridTemplateColumn Header="Tên Game" Width="240">
+                                <DataGridTemplateColumn Header="Tên Game" Width="*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0">
@@ -636,7 +630,7 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <DataGridTemplateColumn Header="Số bản sao lưu" Width="130">
+                                <DataGridTemplateColumn Header="Số bản sao lưu" Width="140">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Border Background="#1E293B" CornerRadius="12" Padding="10,3" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="8,0">
@@ -646,37 +640,9 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <DataGridTextColumn Header="Lần sao lưu gần nhất" Binding="{Binding FormattedLatestDate}" Width="160"/>
-                                <DataGridTextColumn Header="Dung lượng (Mới nhất)" Binding="{Binding FormattedLatestSize}" Width="150"/>
-                                <DataGridTextColumn Header="Tổng dung lượng" Binding="{Binding FormattedTotalSize}" Width="130"/>
-
-                                <DataGridTemplateColumn Header="Thao tác" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,4">
-                                                <Button Content="💾 Sao lưu" 
-                                                        Command="{Binding DataContext.LoadBackupPathsFromHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{StaticResource SuccessButtonStyle}" 
-                                                        Padding="10,4" FontSize="11" Margin="0,0,8,0"
-                                                        ToolTip="Nạp danh sách vị trí save từ trường save_paths của game để chuẩn bị sao lưu ngay (không cần tìm kiếm lại)"/>
-
-                                                <Button Content="📜 Chi tiết sao lưu" 
-                                                        Command="{Binding DataContext.OpenGameDetailsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{StaticResource SecondaryButtonStyle}" 
-                                                        Padding="10,4" FontSize="11" Margin="0,0,8,0"/>
-
-                                                <Button Content="🗑 Xóa game" 
-                                                        Command="{Binding DataContext.RequestDeleteGameHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                        CommandParameter="{Binding}"
-                                                        Style="{StaticResource DangerButtonStyle}" 
-                                                        Padding="10,4" FontSize="11"
-                                                        ToolTip="Xóa toàn bộ lịch sử và tất cả các tệp sao lưu trên đĩa của game này"/>
-                                            </StackPanel>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Lần sao lưu gần nhất" Binding="{Binding FormattedLatestDate}" Width="180"/>
+                                <DataGridTextColumn Header="Dung lượng (Mới nhất)" Binding="{Binding FormattedLatestSize}" Width="160"/>
+                                <DataGridTextColumn Header="Tổng dung lượng" Binding="{Binding FormattedTotalSize}" Width="140"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>
@@ -749,10 +715,6 @@
 
                                 <CheckBox IsChecked="{Binding CreateTimestampSubfolder}" 
                                           Content="Tự động tạo thư mục con theo thời gian (Snapshot)" 
-                                          Foreground="#E2E8F0" FontSize="13" Margin="0,0,0,10"/>
-
-                                <CheckBox IsChecked="{Binding AutoCompressZip}" 
-                                          Content="Tự động nén thành file .zip" 
                                           Foreground="#E2E8F0" FontSize="13" Margin="0,0,0,16"/>
 
                                 <Button Command="{Binding SaveSettingsCommand}" 
@@ -856,13 +818,20 @@
                                                 <TextBlock Text="⚙️ Cấu hình API Credentials (Client ID)" FontSize="13" FontWeight="SemiBold" Foreground="#F8FAFC"/>
                                                 <TextBlock Text="Cần thiết lập khóa ứng dụng để kết nối trực tiếp với tài khoản Cloud của bạn." FontSize="11" Foreground="#94A3B8" Margin="0,2,0,0"/>
                                             </StackPanel>
-                                            <Button Grid.Column="1"
-                                                    Command="{Binding OpenAzurePortalGuideCommand}"
-                                                    Visibility="{Binding IsOneDriveSelected, Converter={StaticResource BoolToVis}}"
-                                                    Style="{StaticResource SecondaryButtonStyle}"
-                                                    Padding="12,4" FontSize="11" Height="30">
-                                                <TextBlock Text="🌐 Mở Azure Portal"/>
-                                            </Button>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                                <Button Command="{Binding OpenAzurePortalGuideCommand}"
+                                                        Visibility="{Binding IsOneDriveSelected, Converter={StaticResource BoolToVis}}"
+                                                        Style="{StaticResource SecondaryButtonStyle}"
+                                                        Padding="12,4" FontSize="11" Height="30">
+                                                    <TextBlock Text="🌐 Mở Azure Portal"/>
+                                                </Button>
+                                                <Button Command="{Binding OpenGoogleCloudConsoleGuideCommand}"
+                                                        Visibility="{Binding IsGoogleDriveSelected, Converter={StaticResource BoolToVis}}"
+                                                        Style="{StaticResource SecondaryButtonStyle}"
+                                                        Padding="12,4" FontSize="11" Height="30">
+                                                    <TextBlock Text="🌐 Mở Google Cloud Console"/>
+                                                </Button>
+                                            </StackPanel>
                                         </Grid>
 
                                         <!-- OneDrive Fields -->
@@ -895,6 +864,17 @@
                                             <TextBox Text="{Binding GoogleDriveClientSecret, UpdateSourceTrigger=PropertyChanged}"
                                                      Background="#0B0F19" Foreground="#38BDF8" BorderBrush="#334155"
                                                      Padding="10,6" Height="34" FontSize="12" Margin="0,0,0,10"/>
+
+                                            <Border Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+                                                <StackPanel>
+                                                    <TextBlock Text="📌 Cách tạo Client ID &amp; Secret Google Drive (miễn phí):" FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8" Margin="0,0,0,4"/>
+                                                    <TextBlock Text="1. Truy cập Google Cloud Console: console.cloud.google.com (hoặc bấm nút '🌐 Mở Google Cloud Console' bên trên)." FontSize="11" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                                                    <TextBlock Text="2. Tạo một Project mới (vd: SaveVault) > vào 'APIs &amp; Services' > 'Library' > Tìm và BẬT 'Google Drive API'." FontSize="11" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                                                    <TextBlock Text="3. Vào 'OAuth consent screen' > Chọn 'External' > Nhập tên app và email liên hệ > Thêm email của bạn vào mục 'Test users'." FontSize="11" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                                                    <TextBlock Text="4. Vào 'Credentials' > 'Create Credentials' > 'OAuth client ID' > Application type chọn: 'Desktop app'." FontSize="11" Foreground="#34D399" FontWeight="SemiBold" Margin="0,0,0,2"/>
+                                                    <TextBlock Text="5. Copy 'Client ID' và 'Client Secret' dán vào 2 ô trên > Bấm 'Lưu cấu hình API Credentials' > Bấm 'Kết nối tài khoản'." FontSize="11" Foreground="#94A3B8"/>
+                                                </StackPanel>
+                                            </Border>
                                         </StackPanel>
 
                                         <Button Command="{Binding SaveCloudApiSettingsCommand}"
@@ -971,19 +951,21 @@
         </TabControl>
 
         <!-- Bottom Status Bar -->
-        <Border Grid.Row="2" Background="#0F172A" BorderBrush="#1E293B" BorderThickness="0,1,0,0" Padding="16,8">
-            <Grid>
+        <Border Grid.Row="2" Background="#0F172A" BorderBrush="#1E293B" BorderThickness="0,1,0,0" 
+                Padding="16,0" Height="36" MaxHeight="36" ClipToBounds="True">
+            <Grid VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Trạng thái: " FontSize="12" Foreground="#64748B"/>
-                    <TextBlock Text="{Binding StatusMessage}" FontSize="12" Foreground="#CBD5E1" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                </StackPanel>
+                <TextBlock Grid.Column="0" Text="Trạng thái: " FontSize="12" Foreground="#64748B" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding StatusMessage}" FontSize="12" Foreground="#CBD5E1" FontWeight="SemiBold" 
+                           TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="4,0,16,0"
+                           ToolTip="{Binding StatusMessage}"/>
 
-                <TextBlock Grid.Column="1" Text="SaveGameBackup v1.0 • .NET 10" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Text="SaveGameBackup v1.0 • .NET 10" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
             </Grid>
         </Border>
 
@@ -1002,7 +984,7 @@
 
             <!-- MODAL 1: CHI TIẾT LỊCH SỬ SAO LƯU GAME (CurrentHistoryDetails) -->
             <Border Visibility="{Binding IsHistoryDetailsModalOpen, Converter={StaticResource BoolToVis}}"
-                    Width="820" MaxHeight="620"
+                    Width="1080" MaxHeight="720"
                     Background="#101726" BorderBrush="#2563EB" BorderThickness="1.5"
                     CornerRadius="12" Padding="22"
                     HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -1036,7 +1018,7 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <Button Grid.Column="1" Command="{Binding CloseModalCommand}" Style="{StaticResource CloseIconButtonStyle}"/>
+                        <Button Grid.Column="1" Command="{Binding CloseModalCommand}" IsEnabled="{Binding CanCloseModal}" Style="{StaticResource CloseIconButtonStyle}"/>
                     </Grid>
 
                     <!-- Quick Summary Stats Bar -->
@@ -1066,7 +1048,7 @@
                     </Border>
 
                     <!-- Snapshots List (Detail table: backup_history_details) -->
-                    <Border Grid.Row="2" Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="8" Padding="0" MinHeight="180" MaxHeight="340">
+                    <Border Grid.Row="2" Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="8" Padding="0" MinHeight="180" MaxHeight="400">
                         <Grid>
                             <DataGrid ItemsSource="{Binding CurrentHistoryDetails}"
                                       SelectedItem="{Binding SelectedHistoryDetail}"
@@ -1081,7 +1063,9 @@
                                       RowBackground="#0E1524"
                                       AlternatingRowBackground="#0B0F19"
                                       SelectionMode="Single"
-                                      HeadersVisibility="Column">
+                                      HeadersVisibility="Column"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                      ScrollViewer.VerticalScrollBarVisibility="Auto">
                                 
                                 <DataGrid.ColumnHeaderStyle>
                                     <Style TargetType="DataGridColumnHeader">
@@ -1095,61 +1079,57 @@
                                 </DataGrid.ColumnHeaderStyle>
 
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Thời gian tạo" Binding="{Binding BackupDate, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Width="150" FontWeight="SemiBold"/>
-                                    <DataGridTextColumn Header="Dung lượng" Binding="{Binding FormattedSize}" Width="100"/>
-                                    <DataGridTextColumn Header="Số file" Binding="{Binding FileCount}" Width="70"/>
-                                    <DataGridTextColumn Header="Định dạng" Binding="{Binding BackupTypeFormatted}" Width="90"/>
-                                    <DataGridTemplateColumn Header="Cloud" Width="110">
+                                    <DataGridTextColumn Header="Thời gian tạo" Binding="{Binding BackupDate, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Width="160" MinWidth="150" FontWeight="SemiBold"/>
+                                    <DataGridTextColumn Header="Dung lượng" Binding="{Binding FormattedSize}" Width="110" MinWidth="100"/>
+                                    <DataGridTextColumn Header="Số file" Binding="{Binding FileCount}" Width="80" MinWidth="70"/>
+                                    <DataGridTextColumn Header="Định dạng" Binding="{Binding BackupTypeFormatted}" Width="100" MinWidth="90"/>
+                                    <DataGridTemplateColumn Header="Cloud" Width="180" MinWidth="160">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <Border Visibility="{Binding IsCloudSynced, Converter={StaticResource BoolToVis}}"
-                                                            Background="#0C4A6E" BorderBrush="#0284C7" BorderThickness="1"
-                                                            CornerRadius="4" Padding="6,2">
-                                                        <StackPanel Orientation="Horizontal">
-                                                            <TextBlock Text="☁️" FontSize="11" Margin="0,0,4,0"/>
-                                                            <TextBlock Text="{Binding CloudProvider, FallbackValue='Cloud'}" FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8"/>
-                                                        </StackPanel>
-                                                    </Border>
-                                                </StackPanel>
+                                                <ItemsControl ItemsSource="{Binding CloudSyncList}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"/>
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Background="{Binding BadgeBackground}" 
+                                                                    BorderBrush="{Binding BadgeBorder}" 
+                                                                    BorderThickness="1" CornerRadius="4" 
+                                                                    Padding="5,2" Margin="0,0,6,0">
+                                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="{Binding ProviderIcon}" FontSize="11" Margin="0,0,4,0"/>
+                                                                    <TextBlock Text="{Binding DisplayProviderName}" FontSize="11" FontWeight="SemiBold" Foreground="{Binding BadgeForeground}" Margin="0,0,4,0"/>
+                                                                    <Button Content="🌐 Xem" 
+                                                                            Command="{Binding DataContext.OpenCloudWebViewCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                            CommandParameter="{Binding}"
+                                                                            Background="Transparent" BorderThickness="0" 
+                                                                            Foreground="#67E8F9" Cursor="Hand" FontSize="10" Padding="2,0"
+                                                                            ToolTip="Mở tệp sao lưu trực tiếp trên Cloud qua trình duyệt web"/>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
-                                    <DataGridTemplateColumn Header="Thao tác" Width="*">
+                                    <DataGridTemplateColumn Header="Thao tác" Width="*" MinWidth="160">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="4,2">
-                                                    <Button Content="💾 Sao lưu" 
-                                                            Command="{Binding DataContext.LoadBackupPathsFromHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"
-                                                            Style="{StaticResource SuccessButtonStyle}" 
-                                                            Padding="8,3" FontSize="11" Margin="0,0,6,0"
-                                                            ToolTip="Nạp các vị trí save của bản snapshot này vào tab Sao lưu"/>
-
-                                                    <Button Content="🔄 Khôi phục" 
-                                                            Command="{Binding DataContext.OpenRestoreModalCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"
-                                                            Style="{StaticResource PrimaryButtonStyle}" 
-                                                            Padding="10,4" FontSize="11" Margin="0,0,6,0"/>
-
-                                                    <Button Content="☁️ Cloud Sync" 
-                                                            Command="{Binding DataContext.SyncSelectedDetailToCloudCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                            CommandParameter="{Binding}"
-                                                            Style="{StaticResource SecondaryButtonStyle}" 
-                                                            BorderBrush="#0284C7" Foreground="#38BDF8"
-                                                            Padding="8,4" FontSize="11" Margin="0,0,6,0"
-                                                            ToolTip="Đồng bộ snapshot này lên Google Drive hoặc OneDrive qua REST API"/>
-
                                                     <Button Content="📂 Mở" 
                                                             Command="{Binding DataContext.OpenBackupFolderCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                             Style="{StaticResource SecondaryButtonStyle}" 
-                                                            Padding="8,4" FontSize="11" Margin="0,0,6,0"/>
+                                                            Padding="10,4" FontSize="11" Margin="0,0,8,0"
+                                                            ToolTip="Mở thư mục chứa bản sao lưu này trên máy"/>
 
                                                     <Button Content="🗑 Xóa" 
                                                             Command="{Binding DataContext.RequestDeleteHistoryDetailCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                             CommandParameter="{Binding}"
                                                             Style="{StaticResource DangerButtonStyle}" 
-                                                            Padding="8,4" FontSize="11"
+                                                            Padding="10,4" FontSize="11"
                                                             ToolTip="Xóa bản snapshot này và xóa vĩnh viễn tệp dữ liệu trên đĩa"/>
                                                 </StackPanel>
                                             </DataTemplate>
@@ -1157,22 +1137,6 @@
                                     </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
-
-                            <!-- Cloud Sync Progress Bar Overlay inside Details Modal -->
-                            <Border VerticalAlignment="Bottom" Margin="8" 
-                                    Background="#101726" BorderBrush="#0284C7" BorderThickness="1.5" CornerRadius="8" Padding="12,8"
-                                    Visibility="{Binding IsCloudSyncing, Converter={StaticResource BoolToVis}}">
-                                <StackPanel>
-                                    <Grid Margin="0,0,0,4">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="☁️ " FontSize="12"/>
-                                            <TextBlock Text="{Binding CloudSyncProgressText}" Foreground="#38BDF8" FontSize="12" FontWeight="SemiBold"/>
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding CloudSyncProgressPercent, StringFormat='{}{0}%'}" Foreground="#38BDF8" FontSize="12" FontWeight="Bold" HorizontalAlignment="Right"/>
-                                    </Grid>
-                                    <ProgressBar Value="{Binding CloudSyncProgressPercent}" Maximum="100" Height="7" Foreground="#0284C7" Background="#1E293B" BorderThickness="0"/>
-                                </StackPanel>
-                            </Border>
                         </Grid>
                     </Border>
 
@@ -1190,15 +1154,24 @@
                                     Style="{StaticResource SuccessButtonStyle}"
                                     Padding="16,8" Margin="0,0,8,0"/>
 
+                            <Button Content="🔄 Khôi phục bản đã chọn" 
+                                    Command="{Binding OpenRestoreModalCommand}"
+                                    CommandParameter="{Binding SelectedHistoryDetail}"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Padding="16,8" Margin="0,0,8,0"
+                                    ToolTip="Khôi phục lại dữ liệu save game từ bản snapshot đã chọn"/>
+
                             <Button Content="☁️ Cloud Sync bản đã chọn" 
-                                    Command="{Binding SyncSelectedDetailToCloudCommand}"
+                                    Command="{Binding OpenSyncCloudSelectModalCommand}"
                                     CommandParameter="{Binding SelectedHistoryDetail}"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     BorderBrush="#0284C7" Foreground="#38BDF8"
-                                    Padding="16,8"/>
+                                    Padding="16,8"
+                                    ToolTip="Chọn Cloud Provider (Google Drive / OneDrive) để tải lên"/>
                         </StackPanel>
 
                         <Button Grid.Column="1" Content="Đóng" Command="{Binding CloseModalCommand}"
+                                IsEnabled="{Binding CanCloseModal}"
                                 Style="{StaticResource SecondaryButtonStyle}"
                                 HorizontalAlignment="Right" Padding="22,8"/>
                     </Grid>
@@ -1250,7 +1223,7 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <Button Grid.Column="1" Command="{Binding CloseRestoreModalCommand}" Style="{StaticResource CloseIconButtonStyle}"/>
+                        <Button Grid.Column="1" Command="{Binding CloseRestoreModalCommand}" IsEnabled="{Binding CanCloseModal}" Style="{StaticResource CloseIconButtonStyle}"/>
                     </Grid>
 
                     <!-- Options Bar -->
@@ -1274,7 +1247,7 @@
                     </Border>
 
                     <!-- Restore Items List with Row Click -->
-                    <Border Grid.Row="2" Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="8" Padding="8" MaxHeight="330">
+                    <Border Grid.Row="2" Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="8" Padding="8" MaxHeight="350">
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                             <ItemsControl ItemsSource="{Binding ActiveRestoreItems}">
                                 <ItemsControl.ItemTemplate>
@@ -1342,14 +1315,6 @@
                         </ScrollViewer>
                     </Border>
 
-                    <!-- Progress Bar (while restoring) -->
-                    <Border Grid.Row="3" Margin="0,10,0,0" Visibility="{Binding IsModalRestoring, Converter={StaticResource BoolToVis}}">
-                        <StackPanel>
-                            <ProgressBar Value="{Binding ModalRestoreProgressPercent}" Height="6" Foreground="#10B981" Background="#1E293B" BorderThickness="0"/>
-                            <TextBlock Text="{Binding ModalRestoreProgressMessage}" FontSize="11" Foreground="#34D399" Margin="0,4,0,0" HorizontalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-
                     <!-- Footer Action Bar -->
                     <Grid Grid.Row="4" Margin="0,14,0,0">
                         <Grid.ColumnDefinitions>
@@ -1361,6 +1326,7 @@
 
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
                             <Button Content="Hủy bỏ" Command="{Binding CloseRestoreModalCommand}"
+                                    IsEnabled="{Binding CanCloseModal}"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     Padding="16,8" Margin="0,0,8,0"/>
 
@@ -1385,6 +1351,8 @@
 
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -1415,17 +1383,18 @@
                     </Border>
 
                     <!-- Cloud Deletion Option CheckBox -->
-                    <CheckBox Grid.Row="2" VerticalAlignment="Bottom" Margin="0,0,0,-4"
+                    <CheckBox Grid.Row="3" Margin="0,0,0,14"
+                              IsEnabled="{Binding IsNotConfirmModalDeleting}"
                               IsChecked="{Binding DeleteAlsoFromCloud, Mode=TwoWay}"
                               Visibility="{Binding ShowDeleteCloudOption, Converter={StaticResource BoolToVis}}"
                               Content="☁️ Đồng thời xóa luôn tệp sao lưu trên Cloud" 
                               Foreground="#38BDF8" FontWeight="SemiBold" FontSize="12"/>
 
                     <!-- Deleting Progress Bar -->
-                    <Border Grid.Row="3" Background="#0B0F19" BorderBrush="#EF4444" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,10,0,14"
+                    <Border Grid.Row="4" Background="#0B0F19" BorderBrush="#EF4444" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,14"
                             Visibility="{Binding IsConfirmModalDeleting, Converter={StaticResource BoolToVis}}">
                         <StackPanel>
-                            <Grid Margin="0,0,0,4">
+                            <Grid Margin="0,0,0,6">
                                 <TextBlock Text="{Binding ConfirmModalProgressText}" Foreground="#F87171" FontSize="11" FontWeight="SemiBold"/>
                                 <TextBlock Text="{Binding ConfirmModalProgressPercent, StringFormat='{}{0}%'}" Foreground="#F87171" FontSize="11" FontWeight="Bold" HorizontalAlignment="Right"/>
                             </Grid>
@@ -1434,7 +1403,7 @@
                     </Border>
 
                     <!-- Buttons Action Bar -->
-                    <Grid Grid.Row="3" Margin="0,16,0,0">
+                    <Grid Grid.Row="5" Margin="0,4,0,0" IsEnabled="{Binding IsNotConfirmModalDeleting}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -1614,27 +1583,59 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
                         <!-- Local Option -->
-                        <Border Grid.Column="0" Background="#131C2E" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,6,0">
+                        <Border Grid.Column="0" Background="#131C2E" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,5,0">
                             <StackPanel HorizontalAlignment="Center">
-                                <TextBlock Text="💻" FontSize="28" HorizontalAlignment="Center" Margin="0,0,0,8"/>
-                                <TextBlock Text="Khôi phục từ Máy" FontWeight="Bold" Foreground="White" FontSize="13" HorizontalAlignment="Center"/>
-                                <TextBlock Text="Dùng file zip sao lưu cục bộ trên ổ đĩa máy tính." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,12"/>
+                                <TextBlock Text="💻" FontSize="26" HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                                <TextBlock Text="Bản Local" FontWeight="Bold" Foreground="White" FontSize="12" HorizontalAlignment="Center"/>
+                                <TextBlock Text="File zip trên máy tính." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,10"/>
                                 <Button Content="💻 Chọn Local" Command="{Binding ConfirmRestoreFromLocalCommand}"
-                                        Style="{StaticResource PrimaryButtonStyle}" Padding="16,8" FontSize="12" HorizontalAlignment="Center"/>
+                                        Style="{StaticResource PrimaryButtonStyle}" Padding="12,6" FontSize="11" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- Cloud Option -->
-                        <Border Grid.Column="1" Background="#0C2540" BorderBrush="#0284C7" BorderThickness="1.5" CornerRadius="10" Padding="14" Margin="6,0,0,0">
+                        <!-- Google Drive Option -->
+                        <Border Grid.Column="1" Background="#0C2540" BorderBrush="#0284C7" BorderThickness="1.5" CornerRadius="10" Padding="12" Margin="3,0,3,0"
+                                IsEnabled="{Binding IsPendingDetailSyncedToGoogleDrive}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.4"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
                             <StackPanel HorizontalAlignment="Center">
-                                <TextBlock Text="☁️" FontSize="28" HorizontalAlignment="Center" Margin="0,0,0,8"/>
-                                <TextBlock Text="Khôi phục từ Cloud" FontWeight="Bold" Foreground="#38BDF8" FontSize="13" HorizontalAlignment="Center"/>
-                                <TextBlock Text="Tải trực tiếp bản zip mới nhất từ Cloud qua REST API." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,12"/>
-                                <Button Content="☁️ Chọn Cloud" Command="{Binding ConfirmRestoreFromCloudCommand}"
-                                        Style="{StaticResource SuccessButtonStyle}" Background="#0284C7" Padding="16,8" FontSize="12" HorizontalAlignment="Center"/>
+                                <TextBlock Text="📁" FontSize="26" HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                                <TextBlock Text="Google Drive" FontWeight="Bold" Foreground="#38BDF8" FontSize="12" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Tải zip từ Google Drive." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,10"/>
+                                <Button Content="📁 Google Drive" Command="{Binding ConfirmRestoreFromGoogleDriveCommand}"
+                                        Style="{StaticResource SuccessButtonStyle}" Background="#0284C7" Padding="12,6" FontSize="11" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- OneDrive Option -->
+                        <Border Grid.Column="2" Background="#0C233C" BorderBrush="#2563EB" BorderThickness="1.5" CornerRadius="10" Padding="12" Margin="5,0,0,0"
+                                IsEnabled="{Binding IsPendingDetailSyncedToOneDrive}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.4"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel HorizontalAlignment="Center">
+                                <TextBlock Text="☁️" FontSize="26" HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                                <TextBlock Text="OneDrive" FontWeight="Bold" Foreground="#60A5FA" FontSize="12" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Tải zip từ OneDrive." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" TextAlignment="Center" Margin="0,4,0,10"/>
+                                <Button Content="☁️ OneDrive" Command="{Binding ConfirmRestoreFromOneDriveCommand}"
+                                        Style="{StaticResource PrimaryButtonStyle}" Background="#2563EB" Padding="12,6" FontSize="11" HorizontalAlignment="Center"/>
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -1643,6 +1644,200 @@
                     <Button Grid.Row="3" Content="✕ Hủy bỏ" Command="{Binding CancelRestoreSourceModalCommand}"
                             Style="{StaticResource SecondaryButtonStyle}"
                             HorizontalAlignment="Center" Padding="22,7" FontSize="12"/>
+                </Grid>
+            </Border>
+
+            <!-- =================================================================== -->
+            <!-- MODAL 6: DEDICATED PROGRESS MODAL (BACKUP / SYNC / RESTORE)         -->
+            <!-- =================================================================== -->
+            <Border Visibility="{Binding IsProgressModalOpen, Converter={StaticResource BoolToVis}}"
+                    Width="520" MaxWidth="540"
+                    Background="#101726" BorderBrush="#38BDF8" BorderThickness="1.5"
+                    CornerRadius="14" Padding="24"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="40" Color="#000000" Opacity="0.95" ShadowDepth="14"/>
+                </Border.Effect>
+
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,18">
+                        <Border Background="#0C2A4A" BorderBrush="#0284C7" BorderThickness="1" CornerRadius="21" Width="44" Height="44" Margin="0,0,14,0">
+                            <TextBlock Text="⚡" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ActiveProgressTitle}" FontSize="17" FontWeight="Bold" Foreground="#F8FAFC"/>
+                            <TextBlock Text="Vui lòng đợi quá trình xử lý hoàn tất..." FontSize="11" Foreground="#38BDF8" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Progress Information Area -->
+                    <Border Grid.Row="1" Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="10" Padding="16,14" Margin="0,0,0,14">
+                        <StackPanel>
+                            <!-- Message & Percent Row -->
+                            <Grid Margin="0,0,0,8">
+                                <TextBlock Text="{Binding ActiveProgressMessage}" Foreground="#E2E8F0" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding ActiveProgressPercent, StringFormat='{}{0}%'}" Foreground="#38BDF8" FontSize="13" FontWeight="Bold" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <!-- Modern Progress Bar -->
+                            <ProgressBar Value="{Binding ActiveProgressPercent}" Maximum="100" Height="10" Foreground="#38BDF8" Background="#1E293B" BorderThickness="0"/>
+
+                            <!-- Optional Subtext (Speed, chunk info, etc.) -->
+                            <TextBlock Text="{Binding ActiveProgressSubText}" Foreground="#94A3B8" FontSize="11" FontStyle="Italic" Margin="0,8,0,0" HorizontalAlignment="Right"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Cancel Sync Button (Shown when syncing) -->
+                    <Button Grid.Row="2" Content="✕ Hủy đồng bộ"
+                            Command="{Binding CancelSyncCommand}"
+                            Visibility="{Binding IsCloudSyncing, Converter={StaticResource BoolToVis}}"
+                            Style="{StaticResource DangerButtonStyle}"
+                            HorizontalAlignment="Center" Padding="20,7" FontSize="12" Margin="0,0,0,10"/>
+
+                    <!-- Bottom Notice / Safety Badge -->
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,0">
+                        <TextBlock Text="🔒 Ứng dụng đang khóa thao tác để bảo toàn toàn vẹn dữ liệu." Foreground="#64748B" FontSize="11"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- =================================================================== -->
+            <!-- MODAL 7: CLOUD SYNC PROVIDER SELECTION MODAL                        -->
+            <!-- =================================================================== -->
+            <Border Visibility="{Binding IsSyncCloudSelectModalOpen, Converter={StaticResource BoolToVis}}"
+                    Width="560" MaxWidth="580"
+                    Background="#101726" BorderBrush="#0284C7" BorderThickness="1.5"
+                    CornerRadius="14" Padding="24"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="40" Color="#000000" Opacity="0.95" ShadowDepth="14"/>
+                </Border.Effect>
+
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Border Background="#0C2540" BorderBrush="#0284C7" BorderThickness="1" CornerRadius="21" Width="42" Height="42" Margin="0,0,14,0">
+                                <TextBlock Text="☁️" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="Chọn Dịch Vụ Lưu Trữ Cloud" FontSize="17" FontWeight="Bold" Foreground="#F8FAFC"/>
+                                <TextBlock Text="Chọn Cloud Provider để tải lên bản sao lưu snapshot đã chọn" FontSize="11" Foreground="#38BDF8" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Button Grid.Column="1" Command="{Binding CloseSyncCloudSelectModalCommand}" Style="{StaticResource CloseIconButtonStyle}"/>
+                    </Grid>
+
+                    <!-- Snapshot Summary info -->
+                    <Border Grid.Row="1" Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{Binding TargetSyncDetail.GameName, FallbackValue='Tên Game'}" FontWeight="Bold" Foreground="White" FontSize="13"/>
+                                <TextBlock Text="{Binding TargetSyncDetail.BackupDate, StringFormat='Ngày tạo: {0:dd/MM/yyyy HH:mm:ss}', FallbackValue='Ngày tạo: --'}" Foreground="#94A3B8" FontSize="11" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding TargetSyncDetail.FormattedSize, FallbackValue='0 KB'}" FontWeight="Bold" Foreground="#34D399" FontSize="13" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Providers Choice Cards -->
+                    <Grid Grid.Row="2" Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Google Drive Card -->
+                        <Border Grid.Column="0" Background="#0C2540" BorderBrush="#0284C7" BorderThickness="1.5" CornerRadius="10" Padding="14" Margin="0,0,8,0"
+                                IsEnabled="{Binding IsGoogleDriveConnected}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.45"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="📁" FontSize="24" Margin="0,0,8,0"/>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Google Drive" FontWeight="Bold" Foreground="White" FontSize="14"/>
+                                        <TextBlock Text="{Binding GoogleDriveEmail}" Foreground="#38BDF8" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="160"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding GoogleDriveSyncDateText}" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,12" TextWrapping="Wrap"/>
+
+                                <Button Content="Đồng bộ lên GDrive"
+                                        Command="{Binding ConfirmSyncToProviderCommand}"
+                                        CommandParameter="GoogleDrive"
+                                        Style="{StaticResource SuccessButtonStyle}"
+                                        Background="#0284C7" Padding="12,8" FontSize="12" HorizontalAlignment="Stretch"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- OneDrive Card -->
+                        <Border Grid.Column="1" Background="#0C233C" BorderBrush="#2563EB" BorderThickness="1.5" CornerRadius="10" Padding="14" Margin="8,0,0,0"
+                                IsEnabled="{Binding IsOneDriveConnected}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.45"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="☁️" FontSize="24" Margin="0,0,8,0"/>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="OneDrive" FontWeight="Bold" Foreground="White" FontSize="14"/>
+                                        <TextBlock Text="{Binding OneDriveEmail}" Foreground="#60A5FA" FontSize="11" TextTrimming="CharacterEllipsis" MaxWidth="160"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <TextBlock Text="{Binding OneDriveSyncDateText}" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,12" TextWrapping="Wrap"/>
+
+                                <Button Content="Đồng bộ lên OneDrive"
+                                        Command="{Binding ConfirmSyncToProviderCommand}"
+                                        CommandParameter="OneDrive"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Background="#2563EB" Padding="12,8" FontSize="12" HorizontalAlignment="Stretch"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- Footer Close -->
+                    <Button Grid.Row="3" Content="Đóng" Command="{Binding CloseSyncCloudSelectModalCommand}"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            HorizontalAlignment="Center" Padding="24,7" FontSize="12"/>
                 </Grid>
             </Border>
 

@@ -46,7 +46,8 @@ public class GoogleDriveApiService : ICloudStorageService
         var clientId = await GetClientIdAsync();
         var clientSecret = await GetClientSecretAsync();
 
-        using var receiver = new OAuthLoopbackReceiver();
+        // Google OAuth Desktop App flow uses http://127.0.0.1:{port}/ or http://localhost:{port}/ (RFC 8252 loopback)
+        using var receiver = new OAuthLoopbackReceiver(preferredPort: 0, path: null, includeTrailingSlashInRedirectUri: true);
         var state = Guid.NewGuid().ToString("N");
         var authUrl = $"{AuthEndpoint}?client_id={Uri.EscapeDataString(clientId)}" +
                       $"&redirect_uri={Uri.EscapeDataString(receiver.RedirectUri)}" +
@@ -92,7 +93,8 @@ public class GoogleDriveApiService : ICloudStorageService
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Lỗi lấy token Google Drive: {json}");
+            var errMessage = ExtractApiErrorMessage(json);
+            throw new InvalidOperationException($"Lỗi lấy token Google Drive: {errMessage}");
         }
 
         using var doc = JsonDocument.Parse(json);
@@ -212,7 +214,8 @@ public class GoogleDriveApiService : ICloudStorageService
         if (!initRes.IsSuccessStatusCode)
         {
             var err = await initRes.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException($"Không thể tạo phiên upload trên Google Drive: {err}");
+            var errMessage = ExtractApiErrorMessage(err);
+            throw new InvalidOperationException($"Không thể tạo phiên upload trên Google Drive: {errMessage}");
         }
 
         var uploadUrl = initRes.Headers.Location?.ToString();
@@ -221,8 +224,8 @@ public class GoogleDriveApiService : ICloudStorageService
             throw new InvalidOperationException("Google Drive không trả về URL upload.");
         }
 
-        // 4. Upload theo từng khối (Chunk size: 512 KB, chuẩn bội số 256 KB)
-        const int chunkSize = 512 * 1024;
+        // 4. Upload theo từng khối (Chunk size chuẩn hóa qua CloudChunkOptimizer, chuẩn bội số 256 KiB của Google Drive):
+        int chunkSize = CloudChunkOptimizer.CalculateChunkSize(totalBytes, ProviderName);
         byte[] buffer = new byte[chunkSize];
         long bytesSent = 0;
 
@@ -281,7 +284,8 @@ public class GoogleDriveApiService : ICloudStorageService
             else
             {
                 var err = await chunkRes.Content.ReadAsStringAsync(cancellationToken);
-                throw new InvalidOperationException($"Lỗi gửi khối dữ liệu lên Google Drive ({chunkRes.StatusCode}): {err}");
+                var errMessage = ExtractApiErrorMessage(err);
+                throw new InvalidOperationException($"Lỗi gửi khối dữ liệu lên Google Drive ({chunkRes.StatusCode}): {errMessage}");
             }
         }
 
@@ -321,7 +325,8 @@ public class GoogleDriveApiService : ICloudStorageService
         if (!response.IsSuccessStatusCode)
         {
             var err = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException($"Không thể tải file từ Google Drive ({response.StatusCode}): {err}");
+            var errMessage = ExtractApiErrorMessage(err);
+            throw new InvalidOperationException($"Không thể tải file từ Google Drive ({response.StatusCode}): {errMessage}");
         }
 
         var totalBytes = response.Content.Headers.ContentLength ?? -1L;
@@ -331,9 +336,10 @@ public class GoogleDriveApiService : ICloudStorageService
         using var remoteStream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var fileStream = new FileStream(localDestinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
 
-        var buffer = new byte[64 * 1024];
+        var buffer = new byte[256 * 1024]; // 256 KB buffer cho tốc độ đọc stream cao nhất
         long bytesReadTotal = 0;
         int read;
+        var stopwatch = Stopwatch.StartNew();
 
         while ((read = await remoteStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
         {
@@ -341,15 +347,19 @@ public class GoogleDriveApiService : ICloudStorageService
             bytesReadTotal += read;
 
             int pct = totalBytes > 0 ? (int)((double)bytesReadTotal / totalBytes * 100) : 50;
+            var speedMb = stopwatch.Elapsed.TotalSeconds > 0 ? (bytesReadTotal / 1024.0 / 1024.0) / stopwatch.Elapsed.TotalSeconds : 0;
+            var speedText = $"{speedMb:F1} MB/s";
+
             progress?.Report(new BackupProgress
             {
                 Percent = Math.Clamp(pct, 0, 100),
                 CurrentFile = Path.GetFileName(localDestinationPath),
                 ProcessedBytes = bytesReadTotal,
                 TotalBytes = Math.Max(totalBytes, bytesReadTotal),
+                SpeedText = speedText,
                 Message = totalBytes > 0 
-                    ? $"Đang tải từ Google Drive: {bytesReadTotal / 1024.0 / 1024.0:F1} MB / {totalBytes / 1024.0 / 1024.0:F1} MB ({pct}%)"
-                    : $"Đang tải từ Google Drive: {bytesReadTotal / 1024.0 / 1024.0:F1} MB..."
+                    ? $"Đang tải từ Google Drive: {bytesReadTotal / 1024.0 / 1024.0:F1} MB / {totalBytes / 1024.0 / 1024.0:F1} MB ({speedText})"
+                    : $"Đang tải từ Google Drive: {bytesReadTotal / 1024.0 / 1024.0:F1} MB ({speedText})..."
             });
         }
 
@@ -458,7 +468,8 @@ public class GoogleDriveApiService : ICloudStorageService
 
         if (!res.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Lỗi làm mới token Google Drive ({res.StatusCode}): {json}");
+            var errMessage = ExtractApiErrorMessage(json);
+            throw new InvalidOperationException($"Lỗi làm mới token Google Drive ({res.StatusCode}): {errMessage}");
         }
 
         using var doc = JsonDocument.Parse(json);
@@ -493,7 +504,8 @@ public class GoogleDriveApiService : ICloudStorageService
 
         if (!res.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Không thể tạo thư mục '{folderName}' trên Google Drive: {resJson}");
+            var errMessage = ExtractApiErrorMessage(resJson);
+            throw new InvalidOperationException($"Không thể tạo thư mục '{folderName}' trên Google Drive: {errMessage}");
         }
 
         using var doc = JsonDocument.Parse(resJson);
@@ -539,5 +551,42 @@ public class GoogleDriveApiService : ICloudStorageService
     {
         var configured = await _databaseService.GetSettingAsync("gdrive_client_secret");
         return !string.IsNullOrWhiteSpace(configured) ? configured.Trim() : DefaultClientSecret;
+    }
+
+    private static string ExtractApiErrorMessage(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "Lỗi không xác định từ máy chủ Google Drive.";
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("error", out var errorProp))
+            {
+                if (errorProp.ValueKind == JsonValueKind.String)
+                {
+                    var str = errorProp.GetString();
+                    if (root.TryGetProperty("error_description", out var descProp))
+                        return $"{str}: {descProp.GetString()}";
+                    return str ?? raw;
+                }
+                if (errorProp.ValueKind == JsonValueKind.Object && errorProp.TryGetProperty("message", out var msgProp))
+                {
+                    return msgProp.GetString() ?? raw;
+                }
+            }
+            if (root.TryGetProperty("error_description", out var edProp))
+            {
+                return edProp.GetString() ?? raw;
+            }
+            if (root.TryGetProperty("message", out var mProp))
+            {
+                return mProp.GetString() ?? raw;
+            }
+        }
+        catch
+        {
+            // fallback if not valid JSON
+        }
+        return raw.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ").Trim();
     }
 }

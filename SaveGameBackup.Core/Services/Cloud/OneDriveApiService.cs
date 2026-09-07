@@ -101,7 +101,8 @@ public class OneDriveApiService : ICloudStorageService
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Lỗi lấy token OneDrive: {json}");
+            var errMessage = ExtractApiErrorMessage(json);
+            throw new InvalidOperationException($"Lỗi lấy token OneDrive: {errMessage}");
         }
 
         using var doc = JsonDocument.Parse(json);
@@ -225,7 +226,8 @@ public class OneDriveApiService : ICloudStorageService
 
         if (!sessionRes.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Không thể tạo phiên upload OneDrive ({sessionRes.StatusCode}): {sessionJson}");
+            var errMessage = ExtractApiErrorMessage(sessionJson);
+            throw new InvalidOperationException($"Không thể tạo phiên upload OneDrive ({sessionRes.StatusCode}): {errMessage}");
         }
 
         using var sessionDoc = JsonDocument.Parse(sessionJson);
@@ -235,17 +237,8 @@ public class OneDriveApiService : ICloudStorageService
             throw new InvalidOperationException("OneDrive không trả về uploadUrl.");
         }
 
-        // Kích thước khối (Chunk size) thích ứng theo dung lượng file (chuẩn bội số 320 KiB, tối đa 60 MiB theo Microsoft Graph):
-        // - File < 100 MB: 10.5 MB (320 KiB * 32) giúp tiến trình % mượt mà
-        // - File 100 MB - 500 MB: 20.97 MB (320 KiB * 64) tối ưu tốc độ
-        // - File >= 500 MB (1GB+): 31.45 MB (320 KiB * 96) giúp 1 GB chỉ cần ~32 lần gửi, tận dụng tối đa băng thông
-        int chunkSize = totalBytes switch
-        {
-            >= 500L * 1024 * 1024 => 320 * 1024 * 96, // ~31.5 MB / chunk
-            >= 100L * 1024 * 1024 => 320 * 1024 * 64, // ~21 MB / chunk
-            _ => 320 * 1024 * 32                       // ~10.5 MB / chunk
-        };
-
+        // Kích thước khối (Chunk size) chuẩn hóa qua CloudChunkOptimizer (chuẩn bội số 320 KiB của OneDrive)
+        int chunkSize = CloudChunkOptimizer.CalculateChunkSize(totalBytes, ProviderName);
         byte[] buffer = new byte[chunkSize];
         long bytesSent = 0;
 
@@ -308,7 +301,8 @@ public class OneDriveApiService : ICloudStorageService
             else
             {
                 var err = await chunkRes.Content.ReadAsStringAsync(cancellationToken);
-                throw new InvalidOperationException($"Lỗi gửi khối dữ liệu lên OneDrive ({chunkRes.StatusCode}): {err}");
+                var errMessage = ExtractApiErrorMessage(err);
+                throw new InvalidOperationException($"Lỗi gửi khối dữ liệu lên OneDrive ({chunkRes.StatusCode}): {errMessage}");
             }
         }
 
@@ -353,7 +347,8 @@ public class OneDriveApiService : ICloudStorageService
         if (!response.IsSuccessStatusCode)
         {
             var err = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException($"Không thể tải file từ OneDrive ({response.StatusCode}): {err}");
+            var errMessage = ExtractApiErrorMessage(err);
+            throw new InvalidOperationException($"Không thể tải file từ OneDrive ({response.StatusCode}): {errMessage}");
         }
 
         var totalBytes = response.Content.Headers.ContentLength ?? -1L;
@@ -479,7 +474,8 @@ public class OneDriveApiService : ICloudStorageService
 
         if (!res.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Lỗi làm mới token OneDrive ({res.StatusCode}): {json}");
+            var errMessage = ExtractApiErrorMessage(json);
+            throw new InvalidOperationException($"Lỗi làm mới token OneDrive ({res.StatusCode}): {errMessage}");
         }
 
         using var doc = JsonDocument.Parse(json);
@@ -609,5 +605,42 @@ public class OneDriveApiService : ICloudStorageService
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');
+    }
+
+    private static string ExtractApiErrorMessage(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "Lỗi không xác định từ máy chủ OneDrive.";
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("error", out var errorProp))
+            {
+                if (errorProp.ValueKind == JsonValueKind.String)
+                {
+                    var str = errorProp.GetString();
+                    if (root.TryGetProperty("error_description", out var descProp))
+                        return $"{str}: {descProp.GetString()}";
+                    return str ?? raw;
+                }
+                if (errorProp.ValueKind == JsonValueKind.Object && errorProp.TryGetProperty("message", out var msgProp))
+                {
+                    return msgProp.GetString() ?? raw;
+                }
+            }
+            if (root.TryGetProperty("error_description", out var edProp))
+            {
+                return edProp.GetString() ?? raw;
+            }
+            if (root.TryGetProperty("message", out var mProp))
+            {
+                return mProp.GetString() ?? raw;
+            }
+        }
+        catch
+        {
+            // fallback if not valid JSON
+        }
+        return raw.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ").Trim();
     }
 }

@@ -121,6 +121,20 @@ public class MainViewModel : INotifyPropertyChanged
     private string _restoreSourceModalTitle = string.Empty;
     private string _restoreSourceModalMessage = string.Empty;
     private bool _activeRestoreFromCloud;
+    private bool _isPendingDetailSyncedToGoogleDrive;
+    private bool _isPendingDetailSyncedToOneDrive;
+
+    // Cloud Sync Provider Selection Modal (MODAL 7)
+    private bool _isSyncCloudSelectModalOpen;
+    private BackupHistoryDetail? _targetSyncDetail;
+    private CancellationTokenSource? _syncCts;
+
+    // Dedicated Progress Modal States (Backup / Sync / Restore)
+    private bool _isProgressModalOpen;
+    private string _activeProgressTitle = "Đang xử lý...";
+    private string _activeProgressMessage = string.Empty;
+    private int _activeProgressPercent;
+    private string _activeProgressSubText = string.Empty;
 
     public MainViewModel()
     {
@@ -156,7 +170,8 @@ public class MainViewModel : INotifyPropertyChanged
         SearchCommand = new RelayCommand(async _ => await ExecuteSearchAsync(), _ => !IsSearching && !IsBackingUp && !string.IsNullOrWhiteSpace(SearchQuery));
         BackupCommand = new RelayCommand(async _ => await ExecuteBackupAsync(), _ => !IsBackingUp && HasGame && HasSelectedPaths);
         OpenBackupFolderCommand = new RelayCommand(_ => ExecuteOpenBackupFolder(), _ => !string.IsNullOrEmpty(LastBackupPath));
-        OpenSourceFolderCommand = new RelayCommand(_ => ExecuteOpenSourceFolder(), _ => HasGame && DetectedPathItems.Count > 0);
+        OpenSpecificDetectedPathCommand = new RelayCommand(param => ExecuteOpenSpecificDetectedPath(param as string));
+        RemoveDetectedPathCommand = new RelayCommand(param => ExecuteRemoveDetectedPath(param as DetectedPathItem));
         OpenRestoreModalCommand = new RelayCommand(param => ExecuteOpenRestoreModal(param), _ => !IsBackingUp);
         RestoreRecordCommand = OpenRestoreModalCommand;
         DeleteRecordCommand = new RelayCommand(param => ExecuteDeleteRecord(param as BackupRecord));
@@ -172,16 +187,16 @@ public class MainViewModel : INotifyPropertyChanged
 
         // Modal Commands
         OpenGameDetailsCommand = new RelayCommand(async param => await ExecuteOpenGameDetailsAsync(param));
-        CloseModalCommand = new RelayCommand(_ => ExecuteCloseModal(), _ => !IsModalRestoring);
-        CloseRestoreModalCommand = new RelayCommand(_ => ExecuteCloseRestoreModal(), _ => !IsModalRestoring);
+        CloseModalCommand = new RelayCommand(_ => ExecuteCloseModal(), _ => !IsModalRestoring && !IsCloudSyncing);
+        CloseRestoreModalCommand = new RelayCommand(_ => ExecuteCloseRestoreModal(), _ => !IsModalRestoring && !IsCloudSyncing);
         ModalRestoreConfirmCommand = new RelayCommand(async _ => await ExecuteModalRestoreConfirmAsync(), _ => !IsModalRestoring && CanConfirmModalRestore);
         ModalSelectAllRestoreItemsCommand = new RelayCommand(_ => ExecuteModalSelectAllRestoreItems(), _ => !IsModalRestoring);
         ModalDeselectAllRestoreItemsCommand = new RelayCommand(_ => ExecuteModalDeselectAllRestoreItems(), _ => !IsModalRestoring);
         ModalResetRestorePathsCommand = new RelayCommand(_ => ExecuteModalResetRestorePaths(), _ => !IsModalRestoring);
         ModalToggleRestoreItemCommand = new RelayCommand(param => ExecuteModalToggleRestoreItem(param as RestoreItemTarget), _ => !IsModalRestoring);
         ModalBrowseRestoreDestCommand = new RelayCommand(param => ExecuteModalBrowseRestoreDest(param as RestoreItemTarget), _ => !IsModalRestoring);
-        LoadBackupPathsFromHistoryCommand = new RelayCommand(param => ExecuteLoadBackupPathsFromHistory(param), _ => !IsBackingUp);
-        LoadBackupPathsFromManifestCommand = new RelayCommand(param => ExecuteLoadBackupPathsFromManifest(param), _ => !IsBackingUp);
+        LoadBackupPathsFromHistoryCommand = new RelayCommand(param => ExecuteLoadBackupPathsFromHistory(param), _ => !IsBusy);
+        LoadBackupPathsFromManifestCommand = new RelayCommand(param => ExecuteLoadBackupPathsFromManifest(param), _ => !IsBusy);
         LoadBackupPathsForGameCommand = LoadBackupPathsFromHistoryCommand;
 
         // In-App Confirm Modal & Delete Commands
@@ -194,13 +209,22 @@ public class MainViewModel : INotifyPropertyChanged
         CloseMessageModalCommand = new RelayCommand(_ => ExecuteCloseMessageModal());
 
         // Cloud & Restore Source Modal Commands
-        SyncSelectedDetailToCloudCommand = new RelayCommand(async param => await ExecuteSyncSelectedDetailToCloudAsync(param as BackupHistoryDetail), _ => !IsCloudSyncing);
+        SyncSelectedDetailToCloudCommand = new RelayCommand(param => OpenSyncCloudSelectModal(param as BackupHistoryDetail), _ => !IsCloudSyncing);
+        OpenSyncCloudSelectModalCommand = new RelayCommand(param => OpenSyncCloudSelectModal(param as BackupHistoryDetail), _ => !IsCloudSyncing);
+        ConfirmSyncToProviderCommand = new RelayCommand(async param => await ConfirmSyncToProviderAsync(param?.ToString() ?? "GoogleDrive"), _ => !IsCloudSyncing);
+        CloseSyncCloudSelectModalCommand = new RelayCommand(_ => ExecuteCloseSyncCloudSelectModal());
+        CancelSyncCommand = new RelayCommand(_ => ExecuteCancelSync(), _ => IsCloudSyncing);
+        OpenCloudWebViewCommand = new RelayCommand(param => ExecuteOpenCloudWebView(param));
+
         ConnectCloudAccountCommand = new RelayCommand(async _ => await ExecuteConnectCloudAccountAsync());
         DisconnectCloudAccountCommand = new RelayCommand(async _ => await ExecuteDisconnectCloudAccountAsync());
         SaveCloudApiSettingsCommand = new RelayCommand(async _ => await ExecuteSaveCloudApiSettingsAsync());
         OpenAzurePortalGuideCommand = new RelayCommand(_ => ExecuteOpenAzurePortalGuide());
+        OpenGoogleCloudConsoleGuideCommand = new RelayCommand(_ => ExecuteOpenGoogleCloudConsoleGuide());
         ConfirmRestoreFromLocalCommand = new RelayCommand(_ => ExecuteConfirmRestoreFromLocal());
         ConfirmRestoreFromCloudCommand = new RelayCommand(_ => ExecuteConfirmRestoreFromCloud());
+        ConfirmRestoreFromGoogleDriveCommand = new RelayCommand(_ => ExecuteConfirmRestoreFromCloudProvider("GoogleDrive"));
+        ConfirmRestoreFromOneDriveCommand = new RelayCommand(_ => ExecuteConfirmRestoreFromCloudProvider("OneDrive"));
         CancelRestoreSourceModalCommand = new RelayCommand(_ => ExecuteCancelRestoreSourceModal());
 
         // Load initial data and saved cloud api keys
@@ -451,6 +475,12 @@ public class MainViewModel : INotifyPropertyChanged
         BackupProgressPercent = 0;
         BackupProgressText = "Bắt đầu sao lưu...";
 
+        ActiveProgressTitle = $"Đang sao lưu: {CurrentGame.GameName}";
+        ActiveProgressMessage = "Bắt đầu sao lưu...";
+        ActiveProgressPercent = 0;
+        ActiveProgressSubText = string.Empty;
+        IsProgressModalOpen = true;
+
         try
         {
             var settings = new AppSettings
@@ -464,6 +494,9 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 BackupProgressPercent = p.Percent;
                 BackupProgressText = p.Message;
+                ActiveProgressPercent = p.Percent;
+                ActiveProgressMessage = p.Message;
+                ActiveProgressSubText = string.IsNullOrEmpty(p.SpeedText) ? string.Empty : $"Tốc độ: {p.SpeedText}";
             });
 
             var record = await _backupService.BackupGameAsync(CurrentGame, settings, selectedPaths, progress);
@@ -472,16 +505,19 @@ public class MainViewModel : INotifyPropertyChanged
             StatusMessage = $"✓ Sao lưu thành công {record.FileCount} file ({record.FormattedSize}) từ {selectedPaths.Count} vị trí vào: {record.BackupPath}";
             await RefreshHistoryAsync();
 
+            IsProgressModalOpen = false;
             ShowAppMessage("Sao lưu hoàn tất", $"Sao lưu game '{CurrentGame.GameName}' thành công!\n\nSố vị trí đã lưu: {selectedPaths.Count}\nVị trí sao lưu: {record.BackupPath}\nDung lượng: {record.FormattedSize}", "Success");
         }
         catch (Exception ex)
         {
+            IsProgressModalOpen = false;
             StatusMessage = $"Lỗi sao lưu: {ex.Message}";
             ShowAppMessage("Lỗi sao lưu", "Đã xảy ra lỗi trong quá trình sao lưu.", "Error", ex.ToString());
         }
         finally
         {
             IsBackingUp = false;
+            IsProgressModalOpen = false;
         }
     }
 
@@ -496,25 +532,6 @@ public class MainViewModel : INotifyPropertyChanged
         else if (Directory.Exists(path))
         {
             Process.Start("explorer.exe", $"\"{path}\"");
-        }
-    }
-
-    public void ExecuteOpenSourceFolder()
-    {
-        var target = DetectedPathItems.FirstOrDefault(p => p.IsSelected)?.Path 
-            ?? (DetectedPathItems.Count > 0 ? DetectedPathItems[0].Path : null)
-            ?? (DetectedPathsList.Count > 0 ? DetectedPathsList[0] : null);
-
-        if (!string.IsNullOrEmpty(target))
-        {
-            if (Directory.Exists(target))
-            {
-                Process.Start("explorer.exe", $"\"{target}\"");
-            }
-            else if (File.Exists(target))
-            {
-                Process.Start("explorer.exe", $"/select,\"{target}\"");
-            }
         }
     }
 
@@ -705,11 +722,14 @@ public class MainViewModel : INotifyPropertyChanged
 
     public void ExecuteCloseModal()
     {
-        if (IsModalRestoring) return;
-        IsModalOpen = false;
+        if (IsModalRestoring || IsConfirmModalDeleting || IsCloudSyncing) return;
         IsHistoryDetailsModalOpen = false;
         IsRestoreModalOpen = false;
         IsConfirmModalOpen = false;
+        IsRestoreSourceModalOpen = false;
+        IsSyncCloudSelectModalOpen = false;
+        IsMessageModalOpen = false;
+        IsModalOpen = false;
     }
 
     public void ExecuteCloseRestoreModal()
@@ -723,7 +743,7 @@ public class MainViewModel : INotifyPropertyChanged
         }
         else
         {
-            IsModalOpen = false;
+            UpdateMasterModalState();
         }
     }
 
@@ -759,10 +779,12 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        // Nếu bản sao lưu này đã được đồng bộ lên Cloud, hiển thị Modal chọn nguồn (Local / Cloud)
+        // Nếu bản sao lưu này đã được đồng bộ lên Cloud, hiển thị Modal chọn nguồn (Local / Google Drive / OneDrive)
         if (detail != null && detail.IsCloudSynced)
         {
             PendingRestoreDetail = detail;
+            IsPendingDetailSyncedToGoogleDrive = detail.IsSyncedTo("GoogleDrive");
+            IsPendingDetailSyncedToOneDrive = detail.IsSyncedTo("OneDrive");
             RestoreSourceModalTitle = $"Chọn nguồn khôi phục cho '{detail.GameName}'";
             RestoreSourceModalMessage = $"Bản sao lưu ngày {detail.BackupDate:dd/MM/yyyy HH:mm:ss} ({detail.FormattedSize}) đã được đồng bộ lên {detail.CloudProvider ?? "Cloud"}.\n\nBạn muốn khôi phục dữ liệu từ nguồn nào?";
             IsRestoreSourceModalOpen = true;
@@ -784,9 +806,16 @@ public class MainViewModel : INotifyPropertyChanged
 
     public void ExecuteConfirmRestoreFromCloud()
     {
+        var provider = IsPendingDetailSyncedToOneDrive && !IsPendingDetailSyncedToGoogleDrive ? "OneDrive" : "GoogleDrive";
+        ExecuteConfirmRestoreFromCloudProvider(provider);
+    }
+
+    public void ExecuteConfirmRestoreFromCloudProvider(string providerName)
+    {
         IsRestoreSourceModalOpen = false;
         if (PendingRestoreDetail != null)
         {
+            _cloudManager.SetActiveProvider(providerName);
             OpenRestoreModalInternal(PendingRestoreDetail, null, restoreFromCloud: true);
         }
     }
@@ -795,10 +824,7 @@ public class MainViewModel : INotifyPropertyChanged
     {
         IsRestoreSourceModalOpen = false;
         PendingRestoreDetail = null;
-        if (!IsHistoryDetailsModalOpen)
-        {
-            IsModalOpen = false;
-        }
+        UpdateMasterModalState();
     }
 
     private void OpenRestoreModalInternal(BackupHistoryDetail? detail, BackupRecord? record, bool restoreFromCloud)
@@ -872,9 +898,17 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
+        string gameName = ActiveRestoreDetail?.GameName ?? ActiveRestoreRecord?.GameName ?? "game";
+
         IsModalRestoring = true;
         ModalRestoreProgressPercent = 0;
         ModalRestoreProgressMessage = "Đang bắt đầu khôi phục...";
+
+        ActiveProgressTitle = $"Đang khôi phục save: {gameName}";
+        ActiveProgressMessage = "Đang chuẩn bị khôi phục...";
+        ActiveProgressPercent = 0;
+        ActiveProgressSubText = string.Empty;
+        IsProgressModalOpen = true;
 
         try
         {
@@ -882,9 +916,10 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 ModalRestoreProgressPercent = p.Percent;
                 ModalRestoreProgressMessage = string.IsNullOrEmpty(p.Message) ? "Đang khôi phục..." : p.Message;
+                ActiveProgressPercent = p.Percent;
+                ActiveProgressMessage = string.IsNullOrEmpty(p.Message) ? "Đang khôi phục..." : p.Message;
+                ActiveProgressSubText = string.IsNullOrEmpty(p.SpeedText) ? string.Empty : $"Tốc độ: {p.SpeedText}";
             });
-
-            string gameName = ActiveRestoreDetail?.GameName ?? ActiveRestoreRecord?.GameName ?? "game";
 
             if (ActiveRestoreDetail != null)
             {
@@ -895,6 +930,7 @@ public class MainViewModel : INotifyPropertyChanged
                 await _backupService.RestoreAsync(ActiveRestoreRecord, activeItems, progress);
             }
 
+            IsProgressModalOpen = false;
             StatusMessage = $"✓ Đã khôi phục thành công save game cho '{gameName}'{(_activeRestoreFromCloud ? " từ Cloud" : " từ local")}!";
             ShowAppMessage("Khôi phục thành công", $"Khôi phục thành công {activeItems.Count} vị trí lưu cho game '{gameName}'{(_activeRestoreFromCloud ? " trực tiếp từ Cloud!" : " từ bộ nhớ cục bộ.")}", "Success");
 
@@ -912,12 +948,14 @@ public class MainViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            IsProgressModalOpen = false;
             ModalRestoreProgressMessage = $"Lỗi: {ex.Message}";
             ShowAppMessage("Lỗi khôi phục", $"Đã xảy ra lỗi trong quá trình khôi phục save:\n{ex.Message}", "Error", ex.ToString());
         }
         finally
         {
             IsModalRestoring = false;
+            IsProgressModalOpen = false;
         }
     }
 
@@ -1043,6 +1081,7 @@ public class MainViewModel : INotifyPropertyChanged
 
     public async Task ExecuteConfirmModalActionAsync()
     {
+        if (IsConfirmModalDeleting) return;
         var action = _pendingConfirmAction;
         if (action != null)
         {
@@ -1050,22 +1089,15 @@ public class MainViewModel : INotifyPropertyChanged
         }
         _pendingConfirmAction = null;
         IsConfirmModalOpen = false;
-
-        if (!IsHistoryDetailsModalOpen && !IsRestoreModalOpen && !IsMessageModalOpen)
-        {
-            IsModalOpen = false;
-        }
+        UpdateMasterModalState();
     }
 
     public void ExecuteCancelConfirmModal()
     {
+        if (IsConfirmModalDeleting) return;
         _pendingConfirmAction = null;
         IsConfirmModalOpen = false;
-
-        if (!IsHistoryDetailsModalOpen && !IsRestoreModalOpen && !IsMessageModalOpen)
-        {
-            IsModalOpen = false;
-        }
+        UpdateMasterModalState();
     }
 
     public void ExecuteModalSelectAllRestoreItems()
@@ -1130,17 +1162,31 @@ public class MainViewModel : INotifyPropertyChanged
         ConfirmModalTargetPath = record.BackupPath;
         ShowDeleteCloudOption = record.IsCloudSynced;
         DeleteAlsoFromCloud = false;
+        IsConfirmModalDeleting = false;
+        ConfirmModalProgressPercent = 0;
+        ConfirmModalProgressText = string.Empty;
 
         _pendingConfirmAction = async () =>
         {
             try
             {
+                IsConfirmModalDeleting = true;
+                ConfirmModalProgressPercent = 20;
+                ConfirmModalProgressText = "Đang xóa dữ liệu...";
+
                 if (DeleteAlsoFromCloud && record.IsCloudSynced && !string.IsNullOrEmpty(record.CloudFileId))
                 {
+                    ConfirmModalProgressPercent = 40;
+                    ConfirmModalProgressText = "Đang xóa tệp trên Cloud...";
                     await _cloudManager.DeleteFileAsync(record.CloudFileId);
                 }
+
+                ConfirmModalProgressPercent = 80;
+                ConfirmModalProgressText = "Đang cập nhật cơ sở dữ liệu...";
                 await _databaseService.DeleteBackupRecordAsync(record.Id);
                 await RefreshHistoryAsync();
+
+                ConfirmModalProgressPercent = 100;
                 StatusMessage = $"Đã xóa bản ghi #{record.Id}.";
                 ShowAppMessage("Đã xóa", $"Đã xóa bản ghi lịch sử #{record.Id}.", "Success");
             }
@@ -1148,6 +1194,10 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 StatusMessage = $"Lỗi xóa: {ex.Message}";
                 ShowAppMessage("Lỗi xóa", ex.Message, "Error", ex.ToString());
+            }
+            finally
+            {
+                IsConfirmModalDeleting = false;
             }
         };
 
@@ -1325,6 +1375,54 @@ public class MainViewModel : INotifyPropertyChanged
         UpdateSelectedStats();
     }
 
+    public void ExecuteOpenSpecificDetectedPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Process.Start("explorer.exe", $"\"{path}\"");
+            }
+            else if (File.Exists(path))
+            {
+                Process.Start("explorer.exe", $"/select,\"{path}\"");
+            }
+            else
+            {
+                ShowAppMessage("Không tìm thấy", $"Đường dẫn không tồn tại trên máy tính:\n{path}", "Warning");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowAppMessage("Lỗi mở thư mục", ex.Message, "Error");
+        }
+    }
+
+    public void ExecuteRemoveDetectedPath(DetectedPathItem? item)
+    {
+        if (item == null) return;
+
+        item.PropertyChanged -= OnDetectedItemPropertyChanged;
+        DetectedPathItems.Remove(item);
+        DetectedPathsList.Remove(item.Path);
+
+        if (CurrentGame != null)
+        {
+            CurrentGame.DetectedPathsOnDisk.RemoveAll(p => p.Equals(item.Path, StringComparison.OrdinalIgnoreCase));
+            CurrentGame.DetectedPathItems = DetectedPathItems.ToList();
+            CurrentGame.TotalSizeBytes = DetectedPathItems.Sum(p => p.TotalSizeBytes);
+            CurrentGame.FileCount = DetectedPathItems.Sum(p => p.FileCount);
+            DetectedFileCount = CurrentGame.FileCount;
+            DetectedSizeFormatted = FormatBytes(CurrentGame.TotalSizeBytes);
+        }
+
+        IsGameFoundOnDisk = DetectedPathItems.Any(p => Directory.Exists(p.Path) || File.Exists(p.Path));
+        UpdateSelectedStats();
+        StatusMessage = $"Đã xóa vị trí lưu: {item.Path}";
+    }
+
     private void OnDetectedItemPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(DetectedPathItem.IsSelected))
@@ -1382,6 +1480,63 @@ public class MainViewModel : INotifyPropertyChanged
         return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
     }
 
+    private void UpdateMasterModalState()
+    {
+        if (!IsHistoryDetailsModalOpen &&
+            !IsRestoreModalOpen &&
+            !IsConfirmModalOpen &&
+            !IsRestoreSourceModalOpen &&
+            !IsSyncCloudSelectModalOpen &&
+            !IsMessageModalOpen &&
+            !IsProgressModalOpen)
+        {
+            IsModalOpen = false;
+        }
+    }
+
+    private static string CleanErrorMessage(string? msg)
+    {
+        if (string.IsNullOrWhiteSpace(msg)) return "Lỗi không xác định.";
+        var clean = msg.Trim();
+        if (clean.Contains('{') && clean.Contains('}'))
+        {
+            try
+            {
+                var jsonStart = clean.IndexOf('{');
+                var jsonEnd = clean.LastIndexOf('}');
+                if (jsonStart >= 0 && jsonEnd > jsonStart)
+                {
+                    var prefix = clean.Substring(0, jsonStart).Trim(' ', ':');
+                    var jsonStr = clean.Substring(jsonStart, jsonEnd - jsonStart + 1);
+                    using var doc = System.Text.Json.JsonDocument.Parse(jsonStr);
+                    var root = doc.RootElement;
+                    string? extracted = null;
+                    if (root.TryGetProperty("error", out var errProp))
+                    {
+                        if (errProp.ValueKind == System.Text.Json.JsonValueKind.String)
+                            extracted = errProp.GetString();
+                        else if (errProp.ValueKind == System.Text.Json.JsonValueKind.Object && errProp.TryGetProperty("message", out var mProp))
+                            extracted = mProp.GetString();
+                    }
+                    else if (root.TryGetProperty("message", out var mProp2))
+                    {
+                        extracted = mProp2.GetString();
+                    }
+
+                    if (!string.IsNullOrEmpty(extracted))
+                    {
+                        return string.IsNullOrEmpty(prefix) ? extracted : $"{prefix}: {extracted}";
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback to basic cleaning
+            }
+        }
+        return clean.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ").Trim();
+    }
+
     public void ShowAppMessage(string title, string content, string type = "Info", string? details = null)
     {
         MessageModalTitle = title;
@@ -1396,13 +1551,10 @@ public class MainViewModel : INotifyPropertyChanged
     public void ExecuteCloseMessageModal()
     {
         IsMessageModalOpen = false;
-        if (!IsHistoryDetailsModalOpen && !IsRestoreModalOpen && !IsConfirmModalOpen && !IsRestoreSourceModalOpen)
-        {
-            IsModalOpen = false;
-        }
+        UpdateMasterModalState();
     }
 
-    public async Task ExecuteSyncSelectedDetailToCloudAsync(BackupHistoryDetail? detail)
+    public void OpenSyncCloudSelectModal(BackupHistoryDetail? detail)
     {
         detail ??= SelectedHistoryDetail;
         if (detail == null)
@@ -1411,15 +1563,55 @@ public class MainViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (!_cloudManager.IsLoggedIn())
+        TargetSyncDetail = detail;
+        OnPropertyChanged(nameof(IsGoogleDriveConnected));
+        OnPropertyChanged(nameof(GoogleDriveEmail));
+        OnPropertyChanged(nameof(IsOneDriveConnected));
+        OnPropertyChanged(nameof(OneDriveEmail));
+        OnPropertyChanged(nameof(IsTargetSyncedToGoogleDrive));
+        OnPropertyChanged(nameof(IsTargetSyncedToOneDrive));
+        OnPropertyChanged(nameof(GoogleDriveSyncDateText));
+        OnPropertyChanged(nameof(OneDriveSyncDateText));
+
+        IsSyncCloudSelectModalOpen = true;
+        IsModalOpen = true;
+    }
+
+    public async Task ConfirmSyncToProviderAsync(string providerName)
+    {
+        IsSyncCloudSelectModalOpen = false;
+        if (TargetSyncDetail == null) return;
+        await StartSyncToProviderAsync(TargetSyncDetail, providerName);
+    }
+
+    public void ExecuteCloseSyncCloudSelectModal()
+    {
+        IsSyncCloudSelectModalOpen = false;
+        TargetSyncDetail = null;
+        UpdateMasterModalState();
+    }
+
+    public async Task StartSyncToProviderAsync(BackupHistoryDetail detail, string providerName)
+    {
+        var provider = _cloudManager.GetProvider(providerName);
+        if (provider == null || !provider.IsAuthenticated)
         {
-            ShowAppMessage("Chưa đăng nhập Cloud", $"Bạn chưa kết nối tài khoản {_cloudManager.ActiveProviderName}.\n\nVui lòng vào tab Cài đặt để kết nối Google Drive hoặc OneDrive trước khi đồng bộ!", "Warning");
+            ShowAppMessage("Chưa kết nối Cloud", $"Bạn chưa kết nối tài khoản {providerName}.\n\nVui lòng vào tab Cài đặt để kết nối trước khi đồng bộ!", "Warning");
             return;
         }
 
+        _cloudManager.SetActiveProvider(providerName);
         IsCloudSyncing = true;
         CloudSyncProgressPercent = 0;
         CloudSyncProgressText = "Đang chuẩn bị tải lên Cloud...";
+
+        ActiveProgressTitle = $"Đồng bộ Cloud: {detail.GameName}";
+        ActiveProgressMessage = $"Đang chuẩn bị tải lên {provider.DisplayName}...";
+        ActiveProgressPercent = 0;
+        ActiveProgressSubText = string.Empty;
+        IsProgressModalOpen = true;
+
+        _syncCts = new CancellationTokenSource();
 
         try
         {
@@ -1427,16 +1619,20 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 CloudSyncProgressPercent = p.Percent;
                 CloudSyncProgressText = string.IsNullOrEmpty(p.SpeedText) ? p.Message : $"{p.Message} ({p.SpeedText})";
+                ActiveProgressPercent = p.Percent;
+                ActiveProgressMessage = p.Message;
+                ActiveProgressSubText = string.IsNullOrEmpty(p.SpeedText) ? string.Empty : $"Tốc độ: {p.SpeedText}";
             });
 
-            var result = await _backupService.SyncSnapshotToCloudAsync(detail, _cloudManager.CurrentProvider, progress);
+            var result = await _backupService.SyncSnapshotToCloudAsync(detail, provider, progress, _syncCts.Token);
+
+            IsProgressModalOpen = false;
 
             if (result.Success)
             {
-                StatusMessage = $"✓ Đồng bộ Cloud thành công bản sao lưu #{detail.Id} lên {_cloudManager.ActiveProviderName}!";
-                ShowAppMessage("Đồng bộ Cloud thành công", $"Bản sao lưu game '{detail.GameName}' ngày {detail.BackupDate:dd/MM/yyyy HH:mm:ss} đã được tải lên {_cloudManager.ActiveProviderName} thành công!\n\nTên file Cloud: {result.FileName}\nProvider: {_cloudManager.ActiveProviderName}", "Success");
+                StatusMessage = $"✓ Đồng bộ Cloud thành công bản sao lưu #{detail.Id} lên {provider.DisplayName}!";
+                ShowAppMessage("Đồng bộ Cloud thành công", $"Bản sao lưu game '{detail.GameName}' ngày {detail.BackupDate:dd/MM/yyyy HH:mm:ss} đã được tải lên {provider.DisplayName} thành công!\n\nTên file Cloud: {result.FileName}\nProvider: {provider.DisplayName}", "Success");
 
-                // Nạp lại danh sách snapshot từ SQLite để cập nhật icon/badge Cloud
                 var freshDetails = await _databaseService.GetHistoryDetailsByGameIdAsync(detail.GameHistoryId);
                 CurrentHistoryDetails.Clear();
                 foreach (var d in freshDetails)
@@ -1447,18 +1643,64 @@ public class MainViewModel : INotifyPropertyChanged
             }
             else
             {
-                StatusMessage = $"Đồng bộ Cloud thất bại: {result.ErrorMessage}";
-                ShowAppMessage("Đồng bộ Cloud thất bại", $"Không thể tải bản sao lưu lên {_cloudManager.ActiveProviderName}:\n{result.ErrorMessage}", "Error");
+                var cleanErr = CleanErrorMessage(result.ErrorMessage);
+                StatusMessage = $"Đồng bộ Cloud thất bại: {cleanErr}";
+                ShowAppMessage("Đồng bộ Cloud thất bại", $"Không thể tải bản sao lưu lên {provider.DisplayName}:\n{cleanErr}", "Error", result.ErrorMessage);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            IsProgressModalOpen = false;
+            StatusMessage = "Đã hủy quá trình đồng bộ Cloud theo yêu cầu.";
+            ShowAppMessage("Đã hủy đồng bộ", "Quá trình tải dữ liệu lên Cloud đã được hủy an toàn.", "Info");
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Lỗi đồng bộ Cloud: {ex.Message}";
-            ShowAppMessage("Lỗi đồng bộ Cloud", "Đã xảy ra lỗi trong quá trình tải lên Cloud.", "Error", ex.ToString());
+            IsProgressModalOpen = false;
+            var cleanMsg = CleanErrorMessage(ex.Message);
+            StatusMessage = $"Lỗi đồng bộ Cloud: {cleanMsg}";
+            ShowAppMessage("Lỗi đồng bộ Cloud", $"Đã xảy ra lỗi trong quá trình tải lên Cloud:\n{cleanMsg}", "Error", ex.ToString());
         }
         finally
         {
+            _syncCts?.Dispose();
+            _syncCts = null;
             IsCloudSyncing = false;
+            IsProgressModalOpen = false;
+        }
+    }
+
+    public void ExecuteCancelSync()
+    {
+        if (_syncCts != null && !_syncCts.IsCancellationRequested)
+        {
+            _syncCts.Cancel();
+            ActiveProgressMessage = "Đang hủy quá trình tải lên...";
+        }
+    }
+
+    public void ExecuteOpenCloudWebView(object? parameter)
+    {
+        string? url = null;
+        if (parameter is CloudSyncInfo syncInfo)
+        {
+            url = syncInfo.WebViewUrl;
+        }
+        else if (parameter is BackupHistoryDetail detail)
+        {
+            url = detail.CloudSyncList.FirstOrDefault()?.WebViewUrl;
+        }
+
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                ShowAppMessage("Không thể mở trình duyệt", ex.Message, "Error");
+            }
         }
     }
 
@@ -1523,6 +1765,22 @@ public class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public void ExecuteOpenGoogleCloudConsoleGuide()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://console.cloud.google.com/apis/credentials") { UseShellExecute = true });
+        }
+        catch
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("https://console.cloud.google.com") { UseShellExecute = true });
+            }
+            catch { }
+        }
+    }
+
     public async Task ExecuteSaveCloudApiSettingsAsync()
     {
         try
@@ -1575,7 +1833,20 @@ public class MainViewModel : INotifyPropertyChanged
     public string StatusMessage
     {
         get => _statusMessage;
-        set => SetField(ref _statusMessage, value);
+        set
+        {
+            var sanitized = value;
+            if (!string.IsNullOrEmpty(sanitized))
+            {
+                sanitized = sanitized.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ");
+                while (sanitized.Contains("  "))
+                {
+                    sanitized = sanitized.Replace("  ", " ");
+                }
+                sanitized = sanitized.Trim();
+            }
+            SetField(ref _statusMessage, sanitized ?? string.Empty);
+        }
     }
 
     public GameSaveInfo? CurrentGame
@@ -1629,7 +1900,17 @@ public class MainViewModel : INotifyPropertyChanged
     public bool IsBackingUp
     {
         get => _isBackingUp;
-        set => SetField(ref _isBackingUp, value);
+        set
+        {
+            if (SetField(ref _isBackingUp, value))
+            {
+                OnPropertyChanged(nameof(IsNotBackingUp));
+                OnPropertyChanged(nameof(IsBusy));
+                OnPropertyChanged(nameof(IsNotBusy));
+                OnPropertyChanged(nameof(CanCloseModal));
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
     }
 
     public int BackupProgressPercent
@@ -1664,8 +1945,51 @@ public class MainViewModel : INotifyPropertyChanged
 
     public bool IsModalOpen
     {
-        get => _isModalOpen;
+        get => _isModalOpen || _isProgressModalOpen;
         set => SetField(ref _isModalOpen, value);
+    }
+
+    // Unified busy states for UI disabling and tab locking
+    public bool IsBusy => IsBackingUp || IsCloudSyncing || IsModalRestoring;
+    public bool IsNotBusy => !IsBusy;
+    public bool IsNotBackingUp => !IsBackingUp;
+    public bool CanCloseModal => !IsModalRestoring && !IsCloudSyncing;
+
+    // Dedicated Progress Modal Properties
+    public bool IsProgressModalOpen
+    {
+        get => _isProgressModalOpen;
+        set
+        {
+            if (SetField(ref _isProgressModalOpen, value))
+            {
+                OnPropertyChanged(nameof(IsModalOpen));
+            }
+        }
+    }
+
+    public string ActiveProgressTitle
+    {
+        get => _activeProgressTitle;
+        set => SetField(ref _activeProgressTitle, value);
+    }
+
+    public string ActiveProgressMessage
+    {
+        get => _activeProgressMessage;
+        set => SetField(ref _activeProgressMessage, value);
+    }
+
+    public int ActiveProgressPercent
+    {
+        get => _activeProgressPercent;
+        set => SetField(ref _activeProgressPercent, value);
+    }
+
+    public string ActiveProgressSubText
+    {
+        get => _activeProgressSubText;
+        set => SetField(ref _activeProgressSubText, value);
     }
 
     public bool IsHistoryDetailsModalOpen
@@ -1693,6 +2017,9 @@ public class MainViewModel : INotifyPropertyChanged
         {
             if (SetField(ref _isModalRestoring, value))
             {
+                OnPropertyChanged(nameof(IsBusy));
+                OnPropertyChanged(nameof(IsNotBusy));
+                OnPropertyChanged(nameof(CanCloseModal));
                 CommandManager.InvalidateRequerySuggested();
             }
         }
@@ -1837,10 +2164,13 @@ public class MainViewModel : INotifyPropertyChanged
         {
             if (SetField(ref _isConfirmModalDeleting, value))
             {
+                OnPropertyChanged(nameof(IsNotConfirmModalDeleting));
                 CommandManager.InvalidateRequerySuggested();
             }
         }
     }
+
+    public bool IsNotConfirmModalDeleting => !_isConfirmModalDeleting;
 
     public int ConfirmModalProgressPercent
     {
@@ -1957,6 +2287,9 @@ public class MainViewModel : INotifyPropertyChanged
         {
             if (SetField(ref _isCloudSyncing, value))
             {
+                OnPropertyChanged(nameof(IsBusy));
+                OnPropertyChanged(nameof(IsNotBusy));
+                OnPropertyChanged(nameof(CanCloseModal));
                 CommandManager.InvalidateRequerySuggested();
             }
         }
@@ -2005,11 +2338,100 @@ public class MainViewModel : INotifyPropertyChanged
         set => SetField(ref _activeRestoreFromCloud, value);
     }
 
+    public bool IsPendingDetailSyncedToGoogleDrive
+    {
+        get => _isPendingDetailSyncedToGoogleDrive;
+        set => SetField(ref _isPendingDetailSyncedToGoogleDrive, value);
+    }
+
+    public bool IsPendingDetailSyncedToOneDrive
+    {
+        get => _isPendingDetailSyncedToOneDrive;
+        set => SetField(ref _isPendingDetailSyncedToOneDrive, value);
+    }
+
+    // Cloud Sync Provider Selection Modal (Modal 7) Properties
+    public bool IsSyncCloudSelectModalOpen
+    {
+        get => _isSyncCloudSelectModalOpen;
+        set
+        {
+            if (SetField(ref _isSyncCloudSelectModalOpen, value))
+            {
+                OnPropertyChanged(nameof(CanCloseModal));
+            }
+        }
+    }
+
+    public BackupHistoryDetail? TargetSyncDetail
+    {
+        get => _targetSyncDetail;
+        set => SetField(ref _targetSyncDetail, value);
+    }
+
+    public bool IsGoogleDriveConnected
+    {
+        get
+        {
+            var p = _cloudManager?.GetProvider("GoogleDrive");
+            return p != null && p.IsAuthenticated;
+        }
+    }
+
+    public string GoogleDriveEmail
+    {
+        get
+        {
+            var p = _cloudManager?.GetProvider("GoogleDrive");
+            return p != null && p.IsAuthenticated ? (p.CurrentAccountEmail ?? "Đã kết nối") : "Chưa kết nối";
+        }
+    }
+
+    public bool IsOneDriveConnected
+    {
+        get
+        {
+            var p = _cloudManager?.GetProvider("OneDrive");
+            return p != null && p.IsAuthenticated;
+        }
+    }
+
+    public string OneDriveEmail
+    {
+        get
+        {
+            var p = _cloudManager?.GetProvider("OneDrive");
+            return p != null && p.CurrentAccountEmail != null ? p.CurrentAccountEmail : (p != null && p.IsAuthenticated ? "Đã kết nối" : "Chưa kết nối");
+        }
+    }
+
+    public bool IsTargetSyncedToGoogleDrive => TargetSyncDetail?.IsSyncedTo("GoogleDrive") ?? false;
+    public bool IsTargetSyncedToOneDrive => TargetSyncDetail?.IsSyncedTo("OneDrive") ?? false;
+
+    public string GoogleDriveSyncDateText
+    {
+        get
+        {
+            var item = TargetSyncDetail?.GetSyncInfo("GoogleDrive");
+            return item != null ? $"Đã đồng bộ lúc: {item.SyncDate:dd/MM/yyyy HH:mm:ss}" : "Chưa đồng bộ lên Google Drive";
+        }
+    }
+
+    public string OneDriveSyncDateText
+    {
+        get
+        {
+            var item = TargetSyncDetail?.GetSyncInfo("OneDrive");
+            return item != null ? $"Đã đồng bộ lúc: {item.SyncDate:dd/MM/yyyy HH:mm:ss}" : "Chưa đồng bộ lên OneDrive";
+        }
+    }
+
     // Commands
     public ICommand SearchCommand { get; }
     public ICommand BackupCommand { get; }
     public ICommand OpenBackupFolderCommand { get; }
-    public ICommand OpenSourceFolderCommand { get; }
+    public ICommand OpenSpecificDetectedPathCommand { get; }
+    public ICommand RemoveDetectedPathCommand { get; }
     public ICommand RestoreRecordCommand { get; }
     public ICommand DeleteRecordCommand { get; }
     public ICommand OpenRecordFolderCommand { get; }
@@ -2048,12 +2470,20 @@ public class MainViewModel : INotifyPropertyChanged
 
     // Cloud & Restore Source Modal Commands
     public ICommand SyncSelectedDetailToCloudCommand { get; }
+    public ICommand OpenSyncCloudSelectModalCommand { get; }
+    public ICommand ConfirmSyncToProviderCommand { get; }
+    public ICommand CloseSyncCloudSelectModalCommand { get; }
+    public ICommand CancelSyncCommand { get; }
+    public ICommand OpenCloudWebViewCommand { get; }
     public ICommand ConnectCloudAccountCommand { get; }
     public ICommand DisconnectCloudAccountCommand { get; }
     public ICommand SaveCloudApiSettingsCommand { get; }
     public ICommand OpenAzurePortalGuideCommand { get; }
+    public ICommand OpenGoogleCloudConsoleGuideCommand { get; }
     public ICommand ConfirmRestoreFromLocalCommand { get; }
     public ICommand ConfirmRestoreFromCloudCommand { get; }
+    public ICommand ConfirmRestoreFromGoogleDriveCommand { get; }
+    public ICommand ConfirmRestoreFromOneDriveCommand { get; }
     public ICommand CancelRestoreSourceModalCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;

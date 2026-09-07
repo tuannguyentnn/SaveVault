@@ -618,6 +618,36 @@ public class BackupHistoryDetail : INotifyPropertyChanged
         set => SetField(ref _cloudSyncDate, value);
     }
 
+    private List<CloudSyncInfo> _cloudSyncList = new();
+    private string _cloudSyncJson = string.Empty;
+
+    public List<CloudSyncInfo> CloudSyncList
+    {
+        get => _cloudSyncList;
+        set
+        {
+            if (SetField(ref _cloudSyncList, value))
+            {
+                OnPropertyChanged(nameof(HasMultipleClouds));
+                OnPropertyChanged(nameof(CloudStatusFormatted));
+            }
+        }
+    }
+
+    public string CloudSyncJson
+    {
+        get => _cloudSyncJson;
+        set => SetField(ref _cloudSyncJson, value);
+    }
+
+    public bool HasMultipleClouds => CloudSyncList.Count > 1;
+
+    public bool IsSyncedTo(string provider) =>
+        CloudSyncList.Any(c => c.Provider.Equals(provider, StringComparison.OrdinalIgnoreCase));
+
+    public CloudSyncInfo? GetSyncInfo(string provider) =>
+        CloudSyncList.FirstOrDefault(c => c.Provider.Equals(provider, StringComparison.OrdinalIgnoreCase));
+
     public string CloudStatusFormatted => IsCloudSynced 
         ? (!string.IsNullOrWhiteSpace(CloudProvider) ? $"Đã đồng bộ ({CloudProvider})" : "Đã đồng bộ Cloud") 
         : "Chưa đồng bộ Cloud";

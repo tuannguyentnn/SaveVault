@@ -135,6 +135,7 @@ public class DatabaseService
         EnsureColumnExists(connection, "backup_history_details", "CloudFileId", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CloudFileName", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CloudSyncDate", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "CloudSyncJson", "TEXT");
     }
 
     private static void EnsureColumnExists(SqliteConnection connection, string table, string column, string columnDef)
@@ -315,15 +316,20 @@ public class DatabaseService
             // Gán GameHistoryId cho detail
             detail.GameHistoryId = gameHistoryId;
 
+            if (detail.CloudSyncList.Count > 0 && string.IsNullOrEmpty(detail.CloudSyncJson))
+            {
+                detail.CloudSyncJson = JsonSerializer.Serialize(detail.CloudSyncList);
+            }
+
             // INSERT vào backup_history_details
             using (var insertDetailCmd = connection.CreateCommand())
             {
                 insertDetailCmd.Transaction = transaction;
                 insertDetailCmd.CommandText = @"
                     INSERT INTO backup_history_details 
-                    (GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate)
+                    (GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson)
                     VALUES 
-                    ($gameId, $game, $backup, $source, $savePaths, $manifest, $files, $size, $date, $comp, $status, $note, $isCloudSynced, $cloudProvider, $cloudFileId, $cloudFileName, $cloudSyncDate);
+                    ($gameId, $game, $backup, $source, $savePaths, $manifest, $files, $size, $date, $comp, $status, $note, $isCloudSynced, $cloudProvider, $cloudFileId, $cloudFileName, $cloudSyncDate, $cloudSyncJson);
                     SELECT last_insert_rowid();
                 ";
                 insertDetailCmd.Parameters.AddWithValue("$gameId", detail.GameHistoryId);
@@ -343,6 +349,7 @@ public class DatabaseService
                 insertDetailCmd.Parameters.AddWithValue("$cloudFileId", (object?)detail.CloudFileId ?? DBNull.Value);
                 insertDetailCmd.Parameters.AddWithValue("$cloudFileName", (object?)detail.CloudFileName ?? DBNull.Value);
                 insertDetailCmd.Parameters.AddWithValue("$cloudSyncDate", detail.CloudSyncDate.HasValue ? detail.CloudSyncDate.Value.ToString("o") : (object)DBNull.Value);
+                insertDetailCmd.Parameters.AddWithValue("$cloudSyncJson", (object?)detail.CloudSyncJson ?? DBNull.Value);
 
                 var detailIdObj = await insertDetailCmd.ExecuteScalarAsync();
                 detail.Id = Convert.ToInt64(detailIdObj);
@@ -401,7 +408,7 @@ public class DatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate
+            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson
             FROM backup_history_details
             WHERE GameHistoryId = $gameId
             ORDER BY Id DESC;
@@ -411,6 +418,41 @@ public class DatabaseService
         using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
+            var isCloudSynced = reader.FieldCount > 13 && !reader.IsDBNull(13) && reader.GetInt32(13) == 1;
+            var cloudProvider = reader.FieldCount > 14 && !reader.IsDBNull(14) ? reader.GetString(14) : string.Empty;
+            var cloudFileId = reader.FieldCount > 15 && !reader.IsDBNull(15) ? reader.GetString(15) : string.Empty;
+            var cloudFileName = reader.FieldCount > 16 && !reader.IsDBNull(16) ? reader.GetString(16) : string.Empty;
+            var cloudSyncDate = reader.FieldCount > 17 && !reader.IsDBNull(17) && DateTime.TryParse(reader.GetString(17), out var cdt) ? cdt : (DateTime?)null;
+            var cloudSyncJson = reader.FieldCount > 18 && !reader.IsDBNull(18) ? reader.GetString(18) : string.Empty;
+
+            var syncList = new List<CloudSyncInfo>();
+            if (!string.IsNullOrEmpty(cloudSyncJson))
+            {
+                try
+                {
+                    syncList = JsonSerializer.Deserialize<List<CloudSyncInfo>>(cloudSyncJson) ?? new();
+                }
+                catch { }
+            }
+
+            // Tương thích ngược: Nếu CloudSyncJson rỗng nhưng có IsCloudSynced từ trước
+            if (syncList.Count == 0 && isCloudSynced && !string.IsNullOrEmpty(cloudFileId))
+            {
+                var provName = !string.IsNullOrEmpty(cloudProvider) ? cloudProvider : "Cloud";
+                var webUrl = provName.Equals("OneDrive", StringComparison.OrdinalIgnoreCase)
+                    ? $"https://onedrive.live.com/?id={cloudFileId}"
+                    : $"https://drive.google.com/file/d/{cloudFileId}/view";
+
+                syncList.Add(new CloudSyncInfo
+                {
+                    Provider = provName,
+                    FileId = cloudFileId,
+                    FileName = cloudFileName,
+                    SyncDate = cloudSyncDate ?? DateTime.Now,
+                    WebViewUrl = webUrl
+                });
+            }
+
             list.Add(new BackupHistoryDetail
             {
                 Id = reader.GetInt64(0),
@@ -426,18 +468,20 @@ public class DatabaseService
                 IsCompressed = reader.GetInt32(10) == 1,
                 Status = reader.GetString(11),
                 Note = !reader.IsDBNull(12) ? reader.GetString(12) : null,
-                IsCloudSynced = reader.FieldCount > 13 && !reader.IsDBNull(13) && reader.GetInt32(13) == 1,
-                CloudProvider = reader.FieldCount > 14 && !reader.IsDBNull(14) ? reader.GetString(14) : string.Empty,
-                CloudFileId = reader.FieldCount > 15 && !reader.IsDBNull(15) ? reader.GetString(15) : string.Empty,
-                CloudFileName = reader.FieldCount > 16 && !reader.IsDBNull(16) ? reader.GetString(16) : string.Empty,
-                CloudSyncDate = reader.FieldCount > 17 && !reader.IsDBNull(17) && DateTime.TryParse(reader.GetString(17), out var cdt) ? cdt : null
+                IsCloudSynced = isCloudSynced || syncList.Count > 0,
+                CloudProvider = syncList.Count > 0 ? string.Join(", ", syncList.Select(c => c.Provider)) : cloudProvider,
+                CloudFileId = cloudFileId,
+                CloudFileName = cloudFileName,
+                CloudSyncDate = cloudSyncDate,
+                CloudSyncJson = cloudSyncJson,
+                CloudSyncList = syncList
             });
         }
 
         return list;
     }
 
-    public async Task UpdateCloudSyncDetailAsync(long detailId, bool isSynced, string provider, string fileId, string fileName, DateTime? syncDate)
+    public async Task UpdateCloudSyncDetailAsync(long detailId, bool isSynced, string provider, string fileId, string fileName, DateTime? syncDate, string? cloudSyncJson = null)
     {
         using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync();
@@ -449,7 +493,8 @@ public class DatabaseService
                 CloudProvider = $provider,
                 CloudFileId = $fileId,
                 CloudFileName = $fileName,
-                CloudSyncDate = $syncDate
+                CloudSyncDate = $syncDate,
+                CloudSyncJson = $cloudSyncJson
             WHERE Id = $id;
         ";
         command.Parameters.AddWithValue("$isSynced", isSynced ? 1 : 0);
@@ -457,6 +502,7 @@ public class DatabaseService
         command.Parameters.AddWithValue("$fileId", (object?)fileId ?? DBNull.Value);
         command.Parameters.AddWithValue("$fileName", (object?)fileName ?? DBNull.Value);
         command.Parameters.AddWithValue("$syncDate", syncDate.HasValue ? syncDate.Value.ToString("o") : (object)DBNull.Value);
+        command.Parameters.AddWithValue("$cloudSyncJson", (object?)cloudSyncJson ?? DBNull.Value);
         command.Parameters.AddWithValue("$id", detailId);
 
         await command.ExecuteNonQueryAsync();
@@ -684,57 +730,37 @@ public class DatabaseService
         }
     }
 
-    public async Task<string?> GetSettingAsync(string key, string? defaultValue = null)
+    public Task<string?> GetSettingAsync(string key, string? defaultValue = null)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Value FROM settings WHERE Key = $key LIMIT 1;";
-        command.Parameters.AddWithValue("$key", key);
-
-        var val = await command.ExecuteScalarAsync();
-        return val != null ? val.ToString() : defaultValue;
+        return Task.FromResult(AppConfigService.GetSetting(key, defaultValue));
     }
 
-    public async Task SaveSettingAsync(string key, string value)
+    public Task SaveSettingAsync(string key, string value)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = @"
-            INSERT INTO settings (Key, Value) VALUES ($key, $val)
-            ON CONFLICT(Key) DO UPDATE SET Value = excluded.Value;
-        ";
-        command.Parameters.AddWithValue("$key", key);
-        command.Parameters.AddWithValue("$val", value);
-
-        await command.ExecuteNonQueryAsync();
+        AppConfigService.SaveSetting(key, value);
+        return Task.CompletedTask;
     }
 
-    public async Task<AppSettings> LoadSettingsAsync(string defaultBackupDir)
+    public Task<AppSettings> LoadSettingsAsync(string defaultBackupDir)
     {
-        var backupDir = await GetSettingAsync("BackupRootDirectory", defaultBackupDir);
-        var subfolder = await GetSettingAsync("CreateTimestampSubfolder", "true");
-        var zip = await GetSettingAsync("AutoCompressZip", "false");
-        var overwrite = await GetSettingAsync("OverwriteExisting", "true");
-
-        return new AppSettings
+        var config = AppConfigService.GetConfig();
+        return Task.FromResult(new AppSettings
         {
-            BackupRootDirectory = string.IsNullOrWhiteSpace(backupDir) ? defaultBackupDir : backupDir,
-            CreateTimestampSubfolder = bool.TryParse(subfolder, out var s) && s,
-            AutoCompressZip = bool.TryParse(zip, out var z) && z,
-            OverwriteExisting = !bool.TryParse(overwrite, out var o) || o
-        };
+            BackupRootDirectory = string.IsNullOrWhiteSpace(config.BackupRootDirectory) ? defaultBackupDir : config.BackupRootDirectory,
+            CreateTimestampSubfolder = config.CreateTimestampSubfolder,
+            AutoCompressZip = true, // Mặc định và bắt buộc nén zip 100%
+            OverwriteExisting = true
+        });
     }
 
-    public async Task SaveSettingsAsync(AppSettings settings)
+    public Task SaveSettingsAsync(AppSettings settings)
     {
-        await SaveSettingAsync("BackupRootDirectory", settings.BackupRootDirectory);
-        await SaveSettingAsync("CreateTimestampSubfolder", settings.CreateTimestampSubfolder.ToString());
-        await SaveSettingAsync("AutoCompressZip", settings.AutoCompressZip.ToString());
-        await SaveSettingAsync("OverwriteExisting", settings.OverwriteExisting.ToString());
+        var config = AppConfigService.GetConfig();
+        config.BackupRootDirectory = settings.BackupRootDirectory;
+        config.CreateTimestampSubfolder = settings.CreateTimestampSubfolder;
+        config.AutoCompressZip = true;
+        AppConfigService.SaveConfig(config);
+        return Task.CompletedTask;
     }
 
     public static string NormalizeGameName(string name)
@@ -743,112 +769,6 @@ public class DatabaseService
         var lower = name.Trim().ToLowerInvariant();
         var chars = lower.Where(char.IsLetterOrDigit).ToArray();
         return new string(chars);
-    }
-}
-
-public class AppConfigFile
-{
-    public string? DatabasePath { get; set; }
-    public string? BackupRootDirectory { get; set; }
-    public bool CreateTimestampSubfolder { get; set; } = true;
-    public bool AutoCompressZip { get; set; } = false;
-}
-
-public static class AppConfigService
-{
-    private const string ConfigFileName = "app_config.json";
-    private static AppConfigFile? _cachedConfig;
-    private static readonly object _lock = new();
-
-    public static string GetConfigFilePath()
-    {
-        return Path.Combine(DatabaseService.GetDefaultProjectRoot(), ConfigFileName);
-    }
-
-    /// <summary>
-    /// Lấy cấu hình từ bộ nhớ đệm RAM. Nếu chưa nạp thì nạp từ app_config.json vào RAM.
-    /// </summary>
-    public static AppConfigFile GetConfig()
-    {
-        lock (_lock)
-        {
-            if (_cachedConfig != null) return _cachedConfig;
-            _cachedConfig = LoadConfigFromFile();
-            return _cachedConfig;
-        }
-    }
-
-    /// <summary>
-    /// Đọc trực tiếp từ file app_config.json và cập nhật cache trong RAM.
-    /// </summary>
-    public static AppConfigFile LoadConfig()
-    {
-        lock (_lock)
-        {
-            _cachedConfig = LoadConfigFromFile();
-            return _cachedConfig;
-        }
-    }
-
-    private static AppConfigFile LoadConfigFromFile()
-    {
-        try
-        {
-            var path = GetConfigFilePath();
-            if (File.Exists(path))
-            {
-                var json = File.ReadAllText(path);
-                var config = JsonSerializer.Deserialize<AppConfigFile>(json);
-                if (config != null) return config;
-            }
-        }
-        catch { }
-
-        return new AppConfigFile();
-    }
-
-    public static string? GetConfiguredDatabasePath()
-    {
-        var config = GetConfig();
-        return !string.IsNullOrWhiteSpace(config.DatabasePath) ? config.DatabasePath : null;
-    }
-
-    /// <summary>
-    /// Ghi cấu hình ra app_config.json và cập nhật ngay vào RAM cache.
-    /// </summary>
-    public static void SaveConfig(AppConfigFile config)
-    {
-        lock (_lock)
-        {
-            _cachedConfig = config;
-            try
-            {
-                var path = GetConfigFilePath();
-                var dir = Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-                var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(path, json);
-            }
-            catch { }
-        }
-    }
-
-    public static void SaveDatabasePath(string dbPath)
-    {
-        var config = GetConfig();
-        config.DatabasePath = dbPath;
-        SaveConfig(config);
-    }
-
-    public static void InvalidateCache()
-    {
-        lock (_lock)
-        {
-            _cachedConfig = null;
-        }
     }
 }
 

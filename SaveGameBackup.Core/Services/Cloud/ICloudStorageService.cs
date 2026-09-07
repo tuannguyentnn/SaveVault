@@ -53,3 +53,44 @@ public interface ICloudStorageService
         string? remoteGameFolderName = null,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Quản lý kích thước khối tải lên (Chunk Size) tối ưu hóa theo quy chuẩn API của từng Cloud Provider.
+/// </summary>
+public static class CloudChunkOptimizer
+{
+    /// <summary>
+    /// Google Drive yêu cầu mỗi chunk phải là bội số của 256 KiB (262,144 bytes).
+    /// </summary>
+    public const int GoogleDriveBlockUnit = 256 * 1024; // 256 KiB
+
+    /// <summary>
+    /// Microsoft Graph (OneDrive) yêu cầu mỗi chunk phải là bội số của 320 KiB (327,680 bytes) và không vượt quá 60 MiB.
+    /// </summary>
+    public const int OneDriveBlockUnit = 320 * 1024; // 320 KiB
+
+    /// <summary>
+    /// Tính toán kích thước chunk tối ưu theo dung lượng file và provider.
+    /// </summary>
+    /// <param name="totalBytes">Tổng dung lượng file (bytes)</param>
+    /// <param name="provider">"GoogleDrive" hoặc "OneDrive"</param>
+    /// <returns>Kích thước khối chunk chuẩn byte</returns>
+    public static int CalculateChunkSize(long totalBytes, string provider)
+    {
+        bool isOneDrive = string.Equals(provider, "OneDrive", StringComparison.OrdinalIgnoreCase);
+        int unit = isOneDrive ? OneDriveBlockUnit : GoogleDriveBlockUnit;
+
+        // Bậc chunk:
+        // - File >= 500 MB (1GB+): 96 units (~30.7 MB GDrive / ~31.45 MB OneDrive)
+        // - File >= 100 MB:        64 units (~16.3 MB GDrive / ~20.97 MB OneDrive)
+        // - File < 100 MB:         32 units (~8.1 MB GDrive / ~10.48 MB OneDrive)
+        int multiplier = totalBytes switch
+        {
+            >= 500L * 1024 * 1024 => 96,
+            >= 100L * 1024 * 1024 => 64,
+            _ => 32
+        };
+
+        return unit * multiplier;
+    }
+}

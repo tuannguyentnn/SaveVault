@@ -50,7 +50,7 @@ namespace SaveGameBackup.UI
                 DependencyObject? current = dep;
                 while (current != null && current != sender)
                 {
-                    if (current is CheckBox) return; // let CheckBox handle its own click
+                    if (current is CheckBox || current is Button) return; // let CheckBox and Button handle their own clicks
                     current = VisualTreeHelper.GetParent(current);
                 }
             }
