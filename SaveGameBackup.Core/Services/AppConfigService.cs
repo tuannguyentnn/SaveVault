@@ -23,12 +23,16 @@ public class AppConfigFile
     // Cấu hình Microsoft OneDrive (được mã hóa với Salt)
     public string? OneDriveClientIdProtected { get; set; }
     public string? OneDriveRefreshTokenProtected { get; set; }
+    public string? OneDriveAccessTokenProtected { get; set; }
+    public DateTime OneDriveAccessTokenExpiry { get; set; } = DateTime.MinValue;
     public string? OneDriveAccountEmail { get; set; }
 
     // Cấu hình Google Drive (được mã hóa với Salt)
     public string? GoogleDriveClientIdProtected { get; set; }
     public string? GoogleDriveClientSecretProtected { get; set; }
     public string? GoogleDriveRefreshTokenProtected { get; set; }
+    public string? GoogleDriveAccessTokenProtected { get; set; }
+    public DateTime GoogleDriveAccessTokenExpiry { get; set; } = DateTime.MinValue;
     public string? GoogleDriveAccountEmail { get; set; }
 
     // Các thuộc tính tiện ích (JsonIgnore) tự động mã hóa / giải mã trong suốt
@@ -44,6 +48,13 @@ public class AppConfigFile
     {
         get => SecurityHelper.DecryptWithSalt(OneDriveRefreshTokenProtected);
         set => OneDriveRefreshTokenProtected = SecurityHelper.EncryptWithSalt(value);
+    }
+
+    [JsonIgnore]
+    public string OneDriveAccessToken
+    {
+        get => SecurityHelper.DecryptWithSalt(OneDriveAccessTokenProtected);
+        set => OneDriveAccessTokenProtected = SecurityHelper.EncryptWithSalt(value);
     }
 
     [JsonIgnore]
@@ -65,6 +76,13 @@ public class AppConfigFile
     {
         get => SecurityHelper.DecryptWithSalt(GoogleDriveRefreshTokenProtected);
         set => GoogleDriveRefreshTokenProtected = SecurityHelper.EncryptWithSalt(value);
+    }
+
+    [JsonIgnore]
+    public string GoogleDriveAccessToken
+    {
+        get => SecurityHelper.DecryptWithSalt(GoogleDriveAccessTokenProtected);
+        set => GoogleDriveAccessTokenProtected = SecurityHelper.EncryptWithSalt(value);
     }
 }
 
@@ -92,6 +110,19 @@ public static class AppConfigService
             if (_cachedConfig != null) return _cachedConfig;
             _cachedConfig = LoadConfigFromFile();
             return _cachedConfig;
+        }
+    }
+
+    /// <summary>
+    /// Cập nhật cấu hình có luồng an toàn (thread-safe).
+    /// </summary>
+    public static void UpdateConfig(Action<AppConfigFile> updateAction)
+    {
+        lock (_lock)
+        {
+            var cfg = GetConfig();
+            updateAction(cfg);
+            SaveConfig(cfg);
         }
     }
 
@@ -181,10 +212,12 @@ public static class AppConfigService
         {
             "onedrive_client_id" => config.OneDriveClientId,
             "onedrive_refresh_token" => config.OneDriveRefreshToken,
+            "onedrive_access_token" => config.OneDriveAccessToken,
             "onedrive_account_email" => config.OneDriveAccountEmail ?? defaultValue,
             "gdrive_client_id" => config.GoogleDriveClientId,
             "gdrive_client_secret" => config.GoogleDriveClientSecret,
             "gdrive_refresh_token" => config.GoogleDriveRefreshToken,
+            "gdrive_access_token" => config.GoogleDriveAccessToken,
             "gdrive_account_email" => config.GoogleDriveAccountEmail ?? defaultValue,
             "active_cloud_provider" => config.ActiveCloudProvider,
             "backuprootdirectory" => config.BackupRootDirectory ?? defaultValue,
@@ -208,6 +241,9 @@ public static class AppConfigService
             case "onedrive_refresh_token":
                 config.OneDriveRefreshToken = value;
                 break;
+            case "onedrive_access_token":
+                config.OneDriveAccessToken = value;
+                break;
             case "onedrive_account_email":
                 config.OneDriveAccountEmail = value;
                 break;
@@ -219,6 +255,9 @@ public static class AppConfigService
                 break;
             case "gdrive_refresh_token":
                 config.GoogleDriveRefreshToken = value;
+                break;
+            case "gdrive_access_token":
+                config.GoogleDriveAccessToken = value;
                 break;
             case "gdrive_account_email":
                 config.GoogleDriveAccountEmail = value;

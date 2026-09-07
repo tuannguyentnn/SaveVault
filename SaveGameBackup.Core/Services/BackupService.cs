@@ -251,7 +251,7 @@ public class BackupService
             TotalSizeBytes = totalCopiedBytes,
             BackupDate = backupDateTime,
             IsCompressed = true,
-            Status = "Thành công",
+            Status = "Success",
             Note = $"Đã backup {totalCopiedFiles} file từ {pathsToBackup.Count} vị trí lưu."
         };
 
@@ -270,7 +270,7 @@ public class BackupService
             TotalSizeBytes = totalCopiedBytes,
             BackupDate = backupDateTime,
             IsCompressed = true,
-            Status = "Thành công",
+            Status = "Success",
             Note = detail.Note
         };
 
@@ -642,6 +642,15 @@ public class BackupService
                 throw new InvalidOperationException("Chưa cấu hình dịch vụ lưu trữ đám mây để tải bản sao lưu!");
             }
             var syncInfo = detail.CloudSyncList.FirstOrDefault(c => c.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase));
+            if (syncInfo == null && !string.IsNullOrEmpty(detail.CloudSyncJson))
+            {
+                try
+                {
+                    var parsed = JsonSerializer.Deserialize<List<CloudSyncInfo>>(detail.CloudSyncJson);
+                    syncInfo = parsed?.FirstOrDefault(c => c.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase));
+                }
+                catch { }
+            }
             var cloudFileId = syncInfo?.FileId ?? detail.CloudFileId;
             if (string.IsNullOrEmpty(cloudFileId))
             {
@@ -664,7 +673,7 @@ public class BackupService
                 });
             });
 
-            await cloudService.DownloadFileAsync(detail.CloudFileId, tempDownloadedZip, dlProgress, cancellationToken);
+            await cloudService.DownloadFileAsync(cloudFileId, tempDownloadedZip, dlProgress, cancellationToken);
             zipFilePath = tempDownloadedZip;
         }
 
@@ -792,12 +801,92 @@ public class BackupService
         progress?.Report(new BackupProgress { Percent = 100, Message = "Khôi phục hoàn tất!" });
     }
 
+    private static List<CloudSyncInfo> GetAllCloudTargets(BackupHistoryDetail detail, ICloudStorageService? fallbackService)
+    {
+        var targets = new List<CloudSyncInfo>();
+
+        if (detail.CloudSyncList != null && detail.CloudSyncList.Count > 0)
+        {
+            targets.AddRange(detail.CloudSyncList);
+        }
+        else if (!string.IsNullOrWhiteSpace(detail.CloudSyncJson))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<List<CloudSyncInfo>>(detail.CloudSyncJson);
+                if (parsed != null && parsed.Count > 0)
+                {
+                    targets.AddRange(parsed);
+                }
+            }
+            catch { }
+        }
+
+        // Fallback nếu CloudSyncList rỗng nhưng detail có CloudFileId
+        if (targets.Count == 0 && !string.IsNullOrWhiteSpace(detail.CloudFileId))
+        {
+            var providerName = !string.IsNullOrWhiteSpace(detail.CloudProvider)
+                ? detail.CloudProvider
+                : (fallbackService?.ProviderName ?? "GoogleDrive");
+
+            if (providerName.Contains(','))
+            {
+                var parts = providerName.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                foreach (var p in parts)
+                {
+                    targets.Add(new CloudSyncInfo
+                    {
+                        Provider = p,
+                        FileId = detail.CloudFileId,
+                        FileName = detail.CloudFileName
+                    });
+                }
+            }
+            else
+            {
+                targets.Add(new CloudSyncInfo
+                {
+                    Provider = providerName,
+                    FileId = detail.CloudFileId,
+                    FileName = detail.CloudFileName
+                });
+            }
+        }
+
+        return targets;
+    }
+
+    private static ICloudStorageService? ResolveCloudProvider(
+        string? providerName, 
+        ICloudStorageService? fallbackService, 
+        Func<string, ICloudStorageService?>? resolver)
+    {
+        if (resolver != null && !string.IsNullOrWhiteSpace(providerName))
+        {
+            var resolved = resolver(providerName);
+            if (resolved != null) return resolved;
+        }
+
+        if (fallbackService != null)
+        {
+            if (string.IsNullOrWhiteSpace(providerName) || 
+                fallbackService.ProviderName.Contains(providerName, StringComparison.OrdinalIgnoreCase) ||
+                providerName.Contains(fallbackService.ProviderName, StringComparison.OrdinalIgnoreCase))
+            {
+                return fallbackService;
+            }
+        }
+
+        return fallbackService;
+    }
+
     public async Task DeleteSnapshotWithProgressAsync(
         BackupHistoryDetail detail,
         bool deleteFromCloud = false,
         ICloudStorageService? cloudService = null,
         IProgress<BackupProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<string, ICloudStorageService?>? cloudServiceResolver = null)
     {
         if (detail == null) return;
 
@@ -849,20 +938,58 @@ public class BackupService
 
         progress?.Report(new BackupProgress { Percent = 65, Message = "Đã xóa dữ liệu trên ổ đĩa cục bộ." });
 
-        // 2. Xóa trên Cloud nếu được chọn
-        if (deleteFromCloud && detail.IsCloudSynced && !string.IsNullOrEmpty(detail.CloudFileId))
+        // 2. Xóa trên Cloud nếu được chọn (hỗ trợ xóa trên TẤT CẢ các cloud đã đồng bộ: Google Drive, OneDrive...)
+        if (deleteFromCloud && (detail.IsCloudSynced || !string.IsNullOrEmpty(detail.CloudFileId) || detail.CloudSyncList.Count > 0))
         {
-            progress?.Report(new BackupProgress { Percent = 70, Message = $"Đang xóa file trên {detail.CloudProvider}..." });
-            if (cloudService != null)
+            var targets = GetAllCloudTargets(detail, cloudService);
+            if (targets.Count > 0)
             {
-                try
+                int totalCloudTargets = targets.Count;
+                for (int ci = 0; ci < totalCloudTargets; ci++)
                 {
-                    await cloudService.DeleteFileAsync(detail.CloudFileId, cancellationToken);
-                    progress?.Report(new BackupProgress { Percent = 85, Message = $"Đã xóa file trên {detail.CloudProvider} thành công." });
-                }
-                catch (Exception ex)
-                {
-                    progress?.Report(new BackupProgress { Percent = 85, Message = $"Cảnh báo: Không thể xóa file trên Cloud ({ex.Message})" });
+                    var target = targets[ci];
+                    if (string.IsNullOrEmpty(target.FileId)) continue;
+
+                    var targetService = ResolveCloudProvider(target.Provider, cloudService, cloudServiceResolver);
+                    var providerDisplay = targetService?.DisplayName ?? target.Provider;
+
+                    int stepStart = 70 + (int)((double)ci / totalCloudTargets * 18);
+                    int stepEnd = 70 + (int)((double)(ci + 1) / totalCloudTargets * 18);
+
+                    progress?.Report(new BackupProgress
+                    {
+                        Percent = stepStart,
+                        Message = totalCloudTargets > 1
+                            ? $"Đang xóa file trên {providerDisplay} ({ci + 1}/{totalCloudTargets})..."
+                            : $"Đang xóa file trên {providerDisplay}..."
+                    });
+
+                    if (targetService != null)
+                    {
+                        try
+                        {
+                            await targetService.DeleteFileAsync(target.FileId, cancellationToken);
+                            progress?.Report(new BackupProgress
+                            {
+                                Percent = stepEnd,
+                                Message = $"Đã xóa file trên {providerDisplay} thành công."
+                            });
+                            LoggingService.LogAction("Cloud_File_Deleted", new { Provider = target.Provider, FileId = target.FileId });
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggingService.Warn("Cảnh báo: Không thể xóa file trên cloud {Provider} (FileId: {FileId}): {Message}", target.Provider, target.FileId, ex.Message);
+                            progress?.Report(new BackupProgress
+                            {
+                                Percent = stepEnd,
+                                Message = $"Cảnh báo: Không thể xóa trên {providerDisplay} ({ex.Message})"
+                            });
+                        }
+                    }
+                    else
+                    {
+                        LoggingService.Warn("Không tìm thấy dịch vụ cloud tương ứng cho provider: {Provider}", target.Provider);
+                    }
                 }
             }
         }
@@ -879,7 +1006,8 @@ public class BackupService
         bool deleteFromCloud = false,
         ICloudStorageService? cloudService = null,
         IProgress<BackupProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<string, ICloudStorageService?>? cloudServiceResolver = null)
     {
         if (gameHistory == null) return;
 
@@ -916,10 +1044,27 @@ public class BackupService
                 try { Directory.Delete(d.BackupPath, true); } catch { }
             }
 
-            // Xóa cloud
-            if (deleteFromCloud && d.IsCloudSynced && !string.IsNullOrEmpty(d.CloudFileId) && cloudService != null)
+            // Xóa cloud (hỗ trợ xóa trên TẤT CẢ các cloud đã đồng bộ: Google Drive, OneDrive...)
+            if (deleteFromCloud && (d.IsCloudSynced || !string.IsNullOrEmpty(d.CloudFileId) || d.CloudSyncList.Count > 0))
             {
-                try { await cloudService.DeleteFileAsync(d.CloudFileId, cancellationToken); } catch { }
+                var targets = GetAllCloudTargets(d, cloudService);
+                foreach (var target in targets)
+                {
+                    if (string.IsNullOrEmpty(target.FileId)) continue;
+                    var targetService = ResolveCloudProvider(target.Provider, cloudService, cloudServiceResolver);
+                    if (targetService != null)
+                    {
+                        try
+                        {
+                            await targetService.DeleteFileAsync(target.FileId, cancellationToken);
+                            LoggingService.LogAction("Cloud_File_Deleted_GameHistory", new { Game = gameHistory.GameName, Provider = target.Provider, FileId = target.FileId });
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggingService.Warn("Cảnh báo: Không thể xóa file trên cloud {Provider} khi xóa game history: {Message}", target.Provider, ex.Message);
+                        }
+                    }
+                }
             }
         }
 

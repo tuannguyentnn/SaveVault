@@ -1,0 +1,266 @@
+<UserControl x:Class="SaveGameBackup.UI.Views.Tabs.SettingsTabView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="1200" d:DesignWidth="1100">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,14,0,16">
+        <StackPanel MaxWidth="750" HorizontalAlignment="Left">
+            
+            <!-- Default Backup Settings Card -->
+            <Border Style="{StaticResource CardBorderStyle}">
+                <StackPanel>
+                    <TextBlock Text="Cấu hình Sao lưu mặc định" FontSize="16" FontWeight="Bold" Margin="0,0,0,14"/>
+
+                    <TextBlock Text="Thư mục lưu trữ sao lưu mặc định:" FontSize="13" Foreground="#CBD5E1" Margin="0,0,0,6"/>
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Text="{Binding BackupDestinationRoot, UpdateSourceTrigger=PropertyChanged}" 
+                                 Background="#0B0F19" Foreground="White" BorderBrush="#334155" 
+                                 Padding="10,8" Height="36" FontSize="13"/>
+
+                        <Button Grid.Column="1" 
+                                Command="{Binding BrowseBackupDirectoryCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}" 
+                                Margin="8,0,0,0" Height="36" Padding="14,0">
+                            <TextBlock Text="Chọn..."/>
+                        </Button>
+                    </Grid>
+
+                    <CheckBox IsChecked="{Binding CreateTimestampSubfolder}" 
+                              Content="Tự động tạo thư mục con theo thời gian (Snapshot)" 
+                              Foreground="#E2E8F0" FontSize="13" Margin="0,0,0,16"/>
+
+                    <Button Command="{Binding SaveSettingsCommand}" 
+                            Style="{StaticResource PrimaryButtonStyle}" 
+                            HorizontalAlignment="Left" Padding="20,10">
+                        <TextBlock Text="💾 Lưu cài đặt"/>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <!-- Cloud Storage Configuration Card (REST API) -->
+            <Border Style="{StaticResource CardBorderStyle}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="☁️ " FontSize="18"/>
+                            <TextBlock Text="Kết nối Lưu trữ Đám mây (Cloud REST API)" FontSize="16" FontWeight="Bold"/>
+                        </StackPanel>
+
+                        <!-- Cloud Auth Status Badge -->
+                        <Border Grid.Column="1" CornerRadius="6" Padding="10,4" VerticalAlignment="Center">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#334155"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsCloudLoggedIn}" Value="True">
+                                            <Setter Property="Background" Value="#064E3B"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock FontSize="11" FontWeight="SemiBold">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="⚠️ Chưa kết nối"/>
+                                        <Setter Property="Foreground" Value="#94A3B8"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsCloudLoggedIn}" Value="True">
+                                                <Setter Property="Text" Value="✓ Đã kết nối"/>
+                                                <Setter Property="Foreground" Value="#34D399"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Border>
+                    </Grid>
+
+                    <TextBlock Text="Chọn nhà cung cấp dịch vụ Cloud để đồng bộ:" FontSize="13" Foreground="#CBD5E1" Margin="0,0,0,8"/>
+
+                    <!-- Provider Selector ComboBox -->
+                    <ComboBox SelectedIndex="{Binding SelectedCloudProviderIndex, Mode=TwoWay}"
+                              Height="38" FontSize="13" Margin="0,0,0,14">
+                        <ComboBoxItem Content="☁️ Google Drive (Google Drive v3 REST API)"/>
+                        <ComboBoxItem Content="☁️ Microsoft OneDrive (Microsoft Graph REST API)"/>
+                    </ComboBox>
+
+                    <!-- Account Connection Info Box -->
+                    <Border Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,14">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock Text="{Binding ActiveCloudProviderName, StringFormat='Dịch vụ đang chọn: {0}'}" FontSize="13" FontWeight="SemiBold" Foreground="#38BDF8"/>
+                                <TextBlock Text="{Binding CloudAccountEmail, StringFormat='Tài khoản: {0}', TargetNullValue='Chưa đăng nhập tài khoản nào.'}" FontSize="12" Foreground="#94A3B8" Margin="0,3,0,0"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="🔑 Kết nối tài khoản"
+                                        Command="{Binding ConnectCloudAccountCommand}"
+                                        Visibility="{Binding IsCloudLoggedOut, Converter={StaticResource BoolToVis}}"
+                                        Style="{StaticResource PrimaryButtonStyle}" Padding="16,8" FontSize="12"/>
+
+                                <Button Content="🚪 Đăng xuất"
+                                        Command="{Binding DisconnectCloudAccountCommand}"
+                                        Visibility="{Binding IsCloudLoggedIn, Converter={StaticResource BoolToVis}}"
+                                        Style="{StaticResource SecondaryButtonStyle}" BorderBrush="#EF4444" Foreground="#F87171"
+                                        Padding="16,8" FontSize="12"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Cloud API Credentials Configuration -->
+                    <Border Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,14">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="⚙️ Cấu hình API Credentials (Client ID)" FontSize="13" FontWeight="SemiBold" Foreground="#F8FAFC"/>
+                                    <TextBlock Text="Cần thiết lập khóa ứng dụng để kết nối trực tiếp với tài khoản Cloud của bạn." FontSize="11" Foreground="#94A3B8" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button Command="{Binding OpenAzurePortalGuideCommand}"
+                                            Visibility="{Binding IsOneDriveSelected, Converter={StaticResource BoolToVis}}"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="12,4" FontSize="11" Height="30">
+                                        <TextBlock Text="🌐 Mở Azure Portal"/>
+                                    </Button>
+                                    <Button Command="{Binding OpenGoogleCloudConsoleGuideCommand}"
+                                            Visibility="{Binding IsGoogleDriveSelected, Converter={StaticResource BoolToVis}}"
+                                            Style="{StaticResource SecondaryButtonStyle}"
+                                            Padding="12,4" FontSize="11" Height="30">
+                                        <TextBlock Text="🌐 Mở Google Cloud Console"/>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- OneDrive Fields -->
+                            <StackPanel Visibility="{Binding IsOneDriveSelected, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="OneDrive Application (Client) ID:" FontSize="12" Foreground="#CBD5E1" Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding OneDriveClientId, UpdateSourceTrigger=PropertyChanged}"
+                                         Background="#0B0F19" Foreground="#38BDF8" BorderBrush="#334155"
+                                         Padding="10,6" Height="34" FontSize="12" Margin="0,0,0,8"/>
+
+                                <Border Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="📌 Cách tạo Client ID OneDrive miễn phí trong 1 phút:" FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8" Margin="0,0,0,4"/>
+                                        <TextBlock Text="1. Đăng nhập portal.azure.com bằng tài khoản Microsoft cá nhân (hoặc bấm nút '🌐 Mở Azure Portal')." FontSize="11" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                                        <TextBlock Text="2. Vào 'App registrations' > nhấn 'New registration' > Đặt tên (vd: SaveVault)." FontSize="11" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                                        <TextBlock Text="3. Supported account types: Chọn 'Accounts in any organizational directory and personal Microsoft accounts'." FontSize="11" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                                        <TextBlock Text="4. Redirect URI: Chọn platform 'Mobile and desktop applications' > tích chọn hoặc nhập: http://localhost" FontSize="11" Foreground="#34D399" FontWeight="SemiBold" Margin="0,0,0,2"/>
+                                        <TextBlock Text="5. Nhấn 'Register', copy 'Application (client) ID' dán vào ô trên và bấm 'Lưu cấu hình API'." FontSize="11" Foreground="#94A3B8"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- Google Drive Fields -->
+                            <StackPanel Visibility="{Binding IsGoogleDriveSelected, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="Google Drive OAuth Client ID:" FontSize="12" Foreground="#CBD5E1" Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding GoogleDriveClientId, UpdateSourceTrigger=PropertyChanged}"
+                                         Background="#0B0F19" Foreground="#38BDF8" BorderBrush="#334155"
+                                         Padding="10,6" Height="34" FontSize="12" Margin="0,0,0,8"/>
+
+                                <TextBlock Text="Google Drive OAuth Client Secret:" FontSize="12" Foreground="#CBD5E1" Margin="0,0,0,4"/>
+                                <TextBox Text="{Binding GoogleDriveClientSecret, UpdateSourceTrigger=PropertyChanged}"
+                                         Background="#0B0F19" Foreground="#38BDF8" BorderBrush="#334155"
+                                         Padding="10,6" Height="34" FontSize="12" Margin="0,0,0,10"/>
+
+                                <Border Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="📌 Cách tạo Client ID &amp; Secret Google Drive (miễn phí):" FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8" Margin="0,0,0,4"/>
+                                        <TextBlock Text="1. Truy cập Google Cloud Console: console.cloud.google.com (hoặc bấm nút '🌐 Mở Google Cloud Console' bên trên)." FontSize="11" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                                        <TextBlock Text="2. Tạo một Project mới (vd: SaveVault) > vào 'APIs &amp; Services' > 'Library' > Tìm và BẬT 'Google Drive API'." FontSize="11" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                                        <TextBlock Text="3. Vào 'OAuth consent screen' > Chọn 'External' > Nhập tên app và email liên hệ > Thêm email của bạn vào mục 'Test users'." FontSize="11" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                                        <TextBlock Text="4. Vào 'Credentials' > 'Create Credentials' > 'OAuth client ID' > Application type chọn: 'Desktop app'." FontSize="11" Foreground="#34D399" FontWeight="SemiBold" Margin="0,0,0,2"/>
+                                        <TextBlock Text="5. Copy 'Client ID' và 'Client Secret' dán vào 2 ô trên > Bấm 'Lưu cấu hình API Credentials' > Bấm 'Kết nối tài khoản'." FontSize="11" Foreground="#94A3B8"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <Button Command="{Binding SaveCloudApiSettingsCommand}"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    HorizontalAlignment="Left" Padding="16,6" Height="32" FontSize="12">
+                                <TextBlock Text="💾 Lưu cấu hình API Credentials"/>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#0B0F19" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="6" Padding="12,10">
+                        <StackPanel>
+                            <TextBlock Text="💡 Cơ chế sao lưu Cloud REST API:" FontSize="12" FontWeight="SemiBold" Foreground="#38BDF8" Margin="0,0,0,4"/>
+                            <TextBlock Text="• Tải lên và tải về qua API chính thức, hoàn toàn độc lập, không cần cài Google Drive hoặc OneDrive desktop." FontSize="12" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                            <TextBlock Text="• Backup thường sẽ lưu cục bộ trên máy. Để đưa bản lưu lên Cloud: Vào tab '📋 Lịch sử', chọn game và nhấn nút '☁️ Cloud Sync'." FontSize="12" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                            <TextBlock Text="• Khi khôi phục bản save đã sync Cloud, hệ thống sẽ cho bạn tùy chọn tải từ Cloud hoặc dùng bản local." FontSize="12" Foreground="#94A3B8"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- Database Info Card -->
+            <Border Style="{StaticResource CardBorderStyle}">
+                <StackPanel>
+                    <TextBlock Text="Cấu hình Cơ sở dữ liệu SQLite" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <TextBlock Text="Đường dẫn file cơ sở dữ liệu SQLite (.db):" FontSize="13" Foreground="#CBD5E1" Margin="0,0,0,6"/>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Text="{Binding DatabaseLocation, UpdateSourceTrigger=PropertyChanged}" 
+                                 Background="#0B0F19" Foreground="#38BDF8" BorderBrush="#334155" 
+                                 Padding="10,8" Height="36" FontSize="13"/>
+
+                        <Button Grid.Column="1" 
+                                Command="{Binding BrowseDatabaseFileCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}" 
+                                Margin="8,0,0,0" Height="36" Padding="14,0">
+                            <TextBlock Text="📂 Duyệt file..."/>
+                        </Button>
+
+                        <Button Grid.Column="2" 
+                                Command="{Binding ResetDatabaseLocationCommand}"
+                                Style="{StaticResource SecondaryButtonStyle}" 
+                                Margin="8,0,0,0" Height="36" Padding="14,0">
+                            <TextBlock Text="Mặc định"/>
+                        </Button>
+                    </Grid>
+
+                    <Button Command="{Binding ApplyDatabaseLocationCommand}" 
+                            Style="{StaticResource PrimaryButtonStyle}" 
+                            HorizontalAlignment="Left" Padding="20,10" Margin="0,0,0,14">
+                        <TextBlock Text="💾 Đổi &amp; Lưu đường dẫn DB"/>
+                    </Button>
+
+                    <Border Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="6" Padding="12,10">
+                        <StackPanel>
+                            <TextBlock Text="💡 Ghi chú cấu hình:" FontSize="12" FontWeight="SemiBold" Foreground="#38BDF8" Margin="0,0,0,4"/>
+                            <TextBlock Text="• Đường dẫn mặc định đặt tại thư mục gốc của dự án (save_backup.db)." FontSize="12" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                            <TextBlock Text="• Cấu hình được ghi nhớ trong file app_config.json để tự động sử dụng cho các lần khởi động sau." FontSize="12" Foreground="#94A3B8" Margin="0,0,0,2"/>
+                            <TextBlock Text="• Khi đổi sang file mới, hệ thống tự động khởi tạo bảng dữ liệu và nạp lại lịch sử sao lưu." FontSize="12" Foreground="#94A3B8"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

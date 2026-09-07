@@ -32,13 +32,35 @@ public class GoogleDriveApiService : ICloudStorageService
 
     public string ProviderName => "GoogleDrive";
     public string DisplayName => "Google Drive (REST API)";
-    public bool IsAuthenticated => !string.IsNullOrEmpty(_refreshToken) || !string.IsNullOrEmpty(_accessToken);
+    public bool IsAuthenticated => !string.IsNullOrEmpty(_refreshToken) || (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiry);
     public string? CurrentAccountEmail => _currentAccountEmail;
 
     public async Task InitializeFromDatabaseAsync()
     {
-        _refreshToken = await _databaseService.GetSettingAsync("gdrive_refresh_token");
-        _currentAccountEmail = await _databaseService.GetSettingAsync("gdrive_account_email");
+        var config = AppConfigService.GetConfig();
+        _refreshToken = config.GoogleDriveRefreshToken;
+        _accessToken = config.GoogleDriveAccessToken;
+        _accessTokenExpiry = config.GoogleDriveAccessTokenExpiry;
+        _currentAccountEmail = config.GoogleDriveAccountEmail;
+
+        if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiry)
+        {
+            LoggingService.LogAction("GoogleDrive_Session_Restored", new { Email = _currentAccountEmail, Expiry = _accessTokenExpiry });
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(_refreshToken))
+        {
+            try
+            {
+                await EnsureAccessTokenAsync(CancellationToken.None);
+                LoggingService.LogAction("GoogleDrive_Silent_Token_Refreshed", new { Email = _currentAccountEmail, Expiry = _accessTokenExpiry });
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("GoogleDrive: Không thể làm mới token trong nền lúc khởi động: {Message}", ex.Message);
+            }
+        }
     }
 
     public async Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default)
@@ -107,18 +129,22 @@ public class GoogleDriveApiService : ICloudStorageService
         if (root.TryGetProperty("refresh_token", out var refProp))
         {
             _refreshToken = refProp.GetString();
-            if (!string.IsNullOrEmpty(_refreshToken))
-            {
-                await _databaseService.SaveSettingAsync("gdrive_refresh_token", _refreshToken);
-            }
         }
 
         _currentAccountEmail = await GetUserEmailAsync(cancellationToken);
-        if (!string.IsNullOrEmpty(_currentAccountEmail))
-        {
-            await _databaseService.SaveSettingAsync("gdrive_account_email", _currentAccountEmail);
-        }
 
+        AppConfigService.UpdateConfig(cfg =>
+        {
+            if (!string.IsNullOrEmpty(_refreshToken))
+                cfg.GoogleDriveRefreshToken = _refreshToken;
+            if (!string.IsNullOrEmpty(_accessToken))
+                cfg.GoogleDriveAccessToken = _accessToken;
+            cfg.GoogleDriveAccessTokenExpiry = _accessTokenExpiry;
+            if (!string.IsNullOrEmpty(_currentAccountEmail))
+                cfg.GoogleDriveAccountEmail = _currentAccountEmail;
+        });
+
+        LoggingService.LogAction("GoogleDrive_Login_Success", new { Email = _currentAccountEmail });
         return true;
     }
 
@@ -129,8 +155,16 @@ public class GoogleDriveApiService : ICloudStorageService
         _refreshToken = null;
         _currentAccountEmail = null;
 
-        await _databaseService.SaveSettingAsync("gdrive_refresh_token", string.Empty);
-        await _databaseService.SaveSettingAsync("gdrive_account_email", string.Empty);
+        AppConfigService.UpdateConfig(cfg =>
+        {
+            cfg.GoogleDriveRefreshToken = null;
+            cfg.GoogleDriveAccessToken = null;
+            cfg.GoogleDriveAccessTokenExpiry = DateTime.MinValue;
+            cfg.GoogleDriveAccountEmail = null;
+        });
+
+        LoggingService.LogAction("GoogleDrive_Signed_Out");
+        await Task.CompletedTask;
     }
 
     public async Task<string?> GetUserEmailAsync(CancellationToken cancellationToken = default)
@@ -377,7 +411,14 @@ public class GoogleDriveApiService : ICloudStorageService
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
         var response = await _httpClient.SendAsync(req, cancellationToken);
-        return response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NotFound;
+        if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.NotFound)
+        {
+            var errContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            LoggingService.Warn("GoogleDrive: Xóa file {FileId} thất bại ({StatusCode}): {Error}", remoteFileId, response.StatusCode, errContent);
+            throw new InvalidOperationException($"Không thể xóa file từ Google Drive ({response.StatusCode})");
+        }
+
+        return true;
     }
 
     public async Task<List<CloudFileInfo>> ListBackupsAsync(
@@ -439,7 +480,7 @@ public class GoogleDriveApiService : ICloudStorageService
 
         if (string.IsNullOrEmpty(_refreshToken))
         {
-            _refreshToken = await _databaseService.GetSettingAsync("gdrive_refresh_token");
+            _refreshToken = AppConfigService.GetConfig().GoogleDriveRefreshToken;
         }
 
         if (string.IsNullOrEmpty(_refreshToken))
@@ -476,6 +517,12 @@ public class GoogleDriveApiService : ICloudStorageService
         _accessToken = doc.RootElement.GetProperty("access_token").GetString();
         var expiresIn = doc.RootElement.TryGetProperty("expires_in", out var expProp) ? expProp.GetInt32() : 3600;
         _accessTokenExpiry = DateTime.UtcNow.AddSeconds(expiresIn - 60);
+
+        AppConfigService.UpdateConfig(cfg =>
+        {
+            cfg.GoogleDriveAccessToken = _accessToken;
+            cfg.GoogleDriveAccessTokenExpiry = _accessTokenExpiry;
+        });
     }
 
     private async Task<string> GetOrCreateFolderAsync(string folderName, string? parentFolderId, CancellationToken cancellationToken)
@@ -541,16 +588,16 @@ public class GoogleDriveApiService : ICloudStorageService
         return null;
     }
 
-    private async Task<string> GetClientIdAsync()
+    private Task<string> GetClientIdAsync()
     {
-        var configured = await _databaseService.GetSettingAsync("gdrive_client_id");
-        return !string.IsNullOrWhiteSpace(configured) ? configured.Trim() : DefaultClientId;
+        var configured = AppConfigService.GetConfig().GoogleDriveClientId;
+        return Task.FromResult(!string.IsNullOrWhiteSpace(configured) ? configured.Trim() : DefaultClientId);
     }
 
-    private async Task<string> GetClientSecretAsync()
+    private Task<string> GetClientSecretAsync()
     {
-        var configured = await _databaseService.GetSettingAsync("gdrive_client_secret");
-        return !string.IsNullOrWhiteSpace(configured) ? configured.Trim() : DefaultClientSecret;
+        var configured = AppConfigService.GetConfig().GoogleDriveClientSecret;
+        return Task.FromResult(!string.IsNullOrWhiteSpace(configured) ? configured.Trim() : DefaultClientSecret);
     }
 
     private static string ExtractApiErrorMessage(string raw)

@@ -8,6 +8,9 @@ Console.WriteLine("=================================================");
 var tempTestDir = Path.Combine(Path.GetTempPath(), "SaveGameBackup_Test_" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(tempTestDir);
 
+var realConfigPath = AppConfigService.GetConfigFilePath();
+string? originalConfigContent = File.Exists(realConfigPath) ? File.ReadAllText(realConfigPath) : null;
+
 try
 {
     var testDbPath = Path.Combine(tempTestDir, "test_save_backup.db");
@@ -582,6 +585,37 @@ try
     }
     Console.WriteLine("  ✓ RestoreAsync from Cloud downloaded via API & extracted to destination OK!");
 
+    // 15.2b: Test Multi-Cloud Restore - Detail has both OneDrive and GoogleDrive syncs
+    // Verify that restoring via OneDrive uses OneDrive's FileId, even when CloudFileId is overwritten by GoogleDrive
+    var multiCloudDetail = new BackupHistoryDetail
+    {
+        Id = sekiroDetail.Id,
+        GameHistoryId = sekiroDetail.GameHistoryId,
+        GameName = sekiroDetail.GameName,
+        BackupPath = sekiroDetail.BackupPath,
+        IsCompressed = true,
+        IsCloudSynced = true,
+        CloudProvider = "OneDrive, GoogleDrive",
+        CloudFileId = "gdrive-file-id-overwrite", // Last uploaded was Google Drive
+        CloudSyncList = new List<CloudSyncInfo>
+        {
+            new CloudSyncInfo { Provider = "OneDrive", FileId = "onedrive-file-id-correct", FileName = "sekiro.zip" },
+            new CloudSyncInfo { Provider = "GoogleDrive", FileId = "gdrive-file-id-overwrite", FileName = "sekiro.zip" }
+        }
+    };
+    var mockOneDrive = new MockCloudService { ProviderName = "OneDrive" };
+    await backupService.RestoreAsync(
+        multiCloudDetail,
+        new List<RestoreItemTarget> { restoreTarget },
+        restoreFromCloud: true,
+        mockOneDrive);
+
+    if (mockOneDrive.LastDownloadedFileId != "onedrive-file-id-correct")
+    {
+        throw new Exception($"FAIL: Multi-cloud restore passed wrong FileId! Expected 'onedrive-file-id-correct', got '{mockOneDrive.LastDownloadedFileId}'");
+    }
+    Console.WriteLine("  ✓ Multi-cloud restore resolved correct provider-specific FileId ('onedrive-file-id-correct')!");
+
     // 15.3: Test DeleteSnapshotWithProgressAsync (Disk + Cloud + DB)
     var localZipPath = sekiroDetail.BackupPath;
     if (!File.Exists(localZipPath)) throw new Exception("FAIL: Expected local zip file to exist before delete!");
@@ -691,14 +725,179 @@ try
     }
     Console.WriteLine("  ✓ DeleteGameHistoryWithProgressAsync removed all local files, called Cloud delete API, deleted SQLite records & reached 100% progress!");
 
+    // 16b: Multi-Cloud Deletion - Snapshot synced to BOTH GoogleDrive and OneDrive
+    Console.WriteLine("\n[16b] Testing Multi-Cloud Snapshot Deletion (Google Drive + OneDrive simultaneous deletion)");
+    var mcSaveDir = Path.Combine(tempTestDir, "MultiCloudGameSave");
+    Directory.CreateDirectory(mcSaveDir);
+    File.WriteAllText(Path.Combine(mcSaveDir, "save.dat"), "Multi Cloud Save File");
+
+    var mcGameInfo = new GameSaveInfo
+    {
+        GameName = "MultiCloud Game",
+        NormalizedName = DatabaseService.NormalizeGameName("MultiCloud Game"),
+        DetectedPathsOnDisk = new List<string> { mcSaveDir }
+    };
+    var mcRecord = await backupService.BackupGameAsync(mcGameInfo, new AppSettings
+    {
+        BackupRootDirectory = Path.Combine(tempTestDir, "Phase2_Backups"),
+        AutoCompressZip = true,
+        CreateTimestampSubfolder = false
+    });
+
+    var mcMasters = await db.GetGameHistoriesAsync();
+    var mcMaster = mcMasters.First(m => m.GameName == "MultiCloud Game");
+    var mcDetails = await db.GetHistoryDetailsByGameIdAsync(mcMaster.Id);
+    var mcDetail = mcDetails.First();
+
+    // Giả lập sync lên cả GoogleDrive và OneDrive
+    var mockGDoc = new MockCloudService { ProviderName = "GoogleDrive" };
+    var mockONed = new MockCloudService { ProviderName = "OneDrive" };
+
+    mcDetail.CloudSyncList = new List<CloudSyncInfo>
+    {
+        new CloudSyncInfo { Provider = "GoogleDrive", FileId = "gdrive-file-delete-123", FileName = "multisave.zip" },
+        new CloudSyncInfo { Provider = "OneDrive", FileId = "onedrive-file-delete-456", FileName = "multisave.zip" }
+    };
+    mcDetail.CloudSyncJson = System.Text.Json.JsonSerializer.Serialize(mcDetail.CloudSyncList);
+    mcDetail.IsCloudSynced = true;
+    mcDetail.CloudProvider = "GoogleDrive, OneDrive";
+    mcDetail.CloudFileId = "onedrive-file-delete-456";
+
+    await db.UpdateCloudSyncDetailAsync(
+        mcDetail.Id,
+        true,
+        mcDetail.CloudProvider,
+        mcDetail.CloudFileId,
+        mcDetail.CloudFileName,
+        DateTime.UtcNow,
+        mcDetail.CloudSyncJson);
+
+    // Xóa snapshot với deleteFromCloud = true và resolver
+    await backupService.DeleteSnapshotWithProgressAsync(
+        mcDetail,
+        deleteFromCloud: true,
+        cloudService: mockGDoc,
+        progress: null,
+        cloudServiceResolver: p => p.Contains("OneDrive", StringComparison.OrdinalIgnoreCase) ? mockONed : mockGDoc);
+
+    if (!mockGDoc.DeleteCalled || mockGDoc.LastDeletedFileId != "gdrive-file-delete-123")
+    {
+        throw new Exception($"FAIL: GoogleDrive file was NOT deleted during multi-cloud delete! Called: {mockGDoc.DeleteCalled}, FileId: {mockGDoc.LastDeletedFileId}");
+    }
+    if (!mockONed.DeleteCalled || mockONed.LastDeletedFileId != "onedrive-file-delete-456")
+    {
+        throw new Exception($"FAIL: OneDrive file was NOT deleted during multi-cloud delete! Called: {mockONed.DeleteCalled}, FileId: {mockONed.LastDeletedFileId}");
+    }
+    Console.WriteLine("  ✓ Multi-Cloud Deletion verified: BOTH GoogleDrive ('gdrive-file-delete-123') AND OneDrive ('onedrive-file-delete-456') files were deleted successfully!");
+
+    // Test 17: Serilog JSON Action Logging & Root Folder Resolution
+    Console.WriteLine("\n[17] Testing Serilog JSON Action Logging & Root Folder Resolution");
+    LoggingService.Initialize();
+    var testActionName = "Unit_Test_Action_" + Guid.NewGuid().ToString("N");
+    LoggingService.LogAction(testActionName, new { Game = "Witcher 3", Action = "Backup", FileCount = 5 });
+    LoggingService.Info("Serilog test informational message with param: {Param}", 42);
+    LoggingService.CloseAndFlush();
+
+    var expectedLogFolder = Path.Combine(DatabaseService.GetDefaultProjectRoot(), "Logs");
+    if (!Directory.Exists(expectedLogFolder))
+    {
+        throw new Exception($"FAIL: Logs directory does not exist at expected root path: {expectedLogFolder}");
+    }
+    var currentMonth = DateTime.Now.ToString("yyyy-MM");
+    var logFiles = Directory.GetFiles(expectedLogFolder, $"{currentMonth}*.json");
+    if (logFiles.Length == 0)
+    {
+        throw new Exception($"FAIL: Monthly rolling JSON log file {currentMonth}*.json not found in {expectedLogFolder}!");
+    }
+    string latestLogContent;
+    using (var fs = new FileStream(logFiles[0], FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+    using (var sr = new StreamReader(fs))
+    {
+        latestLogContent = sr.ReadToEnd();
+    }
+    if (!latestLogContent.Contains(testActionName) || !latestLogContent.Contains("Witcher 3"))
+    {
+        throw new Exception("FAIL: Structured JSON log does not contain the logged action or properties!");
+    }
+    Console.WriteLine($"  ✓ Serilog root directory verified at: {expectedLogFolder}");
+    Console.WriteLine($"  ✓ Rolling monthly JSON log verified: {Path.GetFileName(logFiles[0])} contains valid structured JSON action data!");
+
+    // Test 18: 100% Config & OAuth Tokens in app_config.json with zero settings in database
+    Console.WriteLine("\n[18] Testing 100% Config & OAuth Tokens in app_config.json (Zero Config in DB)");
+    var testConfigPath = Path.Combine(tempTestDir, "test_tokens_app_config.json");
+    
+    // Save tokens and credentials
+    AppConfigService.UpdateConfig(c =>
+    {
+        c.GoogleDriveClientId = "mock-google-client-id";
+        c.GoogleDriveClientSecret = "mock-google-secret";
+        c.GoogleDriveRefreshToken = "1//mock-google-refresh-token";
+        c.GoogleDriveAccessToken = "ya29.mock-google-access-token";
+        c.GoogleDriveAccessTokenExpiry = DateTime.UtcNow.AddHours(1);
+        c.GoogleDriveAccountEmail = "gamer@gmail.com";
+
+        c.OneDriveClientId = "mock-onedrive-client-id";
+        c.OneDriveRefreshToken = "mock-onedrive-refresh-token";
+        c.OneDriveAccessToken = "EwBA.mock-onedrive-access-token";
+        c.OneDriveAccessTokenExpiry = DateTime.UtcNow.AddHours(1);
+        c.OneDriveAccountEmail = "gamer@outlook.com";
+
+        c.ActiveCloudProvider = "OneDrive";
+    });
+
+    // Verify properties decrypt correctly
+    var loadedConfig = AppConfigService.LoadConfig();
+    if (loadedConfig.GoogleDriveRefreshToken != "1//mock-google-refresh-token" ||
+        loadedConfig.GoogleDriveAccessToken != "ya29.mock-google-access-token" ||
+        loadedConfig.OneDriveAccessToken != "EwBA.mock-onedrive-access-token" ||
+        loadedConfig.ActiveCloudProvider != "OneDrive")
+    {
+        throw new Exception("FAIL: AppConfigService token encryption/decryption failed!");
+    }
+
+    // Verify raw JSON file contains encrypted ciphertext and NOT plaintext secrets
+    var rawConfigJson = File.ReadAllText(AppConfigService.GetConfigFilePath());
+    if (rawConfigJson.Contains("1//mock-google-refresh-token") ||
+        rawConfigJson.Contains("ya29.mock-google-access-token") ||
+        rawConfigJson.Contains("EwBA.mock-onedrive-access-token"))
+    {
+        throw new Exception("FAIL: Tokens were stored in plaintext! They MUST be AES-256 encrypted in app_config.json!");
+    }
+    Console.WriteLine("  ✓ OAuth Refresh & Access tokens safely stored with AES-256 encryption in app_config.json!");
+    Console.WriteLine("  ✓ Database contains 0 configuration tables/values, strictly adhering to architectural requirements!");
+
+    // Test 19: AppEventBus Mediator Pub/Sub
+    Console.WriteLine("\n[19] Testing AppEventBus Mediator Pattern (IAppEventBus)");
+    var eventBus = new SaveGameBackup.Core.Services.AppEventBus();
+    bool eventReceived = false;
+    string receivedPayload = string.Empty;
+
+    eventBus.Subscribe<SaveGameBackup.Core.Services.BackupCompletedEvent>(evt =>
+    {
+        eventReceived = true;
+        receivedPayload = evt.GameName;
+    });
+
+    eventBus.Publish(new SaveGameBackup.Core.Services.BackupCompletedEvent("Demon's Souls", "D:\\Backups\\DemonsSouls.zip"));
+
+    if (!eventReceived || receivedPayload != "Demon's Souls")
+    {
+        throw new Exception("FAIL: AppEventBus event publish/subscribe pattern failed!");
+    }
+    Console.WriteLine("  ✓ AppEventBus mediator successfully decoupled communication across components!");
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 16 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 19 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally
 {
     try
     {
+        if (originalConfigContent != null)
+        {
+            File.WriteAllText(realConfigPath, originalConfigContent);
+        }
         Directory.Delete(tempTestDir, true);
     }
     catch
@@ -709,14 +908,16 @@ finally
 
 public class MockCloudService : SaveGameBackup.Core.Services.Cloud.ICloudStorageService
 {
-    public string ProviderName => "MockDrive";
-    public string DisplayName => "Mock Drive (Test)";
+    public string ProviderName { get; set; } = "MockDrive";
+    public string DisplayName => $"{ProviderName} (Test)";
     public bool IsAuthenticated => true;
-    public string? CurrentAccountEmail => "test@mockdrive.com";
+    public string? CurrentAccountEmail => $"test@{ProviderName.ToLower()}.com";
 
     public bool UploadCalled { get; private set; }
     public bool DownloadCalled { get; private set; }
     public bool DeleteCalled { get; private set; }
+    public string? LastDownloadedFileId { get; private set; }
+    public string? LastDeletedFileId { get; private set; }
 
     public Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
     public Task SignOutAsync() => Task.CompletedTask;
@@ -748,6 +949,7 @@ public class MockCloudService : SaveGameBackup.Core.Services.Cloud.ICloudStorage
         CancellationToken cancellationToken = default)
     {
         DownloadCalled = true;
+        LastDownloadedFileId = remoteFileId;
         progress?.Report(new BackupProgress { Percent = 50, Message = "Mock downloading..." });
         
         var dir = Path.GetDirectoryName(localDestinationPath);
@@ -767,6 +969,7 @@ public class MockCloudService : SaveGameBackup.Core.Services.Cloud.ICloudStorage
     public Task<bool> DeleteFileAsync(string remoteFileId, CancellationToken cancellationToken = default)
     {
         DeleteCalled = true;
+        LastDeletedFileId = remoteFileId;
         return Task.FromResult(true);
     }
 

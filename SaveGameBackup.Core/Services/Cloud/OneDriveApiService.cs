@@ -31,13 +31,35 @@ public class OneDriveApiService : ICloudStorageService
 
     public string ProviderName => "OneDrive";
     public string DisplayName => "Microsoft OneDrive (REST API)";
-    public bool IsAuthenticated => !string.IsNullOrEmpty(_refreshToken) || !string.IsNullOrEmpty(_accessToken);
+    public bool IsAuthenticated => !string.IsNullOrEmpty(_refreshToken) || (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiry);
     public string? CurrentAccountEmail => _currentAccountEmail;
 
     public async Task InitializeFromDatabaseAsync()
     {
-        _refreshToken = await _databaseService.GetSettingAsync("onedrive_refresh_token");
-        _currentAccountEmail = await _databaseService.GetSettingAsync("onedrive_account_email");
+        var config = AppConfigService.GetConfig();
+        _refreshToken = config.OneDriveRefreshToken;
+        _accessToken = config.OneDriveAccessToken;
+        _accessTokenExpiry = config.OneDriveAccessTokenExpiry;
+        _currentAccountEmail = config.OneDriveAccountEmail;
+
+        if (!string.IsNullOrEmpty(_accessToken) && DateTime.UtcNow < _accessTokenExpiry)
+        {
+            LoggingService.LogAction("OneDrive_Session_Restored", new { Email = _currentAccountEmail, Expiry = _accessTokenExpiry });
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(_refreshToken))
+        {
+            try
+            {
+                await EnsureAccessTokenAsync(CancellationToken.None);
+                LoggingService.LogAction("OneDrive_Silent_Token_Refreshed", new { Email = _currentAccountEmail, Expiry = _accessTokenExpiry });
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("OneDrive: Không thể làm mới token trong nền lúc khởi động: {Message}", ex.Message);
+            }
+        }
     }
 
     public async Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default)
@@ -115,18 +137,22 @@ public class OneDriveApiService : ICloudStorageService
         if (root.TryGetProperty("refresh_token", out var refProp))
         {
             _refreshToken = refProp.GetString();
-            if (!string.IsNullOrEmpty(_refreshToken))
-            {
-                await _databaseService.SaveSettingAsync("onedrive_refresh_token", _refreshToken);
-            }
         }
 
         _currentAccountEmail = await GetUserEmailAsync(cancellationToken);
-        if (!string.IsNullOrEmpty(_currentAccountEmail))
-        {
-            await _databaseService.SaveSettingAsync("onedrive_account_email", _currentAccountEmail);
-        }
 
+        AppConfigService.UpdateConfig(cfg =>
+        {
+            if (!string.IsNullOrEmpty(_refreshToken))
+                cfg.OneDriveRefreshToken = _refreshToken;
+            if (!string.IsNullOrEmpty(_accessToken))
+                cfg.OneDriveAccessToken = _accessToken;
+            cfg.OneDriveAccessTokenExpiry = _accessTokenExpiry;
+            if (!string.IsNullOrEmpty(_currentAccountEmail))
+                cfg.OneDriveAccountEmail = _currentAccountEmail;
+        });
+
+        LoggingService.LogAction("OneDrive_Login_Success", new { Email = _currentAccountEmail });
         return true;
     }
 
@@ -137,8 +163,16 @@ public class OneDriveApiService : ICloudStorageService
         _refreshToken = null;
         _currentAccountEmail = null;
 
-        await _databaseService.SaveSettingAsync("onedrive_refresh_token", string.Empty);
-        await _databaseService.SaveSettingAsync("onedrive_account_email", string.Empty);
+        AppConfigService.UpdateConfig(cfg =>
+        {
+            cfg.OneDriveRefreshToken = null;
+            cfg.OneDriveAccessToken = null;
+            cfg.OneDriveAccessTokenExpiry = DateTime.MinValue;
+            cfg.OneDriveAccountEmail = null;
+        });
+
+        LoggingService.LogAction("OneDrive_Signed_Out");
+        await Task.CompletedTask;
     }
 
     public async Task<string?> GetUserEmailAsync(CancellationToken cancellationToken = default)
@@ -339,48 +373,82 @@ public class OneDriveApiService : ICloudStorageService
     {
         await EnsureAccessTokenAsync(cancellationToken);
 
-        var downloadUrl = $"{GraphApiDriveEndpoint}/items/{remoteFileId}/content";
-        using var req = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-
-        using var response = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage? response = null;
+        try
         {
-            var err = await response.Content.ReadAsStringAsync(cancellationToken);
-            var errMessage = ExtractApiErrorMessage(err);
-            throw new InvalidOperationException($"Không thể tải file từ OneDrive ({response.StatusCode}): {errMessage}");
-        }
+            var downloadUrl = $"{GraphApiDriveEndpoint}/items/{remoteFileId}/content";
+            using var req = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
-        var totalBytes = response.Content.Headers.ContentLength ?? -1L;
-        var dir = Path.GetDirectoryName(localDestinationPath);
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-        using var remoteStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var fileStream = new FileStream(localDestinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
-
-        var buffer = new byte[64 * 1024];
-        long bytesReadTotal = 0;
-        int read;
-
-        while ((read = await remoteStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
-        {
-            await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            bytesReadTotal += read;
-
-            int pct = totalBytes > 0 ? (int)((double)bytesReadTotal / totalBytes * 100) : 50;
-            progress?.Report(new BackupProgress
+            response = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            if (!response.IsSuccessStatusCode)
             {
-                Percent = Math.Clamp(pct, 0, 100),
-                CurrentFile = Path.GetFileName(localDestinationPath),
-                ProcessedBytes = bytesReadTotal,
-                TotalBytes = Math.Max(totalBytes, bytesReadTotal),
-                Message = totalBytes > 0 
-                    ? $"Đang tải từ OneDrive: {bytesReadTotal / 1024.0 / 1024.0:F1} MB / {totalBytes / 1024.0 / 1024.0:F1} MB ({pct}%)"
-                    : $"Đang tải từ OneDrive: {bytesReadTotal / 1024.0 / 1024.0:F1} MB..."
-            });
-        }
+                // Fallback: Nếu endpoint /content trả về lỗi, thử lấy @microsoft.graph.downloadUrl từ driveItem metadata
+                response.Dispose();
+                response = null;
 
-        return localDestinationPath;
+                var metaUrl = $"{GraphApiDriveEndpoint}/items/{remoteFileId}?select=id,@microsoft.graph.downloadUrl,size";
+                using var metaReq = new HttpRequestMessage(HttpMethod.Get, metaUrl);
+                metaReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+                using var metaRes = await _httpClient.SendAsync(metaReq, cancellationToken);
+                if (metaRes.IsSuccessStatusCode)
+                {
+                    var metaJson = await metaRes.Content.ReadAsStringAsync(cancellationToken);
+                    using var doc = JsonDocument.Parse(metaJson);
+                    if (doc.RootElement.TryGetProperty("@microsoft.graph.downloadUrl", out var dlElem))
+                    {
+                        var directDlUrl = dlElem.GetString();
+                        if (!string.IsNullOrEmpty(directDlUrl))
+                        {
+                            response = await _httpClient.GetAsync(directDlUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                        }
+                    }
+                }
+            }
+
+            if (response == null || !response.IsSuccessStatusCode)
+            {
+                var err = response != null ? await response.Content.ReadAsStringAsync(cancellationToken) : "Không nhận được phản hồi";
+                var errMessage = ExtractApiErrorMessage(err);
+                var status = response != null ? response.StatusCode.ToString() : "NoResponse";
+                throw new InvalidOperationException($"Không thể tải file từ OneDrive ({status}): {errMessage}");
+            }
+
+            var totalBytes = response.Content.Headers.ContentLength ?? -1L;
+            var dir = Path.GetDirectoryName(localDestinationPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+            using var remoteStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var fileStream = new FileStream(localDestinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
+
+            var buffer = new byte[64 * 1024];
+            long bytesReadTotal = 0;
+            int read;
+
+            while ((read = await remoteStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
+            {
+                await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                bytesReadTotal += read;
+
+                int pct = totalBytes > 0 ? (int)((double)bytesReadTotal / totalBytes * 100) : 50;
+                progress?.Report(new BackupProgress
+                {
+                    Percent = Math.Clamp(pct, 0, 100),
+                    CurrentFile = Path.GetFileName(localDestinationPath),
+                    ProcessedBytes = bytesReadTotal,
+                    TotalBytes = Math.Max(totalBytes, bytesReadTotal),
+                    Message = totalBytes > 0 
+                        ? $"Đang tải từ OneDrive: {bytesReadTotal / 1024.0 / 1024.0:F1} MB / {totalBytes / 1024.0 / 1024.0:F1} MB ({pct}%)"
+                        : $"Đang tải từ OneDrive: {bytesReadTotal / 1024.0 / 1024.0:F1} MB..."
+                });
+            }
+
+            return localDestinationPath;
+        }
+        finally
+        {
+            response?.Dispose();
+        }
     }
 
     public async Task<bool> DeleteFileAsync(string remoteFileId, CancellationToken cancellationToken = default)
@@ -394,7 +462,15 @@ public class OneDriveApiService : ICloudStorageService
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
         var response = await _httpClient.SendAsync(req, cancellationToken);
-        return response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NotFound;
+        if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.NotFound)
+        {
+            var errContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            var errMessage = ExtractApiErrorMessage(errContent);
+            LoggingService.Warn("OneDrive: Xóa file {FileId} thất bại ({StatusCode}): {Error}", remoteFileId, response.StatusCode, errMessage);
+            throw new InvalidOperationException($"Không thể xóa file từ OneDrive ({response.StatusCode}): {errMessage}");
+        }
+
+        return true;
     }
 
     public async Task<List<CloudFileInfo>> ListBackupsAsync(
@@ -446,7 +522,7 @@ public class OneDriveApiService : ICloudStorageService
 
         if (string.IsNullOrEmpty(_refreshToken))
         {
-            _refreshToken = await _databaseService.GetSettingAsync("onedrive_refresh_token");
+            _refreshToken = AppConfigService.GetConfig().OneDriveRefreshToken;
         }
 
         if (string.IsNullOrEmpty(_refreshToken))
@@ -489,9 +565,16 @@ public class OneDriveApiService : ICloudStorageService
             if (!string.IsNullOrEmpty(newRef))
             {
                 _refreshToken = newRef;
-                await _databaseService.SaveSettingAsync("onedrive_refresh_token", _refreshToken);
             }
         }
+
+        AppConfigService.UpdateConfig(cfg =>
+        {
+            if (!string.IsNullOrEmpty(_refreshToken))
+                cfg.OneDriveRefreshToken = _refreshToken;
+            cfg.OneDriveAccessToken = _accessToken;
+            cfg.OneDriveAccessTokenExpiry = _accessTokenExpiry;
+        });
     }
 
     private async Task<string> EnsureFolderHierarchyAsync(string remoteGameFolderName, CancellationToken cancellationToken)
@@ -579,10 +662,10 @@ public class OneDriveApiService : ICloudStorageService
         throw new InvalidOperationException($"Không thể tạo thư mục '{folderName}' trên OneDrive.");
     }
 
-    private async Task<string?> GetClientIdAsync()
+    private Task<string?> GetClientIdAsync()
     {
-        var configured = await _databaseService.GetSettingAsync("onedrive_client_id");
-        return !string.IsNullOrWhiteSpace(configured) ? configured.Trim() : null;
+        var configured = AppConfigService.GetConfig().OneDriveClientId;
+        return Task.FromResult(!string.IsNullOrWhiteSpace(configured) ? configured.Trim() : null);
     }
 
     private static string GenerateCodeVerifier()
