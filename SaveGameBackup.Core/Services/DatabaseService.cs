@@ -115,7 +115,12 @@ public class DatabaseService
                 BackupDate TEXT NOT NULL,
                 IsCompressed INTEGER NOT NULL DEFAULT 0,
                 Status TEXT NOT NULL DEFAULT 'Success',
-                Note TEXT
+                Note TEXT,
+                IsCloudSynced INTEGER NOT NULL DEFAULT 0,
+                CloudProvider TEXT,
+                CloudFileId TEXT,
+                CloudFileName TEXT,
+                CloudSyncDate TEXT
             );
 
             CREATE TABLE IF NOT EXISTS settings (
@@ -124,6 +129,38 @@ public class DatabaseService
             );
         ";
         command.ExecuteNonQuery();
+
+        EnsureColumnExists(connection, "backup_history_details", "IsCloudSynced", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumnExists(connection, "backup_history_details", "CloudProvider", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "CloudFileId", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "CloudFileName", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "CloudSyncDate", "TEXT");
+    }
+
+    private static void EnsureColumnExists(SqliteConnection connection, string table, string column, string columnDef)
+    {
+        try
+        {
+            using var checkCmd = connection.CreateCommand();
+            checkCmd.CommandText = $"PRAGMA table_info({table});";
+            using var reader = checkCmd.ExecuteReader();
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+            reader.Close();
+
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {columnDef};";
+            alterCmd.ExecuteNonQuery();
+        }
+        catch
+        {
+            // Bỏ qua nếu cột đã tồn tại hoặc bảng chưa sẵn sàng
+        }
     }
 
     public async Task<GameSaveInfo?> GetCachedGameAsync(string gameName)
@@ -284,9 +321,9 @@ public class DatabaseService
                 insertDetailCmd.Transaction = transaction;
                 insertDetailCmd.CommandText = @"
                     INSERT INTO backup_history_details 
-                    (GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note)
+                    (GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate)
                     VALUES 
-                    ($gameId, $game, $backup, $source, $savePaths, $manifest, $files, $size, $date, $comp, $status, $note);
+                    ($gameId, $game, $backup, $source, $savePaths, $manifest, $files, $size, $date, $comp, $status, $note, $isCloudSynced, $cloudProvider, $cloudFileId, $cloudFileName, $cloudSyncDate);
                     SELECT last_insert_rowid();
                 ";
                 insertDetailCmd.Parameters.AddWithValue("$gameId", detail.GameHistoryId);
@@ -301,6 +338,11 @@ public class DatabaseService
                 insertDetailCmd.Parameters.AddWithValue("$comp", detail.IsCompressed ? 1 : 0);
                 insertDetailCmd.Parameters.AddWithValue("$status", detail.Status);
                 insertDetailCmd.Parameters.AddWithValue("$note", (object?)detail.Note ?? DBNull.Value);
+                insertDetailCmd.Parameters.AddWithValue("$isCloudSynced", detail.IsCloudSynced ? 1 : 0);
+                insertDetailCmd.Parameters.AddWithValue("$cloudProvider", (object?)detail.CloudProvider ?? DBNull.Value);
+                insertDetailCmd.Parameters.AddWithValue("$cloudFileId", (object?)detail.CloudFileId ?? DBNull.Value);
+                insertDetailCmd.Parameters.AddWithValue("$cloudFileName", (object?)detail.CloudFileName ?? DBNull.Value);
+                insertDetailCmd.Parameters.AddWithValue("$cloudSyncDate", detail.CloudSyncDate.HasValue ? detail.CloudSyncDate.Value.ToString("o") : (object)DBNull.Value);
 
                 var detailIdObj = await insertDetailCmd.ExecuteScalarAsync();
                 detail.Id = Convert.ToInt64(detailIdObj);
@@ -359,7 +401,7 @@ public class DatabaseService
 
         using var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note
+            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate
             FROM backup_history_details
             WHERE GameHistoryId = $gameId
             ORDER BY Id DESC;
@@ -383,11 +425,41 @@ public class DatabaseService
                 BackupDate = DateTime.TryParse(reader.GetString(9), out var dt) ? dt : DateTime.MinValue,
                 IsCompressed = reader.GetInt32(10) == 1,
                 Status = reader.GetString(11),
-                Note = !reader.IsDBNull(12) ? reader.GetString(12) : null
+                Note = !reader.IsDBNull(12) ? reader.GetString(12) : null,
+                IsCloudSynced = reader.FieldCount > 13 && !reader.IsDBNull(13) && reader.GetInt32(13) == 1,
+                CloudProvider = reader.FieldCount > 14 && !reader.IsDBNull(14) ? reader.GetString(14) : string.Empty,
+                CloudFileId = reader.FieldCount > 15 && !reader.IsDBNull(15) ? reader.GetString(15) : string.Empty,
+                CloudFileName = reader.FieldCount > 16 && !reader.IsDBNull(16) ? reader.GetString(16) : string.Empty,
+                CloudSyncDate = reader.FieldCount > 17 && !reader.IsDBNull(17) && DateTime.TryParse(reader.GetString(17), out var cdt) ? cdt : null
             });
         }
 
         return list;
+    }
+
+    public async Task UpdateCloudSyncDetailAsync(long detailId, bool isSynced, string provider, string fileId, string fileName, DateTime? syncDate)
+    {
+        using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = @"
+            UPDATE backup_history_details
+            SET IsCloudSynced = $isSynced,
+                CloudProvider = $provider,
+                CloudFileId = $fileId,
+                CloudFileName = $fileName,
+                CloudSyncDate = $syncDate
+            WHERE Id = $id;
+        ";
+        command.Parameters.AddWithValue("$isSynced", isSynced ? 1 : 0);
+        command.Parameters.AddWithValue("$provider", (object?)provider ?? DBNull.Value);
+        command.Parameters.AddWithValue("$fileId", (object?)fileId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$fileName", (object?)fileName ?? DBNull.Value);
+        command.Parameters.AddWithValue("$syncDate", syncDate.HasValue ? syncDate.Value.ToString("o") : (object)DBNull.Value);
+        command.Parameters.AddWithValue("$id", detailId);
+
+        await command.ExecuteNonQueryAsync();
     }
 
     public async Task DeleteHistoryDetailAsync(long detailId, long gameHistoryId)

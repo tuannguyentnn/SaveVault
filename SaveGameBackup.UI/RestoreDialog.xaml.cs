@@ -96,7 +96,8 @@ public partial class RestoreDialog : Window
         var activeItems = _items.Where(i => i.IsSelected && !string.IsNullOrWhiteSpace(i.RestoreDestinationPath)).ToList();
         if (activeItems.Count == 0)
         {
-            MessageBox.Show("Vui lòng chọn ít nhất 1 vị trí lưu để khôi phục!", "Chưa chọn", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ProgressArea.Visibility = Visibility.Visible;
+            ProgressMessageText.Text = "⚠️ Vui lòng chọn ít nhất 1 vị trí lưu để khôi phục!";
             return;
         }
 
@@ -119,18 +120,14 @@ public partial class RestoreDialog : Window
             await _backupService.RestoreAsync(_record, activeItems, progress);
 
             RestoreConfirmed = true;
-            MessageBox.Show(
-                $"Khôi phục thành công!\n\nĐã khôi phục {activeItems.Count} vị trí lưu cho game '{_record.GameName}'.",
-                "Khôi phục thành công", MessageBoxButton.OK, MessageBoxImage.Information);
             DialogResult = true;
             Close();
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Lỗi khôi phục:\n{ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+            ProgressMessageText.Text = $"❌ Lỗi khôi phục: {ex.Message}";
             RestoreBtn.IsEnabled = true;
             CancelBtn.IsEnabled = true;
-            ProgressArea.Visibility = Visibility.Collapsed;
         }
     }
 

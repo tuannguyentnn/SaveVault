@@ -86,6 +86,13 @@ public class BackupRecord
     public string Status { get; set; } = "Success";
     public string? Note { get; set; }
 
+    public bool IsCloudSynced { get; set; }
+    public string CloudProvider { get; set; } = string.Empty;
+    public string CloudFileId { get; set; } = string.Empty;
+    public string CloudFileName { get; set; } = string.Empty;
+    public DateTime? CloudSyncDate { get; set; }
+    public string CloudStatusFormatted => IsCloudSynced ? $"Đã đồng bộ ({CloudProvider})" : "Chưa đồng bộ Cloud";
+
     public string BackupTypeFormatted => IsCompressed ? "ZIP" : "Thư mục";
 
     public string FormattedSize
@@ -160,6 +167,11 @@ public class AppSettings
     public bool CreateTimestampSubfolder { get; set; } = true;
     public bool AutoCompressZip { get; set; } = false;
     public bool OverwriteExisting { get; set; } = true;
+    public bool EnableCloudBackup { get; set; } = false;
+    public string SelectedCloudProvider { get; set; } = "GoogleDrive";
+    public string GoogleDriveClientId { get; set; } = string.Empty;
+    public string GoogleDriveClientSecret { get; set; } = string.Empty;
+    public string OneDriveClientId { get; set; } = string.Empty;
 }
 
 public class RestoreItemTarget : INotifyPropertyChanged
@@ -477,6 +489,11 @@ public class BackupHistoryDetail : INotifyPropertyChanged
     private bool _isCompressed;
     private string _status = "Success";
     private string? _note;
+    private bool _isCloudSynced;
+    private string _cloudProvider = string.Empty;
+    private string _cloudFileId = string.Empty;
+    private string _cloudFileName = string.Empty;
+    private DateTime? _cloudSyncDate;
 
     public long Id
     {
@@ -558,6 +575,52 @@ public class BackupHistoryDetail : INotifyPropertyChanged
         get => _note;
         set => SetField(ref _note, value);
     }
+
+    public bool IsCloudSynced
+    {
+        get => _isCloudSynced;
+        set
+        {
+            if (SetField(ref _isCloudSynced, value))
+            {
+                OnPropertyChanged(nameof(CloudStatusFormatted));
+            }
+        }
+    }
+
+    public string CloudProvider
+    {
+        get => _cloudProvider;
+        set
+        {
+            if (SetField(ref _cloudProvider, value))
+            {
+                OnPropertyChanged(nameof(CloudStatusFormatted));
+            }
+        }
+    }
+
+    public string CloudFileId
+    {
+        get => _cloudFileId;
+        set => SetField(ref _cloudFileId, value);
+    }
+
+    public string CloudFileName
+    {
+        get => _cloudFileName;
+        set => SetField(ref _cloudFileName, value);
+    }
+
+    public DateTime? CloudSyncDate
+    {
+        get => _cloudSyncDate;
+        set => SetField(ref _cloudSyncDate, value);
+    }
+
+    public string CloudStatusFormatted => IsCloudSynced 
+        ? (!string.IsNullOrWhiteSpace(CloudProvider) ? $"Đã đồng bộ ({CloudProvider})" : "Đã đồng bộ Cloud") 
+        : "Chưa đồng bộ Cloud";
 
     public string BackupTypeFormatted => IsCompressed ? "ZIP" : "Thư mục";
 

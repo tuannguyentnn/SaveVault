@@ -334,8 +334,369 @@ try
     Console.WriteLine($"  ✓ Inserted & retrieved record with SavePaths column: {foundRec.SavePaths}");
     Console.WriteLine($"  ✓ SavePathsList parsed correctly: {foundRec.SavePathsList.Count} paths");
 
+    // [11] Testing Two-Table Database Architecture (backup_history & backup_history_details)
+    Console.WriteLine("\n[11] Testing Two-Table Database Architecture (Master & Detail tables)");
+    var detail1 = new BackupHistoryDetail
+    {
+        GameName = "Elden Ring",
+        BackupPath = Path.Combine(tempTestDir, "EldenRing_Snap1.zip"),
+        SourcePath = @"C:\Users\Player\AppData\Roaming\EldenRing\Save1",
+        SavePaths = System.Text.Json.JsonSerializer.Serialize(new List<string> { @"C:\Users\Player\AppData\Roaming\EldenRing\Save1" }),
+        ManifestJson = "{\"GameName\":\"Elden Ring\",\"Items\":[{\"SubFolder\":\"\",\"SourcePath\":\"C:\\\\Users\\\\Player\\\\AppData\\\\Roaming\\\\EldenRing\\\\Save1\",\"FileCount\":2,\"TotalSizeBytes\":1000}]}",
+        FileCount = 2,
+        TotalSizeBytes = 1000,
+        BackupDate = DateTime.Now.AddHours(-2),
+        IsCompressed = true,
+        Status = "Success"
+    };
+
+    // Lần 1: Thêm mới game Elden Ring -> Cả 2 bảng đều thêm 1 dòng
+    var detailId1 = await db.InsertOrUpdateBackupHistoryAsync(detail1);
+    var masterList1 = await db.GetGameHistoriesAsync();
+    var eldenMaster1 = masterList1.FirstOrDefault(g => g.GameName == "Elden Ring");
+
+    if (eldenMaster1 == null) throw new Exception("Master row for Elden Ring not found after 1st backup");
+    if (eldenMaster1.BackupCount != 1) throw new Exception($"Expected BackupCount = 1, got {eldenMaster1.BackupCount}");
+    if (eldenMaster1.TotalSizeBytes != 1000) throw new Exception($"Expected TotalSizeBytes = 1000, got {eldenMaster1.TotalSizeBytes}");
+
+    var detailsList1 = await db.GetHistoryDetailsByGameIdAsync(eldenMaster1.Id);
+    if (detailsList1.Count != 1) throw new Exception($"Expected 1 detail record, got {detailsList1.Count}");
+    Console.WriteLine("  ✓ 1st Backup: Created 1 Master row (BackupCount=1) and 1 Detail row.");
+
+    // Lần 2: Backup tiếp game Elden Ring -> Master UPDATE, Detail INSERT mới
+    var detail2 = new BackupHistoryDetail
+    {
+        GameName = "Elden Ring",
+        BackupPath = Path.Combine(tempTestDir, "EldenRing_Snap2.zip"),
+        SourcePath = @"C:\Users\Player\AppData\Roaming\EldenRing\Save1",
+        SavePaths = System.Text.Json.JsonSerializer.Serialize(new List<string> { @"C:\Users\Player\AppData\Roaming\EldenRing\Save1" }),
+        ManifestJson = "{\"GameName\":\"Elden Ring\",\"Items\":[{\"SubFolder\":\"\",\"SourcePath\":\"C:\\\\Users\\\\Player\\\\AppData\\\\Roaming\\\\EldenRing\\\\Save1\",\"FileCount\":3,\"TotalSizeBytes\":1500}]}",
+        FileCount = 3,
+        TotalSizeBytes = 1500,
+        BackupDate = DateTime.Now,
+        IsCompressed = true,
+        Status = "Success"
+    };
+
+    var detailId2 = await db.InsertOrUpdateBackupHistoryAsync(detail2);
+    var masterList2 = await db.GetGameHistoriesAsync();
+    var eldenMaster2 = masterList2.FirstOrDefault(g => g.GameName == "Elden Ring");
+
+    if (eldenMaster2 == null) throw new Exception("Master row for Elden Ring not found after 2nd backup");
+    if (masterList2.Count != masterList1.Count) throw new Exception($"Master table should NOT create a new row! Expected {masterList1.Count} rows, got {masterList2.Count}");
+    if (eldenMaster2.BackupCount != 2) throw new Exception($"Expected BackupCount = 2, got {eldenMaster2.BackupCount}");
+    if (eldenMaster2.TotalSizeBytes != 2500) throw new Exception($"Expected TotalSizeBytes = 2500, got {eldenMaster2.TotalSizeBytes}");
+
+    var detailsList2 = await db.GetHistoryDetailsByGameIdAsync(eldenMaster2.Id);
+    if (detailsList2.Count != 2) throw new Exception($"Expected 2 detail records, got {detailsList2.Count}");
+    Console.WriteLine("  ✓ 2nd Backup: Master row UPDATED (BackupCount=2, TotalSizeBytes=2500), Detail row INSERTED.");
+
+    // [12] Testing Zero Manifest File on Disk & 100% Manifest in Database
+    Console.WriteLine("\n[12] Testing Zero-File Manifest & 100% SQLite Manifest Retrieval");
+    var backupSvc = new BackupService(db);
+    var testSaveDir = Path.Combine(tempTestDir, "EldenSaveSource");
+    Directory.CreateDirectory(testSaveDir);
+    File.WriteAllText(Path.Combine(testSaveDir, "ER0000.sl2"), "dummy_save_content_elden_ring");
+
+    var backupSettings = new AppSettings
+    {
+        BackupRootDirectory = Path.Combine(tempTestDir, "EldenBackups"),
+        CreateTimestampSubfolder = false,
+        AutoCompressZip = true
+    };
+
+    var gameInfo = new GameSaveInfo
+    {
+        GameName = "Elden Ring",
+        NormalizedName = "elden ring",
+        DetectedPathsOnDisk = new List<string> { testSaveDir }
+    };
+
+    var backupRec = await backupSvc.BackupGameAsync(gameInfo, backupSettings, new List<string> { testSaveDir });
+
+    // Kiểm tra file zip backup: TUYỆT ĐỐI KHÔNG chứa file backup_manifest.json
+    if (!File.Exists(backupRec.BackupPath)) throw new Exception("Backup ZIP file not found!");
+    using (var archive = System.IO.Compression.ZipFile.OpenRead(backupRec.BackupPath))
+    {
+        var manifestEntry = archive.Entries.FirstOrDefault(e => e.FullName.Equals("backup_manifest.json", StringComparison.OrdinalIgnoreCase));
+        if (manifestEntry != null)
+        {
+            throw new Exception("FAIL: backup_manifest.json file WAS STILL CREATED inside ZIP! It must be completely eliminated.");
+        }
+    }
+    Console.WriteLine("  ✓ Verified: ZIP archive contains ZERO backup_manifest.json file! Pure game save files only.");
+
+    // Kiểm tra phục hồi trực tiếp từ SQLite ManifestJson
+    var eldenHistory = (await db.GetGameHistoriesAsync()).First(g => g.GameName == "Elden Ring");
+    var latestDetail = (await db.GetHistoryDetailsByGameIdAsync(eldenHistory.Id)).First();
+
+    if (string.IsNullOrWhiteSpace(latestDetail.ManifestJson))
+        throw new Exception("FAIL: ManifestJson column in backup_history_details is empty!");
+
+    var restoreTargets = backupSvc.GetRestoreItemsFromBackup(latestDetail);
+    if (restoreTargets.Count != 1 || !restoreTargets[0].OriginalSourcePath.Equals(testSaveDir, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new Exception($"FAIL: Restore items from SQLite ManifestJson mismatch! Got {restoreTargets.Count} items.");
+    }
+    Console.WriteLine($"  ✓ Verified: Restored {restoreTargets.Count} path target(s) 100% from SQLite ManifestJson without touching disk manifest!");
+
+    // [13] Testing Physical File Deletion & Database Cascade/Update Sync
+    Console.WriteLine("\n[13] Testing Physical File Deletion on Disk & Real-time List Reload");
+    var fileToDelete = latestDetail.BackupPath;
+    if (!File.Exists(fileToDelete)) throw new Exception($"File to delete does not exist: {fileToDelete}");
+
+    // Xóa vật lý trên đĩa
+    File.Delete(fileToDelete);
+    if (File.Exists(fileToDelete)) throw new Exception("FAIL: File still exists on disk after File.Delete!");
+    Console.WriteLine("  ✓ Physical backup file successfully deleted from disk.");
+
+    // Xóa trong database
+    await db.DeleteHistoryDetailAsync(latestDetail.Id, latestDetail.GameHistoryId);
+
+    // Kiểm tra danh sách details còn lại
+    var remainingDetails = await db.GetHistoryDetailsByGameIdAsync(latestDetail.GameHistoryId);
+    Console.WriteLine($"  ✓ Remaining details in SQLite: {remainingDetails.Count} snapshot(s).");
+
+    // Xóa nốt tất cả snapshot còn lại -> Master row tự động dọn dẹp sạch sẽ
+    foreach (var d in remainingDetails)
+    {
+        await db.DeleteHistoryDetailAsync(d.Id, d.GameHistoryId);
+    }
+
+    var finalMasters = await db.GetGameHistoriesAsync();
+    var finalElden = finalMasters.FirstOrDefault(g => g.GameName == "Elden Ring");
+    if (finalElden != null)
+    {
+        throw new Exception("FAIL: Master row for Elden Ring was NOT auto-deleted when all details were removed!");
+    }
+    // [14] Testing Cloud Metadata in SQLite & CloudManagerService
+    Console.WriteLine("\n[14] Testing Cloud Metadata in SQLite & CloudManagerService");
+    var cloudDetail = new BackupHistoryDetail
+    {
+        GameName = "Dark Souls Remastered",
+        BackupPath = Path.Combine(tempTestDir, "DarkSouls.zip"),
+        SourcePath = "C:\\Saves\\DarkSouls",
+        FileCount = 1,
+        TotalSizeBytes = 5000,
+        BackupDate = DateTime.Now,
+        IsCompressed = true,
+        IsCloudSynced = false
+    };
+    var cloudDetailId = await db.InsertOrUpdateBackupHistoryAsync(cloudDetail);
+    var detailsBeforeSync = await db.GetHistoryDetailsByGameIdAsync(cloudDetail.GameHistoryId);
+    if (detailsBeforeSync.Count == 0 || detailsBeforeSync[0].IsCloudSynced)
+    {
+        throw new Exception("FAIL: Expected IsCloudSynced to be false initially!");
+    }
+
+    // Update Cloud Sync status
+    var syncDate = DateTime.UtcNow;
+    await db.UpdateCloudSyncDetailAsync(cloudDetailId, true, "GoogleDrive", "mock-gdrive-file-id-999", "DarkSouls_backup.zip", syncDate);
+
+    var detailsAfterSync = await db.GetHistoryDetailsByGameIdAsync(cloudDetail.GameHistoryId);
+    var syncedItem = detailsAfterSync.First(d => d.Id == cloudDetailId);
+    if (!syncedItem.IsCloudSynced || syncedItem.CloudProvider != "GoogleDrive" || syncedItem.CloudFileId != "mock-gdrive-file-id-999")
+    {
+        throw new Exception($"FAIL: Cloud metadata not properly updated! Synced={syncedItem.IsCloudSynced}, Provider={syncedItem.CloudProvider}, FileId={syncedItem.CloudFileId}");
+    }
+    Console.WriteLine("  ✓ SQLite Cloud Metadata update & retrieval verified OK!");
+
+    // Test CloudManagerService
+    var cloudManager = new SaveGameBackup.Core.Services.Cloud.CloudManagerService(db);
+    await cloudManager.InitializeAsync();
+    await cloudManager.SetActiveProviderAsync("OneDrive");
+    if (cloudManager.ActiveProviderName != "OneDrive" || cloudManager.CurrentProvider.ProviderName != "OneDrive")
+    {
+        throw new Exception("FAIL: CloudManagerService active provider switch to OneDrive failed!");
+    }
+    await cloudManager.SetActiveProviderAsync("GoogleDrive");
+    if (cloudManager.ActiveProviderName != "GoogleDrive" || cloudManager.CurrentProvider.ProviderName != "GoogleDrive")
+    {
+        throw new Exception("FAIL: CloudManagerService active provider switch to GoogleDrive failed!");
+    }
+    Console.WriteLine("  ✓ CloudManagerService provider switching & persistence verified OK!");
+
+    // Test OAuthLoopbackReceiver
+    using (var receiver = new SaveGameBackup.Core.Services.Cloud.OAuthLoopbackReceiver())
+    {
+        if (receiver.Port <= 0 || !receiver.RedirectUri.Contains(receiver.Port.ToString()))
+        {
+            throw new Exception("FAIL: OAuthLoopbackReceiver port binding failed!");
+        }
+        Console.WriteLine($"  ✓ OAuthLoopbackReceiver port allocation OK (Port: {receiver.Port})");
+    }
+
+    // [15] Testing SyncSnapshotToCloudAsync, Cloud RestoreAsync & DeleteSnapshotWithProgressAsync
+    Console.WriteLine("\n[15] Testing SyncSnapshotToCloudAsync, Cloud RestoreAsync & DeleteSnapshotWithProgressAsync");
+    backupService = new BackupService(db);
+    var mockCloud = new MockCloudService();
+
+    // Create a game save source to backup
+    var phase2GameDir = Path.Combine(tempTestDir, "Phase2_GameSave");
+    Directory.CreateDirectory(phase2GameDir);
+    File.WriteAllText(Path.Combine(phase2GameDir, "phase2_slot.sav"), "Phase 2 Game Save Data");
+
+    var phase2GameInfo = new GameSaveInfo
+    {
+        GameName = "Sekiro Shadows",
+        NormalizedName = DatabaseService.NormalizeGameName("Sekiro Shadows"),
+        DetectedPathsOnDisk = new List<string> { phase2GameDir }
+    };
+
+    var phase2Settings = new AppSettings
+    {
+        BackupRootDirectory = Path.Combine(tempTestDir, "Phase2_Backups"),
+        AutoCompressZip = true,
+        CreateTimestampSubfolder = false
+    };
+
+    var phase2Record = await backupService.BackupGameAsync(phase2GameInfo, phase2Settings);
+    var phase2Masters = await db.GetGameHistoriesAsync();
+    var sekiroMaster = phase2Masters.First(m => m.GameName == "Sekiro Shadows");
+    var sekiroDetails = await db.GetHistoryDetailsByGameIdAsync(sekiroMaster.Id);
+    var sekiroDetail = sekiroDetails.First();
+
+    // 15.1: Test SyncSnapshotToCloudAsync
+    var syncResult = await backupService.SyncSnapshotToCloudAsync(sekiroDetail, mockCloud);
+    if (!syncResult.Success || !mockCloud.UploadCalled || !sekiroDetail.IsCloudSynced || sekiroDetail.CloudProvider != "MockDrive")
+    {
+        throw new Exception("FAIL: SyncSnapshotToCloudAsync failed to upload or set cloud metadata!");
+    }
+    Console.WriteLine("  ✓ SyncSnapshotToCloudAsync uploaded snapshot & updated SQLite cloud metadata OK!");
+
+    // 15.2: Test Restore from Cloud
+    var cloudDestDir = Path.Combine(tempTestDir, "Phase2_CloudRestored");
+    Directory.CreateDirectory(cloudDestDir);
+    var restoreTarget = new RestoreItemTarget
+    {
+        IsSelected = true,
+        RestoreDestinationPath = cloudDestDir,
+        SubFolder = string.Empty
+    };
+
+    await backupService.RestoreAsync(
+        sekiroDetail,
+        new List<RestoreItemTarget> { restoreTarget },
+        restoreFromCloud: true,
+        mockCloud);
+
+    if (!mockCloud.DownloadCalled || !File.Exists(Path.Combine(cloudDestDir, "cloud_restored_save.sav")))
+    {
+        throw new Exception("FAIL: RestoreAsync from Cloud failed to download and extract file!");
+    }
+    Console.WriteLine("  ✓ RestoreAsync from Cloud downloaded via API & extracted to destination OK!");
+
+    // 15.3: Test DeleteSnapshotWithProgressAsync (Disk + Cloud + DB)
+    var localZipPath = sekiroDetail.BackupPath;
+    if (!File.Exists(localZipPath)) throw new Exception("FAIL: Expected local zip file to exist before delete!");
+
+    var progressList = new List<int>();
+    var delProgress = new ActionProgress<BackupProgress>(p => progressList.Add(p.Percent));
+
+    await backupService.DeleteSnapshotWithProgressAsync(
+        sekiroDetail,
+        deleteFromCloud: true,
+        cloudService: mockCloud,
+        progress: delProgress);
+
+    if (File.Exists(localZipPath))
+    {
+        throw new Exception("FAIL: Local zip file still exists after DeleteSnapshotWithProgressAsync!");
+    }
+    if (!mockCloud.DeleteCalled)
+    {
+        throw new Exception("FAIL: Cloud file delete was not called!");
+    }
+    var remainingSekiroDetails = await db.GetHistoryDetailsByGameIdAsync(sekiroMaster.Id);
+    if (remainingSekiroDetails.Count != 0)
+    {
+        throw new Exception("FAIL: Database detail record was not deleted!");
+    }
+    if (!progressList.Contains(100))
+    {
+        throw new Exception("FAIL: DeleteSnapshotWithProgressAsync did not report 100% progress!");
+    }
+    Console.WriteLine("  ✓ DeleteSnapshotWithProgressAsync deleted local file, called Cloud delete API & cleaned SQLite with 100% progress!");
+
+    // ==========================================
+    // TEST 16: Testing DeleteGameHistoryWithProgressAsync (Batch Snapshots + Cloud Deletion + Progress %)
+    // ==========================================
+    Console.WriteLine("\n[16] Testing DeleteGameHistoryWithProgressAsync (Batch Snapshots + Cloud Deletion + Progress %)");
+    var eldenRingDir = Path.Combine(tempTestDir, "EldenRingSaves");
+    Directory.CreateDirectory(eldenRingDir);
+    File.WriteAllText(Path.Combine(eldenRingDir, "ER0000.sl2"), "Elden Ring Level 150 Save");
+
+    var erGameInfo = new GameSaveInfo
+    {
+        GameName = "Elden Ring",
+        NormalizedName = DatabaseService.NormalizeGameName("Elden Ring"),
+        DetectedPathsOnDisk = new List<string> { eldenRingDir }
+    };
+    var erSettings = new AppSettings
+    {
+        BackupRootDirectory = Path.Combine(tempTestDir, "Phase2_Backups"),
+        AutoCompressZip = true,
+        CreateTimestampSubfolder = false
+    };
+
+    // 16.1: Tạo 2 snapshot
+    await backupService.BackupGameAsync(erGameInfo, erSettings);
+    await Task.Delay(100);
+    await backupService.BackupGameAsync(erGameInfo, erSettings);
+
+    var erMasters = await db.GetGameHistoriesAsync();
+    var erMaster = erMasters.FirstOrDefault(m => m.GameName == "Elden Ring");
+    if (erMaster == null || erMaster.BackupCount != 2)
+    {
+        throw new Exception("FAIL: Expected Elden Ring master with 2 backups!");
+    }
+
+    var erDetails = await db.GetHistoryDetailsByGameIdAsync(erMaster.Id);
+    if (erDetails.Count != 2) throw new Exception("FAIL: Expected 2 Elden Ring details!");
+
+    // 16.2: Sync snapshot 1 lên Cloud
+    var mockCloud2 = new MockCloudService();
+    await backupService.SyncSnapshotToCloudAsync(erDetails[0], mockCloud2);
+
+    var erZip0 = erDetails[0].BackupPath;
+    var erZip1 = erDetails[1].BackupPath;
+    if (!File.Exists(erZip0) || !File.Exists(erZip1))
+    {
+        throw new Exception("FAIL: Both Elden Ring backup files must exist before history delete!");
+    }
+
+    // 16.3: Xóa toàn bộ Game History kèm Cloud
+    var historyProgressList = new List<int>();
+    var histProgress = new ActionProgress<BackupProgress>(p => historyProgressList.Add(p.Percent));
+
+    await backupService.DeleteGameHistoryWithProgressAsync(
+        erMaster,
+        deleteFromCloud: true,
+        cloudService: mockCloud2,
+        progress: histProgress);
+
+    if (File.Exists(erZip0) || File.Exists(erZip1))
+    {
+        throw new Exception("FAIL: Backup files must be physically removed on disk!");
+    }
+    if (!mockCloud2.DeleteCalled)
+    {
+        throw new Exception("FAIL: Cloud delete API must be called for the synced snapshot!");
+    }
+    var remainingMaster = (await db.GetGameHistoriesAsync()).FirstOrDefault(m => m.Id == erMaster.Id);
+    var remainingErDetails = await db.GetHistoryDetailsByGameIdAsync(erMaster.Id);
+    if (remainingMaster != null || remainingErDetails.Count != 0)
+    {
+        throw new Exception("FAIL: Master and detail rows must be completely wiped from SQLite!");
+    }
+    if (!historyProgressList.Contains(100))
+    {
+        throw new Exception("FAIL: DeleteGameHistoryWithProgressAsync did not reach 100% progress!");
+    }
+    Console.WriteLine("  ✓ DeleteGameHistoryWithProgressAsync removed all local files, called Cloud delete API, deleted SQLite records & reached 100% progress!");
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 16 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally
@@ -348,4 +709,82 @@ finally
     {
         // Cleanup best effort
     }
+}
+
+public class MockCloudService : SaveGameBackup.Core.Services.Cloud.ICloudStorageService
+{
+    public string ProviderName => "MockDrive";
+    public string DisplayName => "Mock Drive (Test)";
+    public bool IsAuthenticated => true;
+    public string? CurrentAccountEmail => "test@mockdrive.com";
+
+    public bool UploadCalled { get; private set; }
+    public bool DownloadCalled { get; private set; }
+    public bool DeleteCalled { get; private set; }
+
+    public Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
+    public Task SignOutAsync() => Task.CompletedTask;
+    public Task<string?> GetUserEmailAsync(CancellationToken cancellationToken = default) => Task.FromResult<string?>("test@mockdrive.com");
+
+    public Task<SaveGameBackup.Core.Services.Cloud.CloudUploadResult> UploadFileAsync(
+        string localFilePath,
+        string remoteGameFolderName,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        UploadCalled = true;
+        progress?.Report(new BackupProgress { Percent = 50, Message = "Mock uploading 50%..." });
+        progress?.Report(new BackupProgress { Percent = 100, Message = "Mock uploaded!" });
+        return Task.FromResult(new SaveGameBackup.Core.Services.Cloud.CloudUploadResult
+        {
+            Success = true,
+            Provider = ProviderName,
+            FileId = "mock-cloud-file-id-456",
+            FileName = Path.GetFileName(localFilePath),
+            FileSizeBytes = new FileInfo(localFilePath).Length
+        });
+    }
+
+    public async Task<string> DownloadFileAsync(
+        string remoteFileId,
+        string localDestinationPath,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        DownloadCalled = true;
+        progress?.Report(new BackupProgress { Percent = 50, Message = "Mock downloading..." });
+        
+        var dir = Path.GetDirectoryName(localDestinationPath);
+        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        
+        using (var zip = System.IO.Compression.ZipFile.Open(localDestinationPath, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            var entry = zip.CreateEntry("cloud_restored_save.sav");
+            using var sw = new StreamWriter(entry.Open());
+            await sw.WriteAsync("Cloud Save Content 12345");
+        }
+
+        progress?.Report(new BackupProgress { Percent = 100, Message = "Mock downloaded!" });
+        return localDestinationPath;
+    }
+
+    public Task<bool> DeleteFileAsync(string remoteFileId, CancellationToken cancellationToken = default)
+    {
+        DeleteCalled = true;
+        return Task.FromResult(true);
+    }
+
+    public Task<List<SaveGameBackup.Core.Services.Cloud.CloudFileInfo>> ListBackupsAsync(
+        string? remoteGameFolderName = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new List<SaveGameBackup.Core.Services.Cloud.CloudFileInfo>());
+    }
+}
+
+public class ActionProgress<T> : IProgress<T>
+{
+    private readonly Action<T> _action;
+    public ActionProgress(Action<T> action) => _action = action;
+    public void Report(T value) => _action(value);
 }

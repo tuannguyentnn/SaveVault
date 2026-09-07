@@ -63,9 +63,13 @@ namespace SaveGameBackup.UI
 
         private void GameHistoryGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (DataContext is MainViewModel vm && vm.SelectedGameSummary != null)
+            if (DataContext is MainViewModel vm)
             {
-                if (vm.OpenGameDetailsCommand.CanExecute(vm.SelectedGameSummary))
+                if (vm.SelectedGameHistory != null && vm.OpenGameDetailsCommand.CanExecute(vm.SelectedGameHistory))
+                {
+                    vm.OpenGameDetailsCommand.Execute(vm.SelectedGameHistory);
+                }
+                else if (vm.SelectedGameSummary != null && vm.OpenGameDetailsCommand.CanExecute(vm.SelectedGameSummary))
                 {
                     vm.OpenGameDetailsCommand.Execute(vm.SelectedGameSummary);
                 }

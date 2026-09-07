@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using SaveGameBackup.Core.Models;
+using SaveGameBackup.Core.Services.Cloud;
 
 namespace SaveGameBackup.Core.Services;
 
@@ -9,6 +10,11 @@ public class BackupProgress
     public int Percent { get; set; }
     public string CurrentFile { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
+    public long ProcessedBytes { get; set; }
+    public long TotalBytes { get; set; }
+    public int ProcessedItems { get; set; }
+    public int TotalItems { get; set; }
+    public string SpeedText { get; set; } = string.Empty;
 }
 
 public class BackupService
@@ -88,13 +94,41 @@ public class BackupService
         int totalCopiedFiles = 0;
         long totalCopiedBytes = 0;
 
+        // Tính trước tổng số file và dung lượng để báo % chính xác tuyệt đối
+        int totalSourceFiles = 0;
+        long totalSourceBytes = 0;
+        foreach (var p in pathsToBackup)
+        {
+            if (Directory.Exists(p))
+            {
+                var files = Directory.GetFiles(p, "*", SearchOption.AllDirectories);
+                totalSourceFiles += files.Length;
+                foreach (var f in files)
+                {
+                    try { totalSourceBytes += new FileInfo(f).Length; } catch { }
+                }
+            }
+            else if (File.Exists(p))
+            {
+                totalSourceFiles++;
+                try { totalSourceBytes += new FileInfo(p).Length; } catch { }
+            }
+        }
+
         var manifest = new BackupManifest
         {
             GameName = gameInfo.GameName,
             BackupDate = DateTime.Now
         };
 
-        progress?.Report(new BackupProgress { Percent = 5, Message = "Chuẩn bị sao lưu các vị trí đã chọn..." });
+        int copyMaxPercent = settings.AutoCompressZip ? 50 : 95;
+        progress?.Report(new BackupProgress 
+        { 
+            Percent = 5, 
+            TotalBytes = totalSourceBytes,
+            TotalItems = totalSourceFiles,
+            Message = "Chuẩn bị sao lưu các vị trí đã chọn..." 
+        });
 
         for (int i = 0; i < pathsToBackup.Count; i++)
         {
@@ -133,12 +167,19 @@ public class BackupService
                     itemFiles++;
                     itemBytes += fInfo.Length;
 
-                    var pct = 5 + (int)((fIndex + 1.0) / allFiles.Length * (80.0 / pathsToBackup.Count) + (i * 80.0 / pathsToBackup.Count));
+                    var pct = totalSourceBytes > 0
+                        ? 5 + (int)((double)totalCopiedBytes / totalSourceBytes * (copyMaxPercent - 5))
+                        : 5 + (int)((double)totalCopiedFiles / Math.Max(1, totalSourceFiles) * (copyMaxPercent - 5));
+
                     progress?.Report(new BackupProgress
                     {
-                        Percent = Math.Min(pct, 90),
+                        Percent = Math.Clamp(pct, 5, copyMaxPercent),
                         CurrentFile = relative,
-                        Message = $"Đang sao lưu: {Path.GetFileName(file)} ({i + 1}/{pathsToBackup.Count})"
+                        ProcessedBytes = totalCopiedBytes,
+                        TotalBytes = totalSourceBytes,
+                        ProcessedItems = totalCopiedFiles,
+                        TotalItems = totalSourceFiles,
+                        Message = $"Đang sao lưu ({totalCopiedFiles}/{totalSourceFiles}): {Path.GetFileName(file)}"
                     });
                 }
             }
@@ -156,8 +197,12 @@ public class BackupService
 
                 progress?.Report(new BackupProgress
                 {
-                    Percent = 85,
+                    Percent = copyMaxPercent,
                     CurrentFile = fileName,
+                    ProcessedBytes = totalCopiedBytes,
+                    TotalBytes = totalSourceBytes,
+                    ProcessedItems = totalCopiedFiles,
+                    TotalItems = totalSourceFiles,
                     Message = $"Đang sao lưu file: {fileName}"
                 });
             }
@@ -171,23 +216,25 @@ public class BackupService
             });
         }
 
-        // Write manifest file
+        // Serialize manifest to JSON string for 100% database storage (KHÔNG ghi file manifest ra đĩa hay vào zip)
         var manifestJson = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(Path.Combine(targetFolder, ManifestFileName), manifestJson);
 
         string finalBackupPath;
 
-        // Auto compress to Zip if enabled
+        // Auto compress to Zip if enabled (nén với tiến trình % chính xác từ 50% -> 95%)
         if (settings.AutoCompressZip)
         {
-            progress?.Report(new BackupProgress { Percent = 92, Message = "Đang nén file zip..." });
             var zipDir = Path.Combine(rootBackupDir, sanitizedName);
             Directory.CreateDirectory(zipDir);
             var zipFilePath = Path.Combine(zipDir, $"{sanitizedName}_{timestamp}.zip");
 
-            if (File.Exists(zipFilePath)) File.Delete(zipFilePath);
-
-            ZipFile.CreateFromDirectory(targetFolder, zipFilePath, CompressionLevel.Optimal, false);
+            await CreateZipFromDirectoryWithProgressAsync(
+                targetFolder, 
+                zipFilePath, 
+                progress, 
+                startPercent: 50, 
+                endPercent: 95, 
+                cancellationToken);
 
             // Clean up staging/temp uncompressed folder
             try { Directory.Delete(targetFolder, true); } catch { /* Ignore */ }
@@ -203,12 +250,14 @@ public class BackupService
             ? pathsToBackup[0]
             : string.Join(" | ", pathsToBackup);
 
-        var record = new BackupRecord
+        // Lưu vào bảng backup_history (Master) và backup_history_details (Detail) với ManifestJson
+        var detail = new BackupHistoryDetail
         {
             GameName = gameInfo.GameName,
             BackupPath = finalBackupPath,
             SourcePath = sourcePathRecord,
             SavePaths = JsonSerializer.Serialize(pathsToBackup),
+            ManifestJson = manifestJson,
             FileCount = totalCopiedFiles,
             TotalSizeBytes = totalCopiedBytes,
             BackupDate = DateTime.Now,
@@ -217,11 +266,86 @@ public class BackupService
             Note = $"Đã backup {totalCopiedFiles} file từ {pathsToBackup.Count} vị trí lưu."
         };
 
-        var id = await _databaseService.InsertBackupRecordAsync(record);
-        record.Id = id;
+        var detailId = await _databaseService.InsertOrUpdateBackupHistoryAsync(detail);
+        detail.Id = detailId;
+
+        // Trả về BackupRecord cho tương thích giao diện và test
+        var record = new BackupRecord
+        {
+            Id = detailId,
+            GameName = gameInfo.GameName,
+            BackupPath = finalBackupPath,
+            SourcePath = sourcePathRecord,
+            SavePaths = JsonSerializer.Serialize(pathsToBackup),
+            FileCount = totalCopiedFiles,
+            TotalSizeBytes = totalCopiedBytes,
+            BackupDate = detail.BackupDate,
+            IsCompressed = settings.AutoCompressZip,
+            Status = "Thành công",
+            Note = detail.Note
+        };
 
         progress?.Report(new BackupProgress { Percent = 100, Message = "Sao lưu hoàn tất!" });
         return record;
+    }
+
+    public async Task<CloudUploadResult> SyncSnapshotToCloudAsync(
+        BackupHistoryDetail detail,
+        ICloudStorageService cloudService,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (detail == null) throw new ArgumentNullException(nameof(detail));
+        if (cloudService == null) throw new ArgumentNullException(nameof(cloudService));
+
+        string fileToUpload = detail.BackupPath;
+        string? tempZipToCleanup = null;
+
+        if (!detail.IsCompressed && Directory.Exists(detail.BackupPath))
+        {
+            progress?.Report(new BackupProgress { Percent = 5, Message = "Đang đóng gói file zip để đồng bộ Cloud..." });
+            tempZipToCleanup = Path.Combine(Path.GetTempPath(), $"{SanitizeFolderName(detail.GameName)}_{detail.BackupDate:yyyy-MM-dd_HH-mm-ss}.zip");
+            await CreateZipFromDirectoryWithProgressAsync(detail.BackupPath, tempZipToCleanup, progress, 5, 25, cancellationToken);
+            fileToUpload = tempZipToCleanup;
+        }
+
+        if (!File.Exists(fileToUpload))
+        {
+            throw new FileNotFoundException($"Không tìm thấy file sao lưu trên ổ đĩa để đồng bộ: {fileToUpload}");
+        }
+
+        try
+        {
+            var remoteGameFolder = SanitizeFolderName(detail.GameName);
+            var uploadResult = await cloudService.UploadFileAsync(fileToUpload, remoteGameFolder, progress, cancellationToken);
+
+            if (uploadResult.Success)
+            {
+                var syncDate = DateTime.UtcNow;
+                await _databaseService.UpdateCloudSyncDetailAsync(
+                    detail.Id,
+                    true,
+                    cloudService.ProviderName,
+                    uploadResult.FileId,
+                    uploadResult.FileName,
+                    syncDate);
+
+                detail.IsCloudSynced = true;
+                detail.CloudProvider = cloudService.ProviderName;
+                detail.CloudFileId = uploadResult.FileId;
+                detail.CloudFileName = uploadResult.FileName;
+                detail.CloudSyncDate = syncDate;
+            }
+
+            return uploadResult;
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(tempZipToCleanup) && File.Exists(tempZipToCleanup))
+            {
+                try { File.Delete(tempZipToCleanup); } catch { }
+            }
+        }
     }
 
     public List<RestoreItemTarget> GetRestoreItemsFromBackup(BackupRecord record)
@@ -371,6 +495,224 @@ public class BackupService
         return result;
     }
 
+    public List<RestoreItemTarget> GetRestoreItemsFromBackup(BackupHistoryDetail detail)
+    {
+        var result = new List<RestoreItemTarget>();
+
+        // 1. Phục hồi trực tiếp từ ManifestJson trong SQLite database (KHÔNG đọc ổ đĩa hay tệp zip)
+        if (!string.IsNullOrWhiteSpace(detail.ManifestJson))
+        {
+            try
+            {
+                var manifest = JsonSerializer.Deserialize<BackupManifest>(detail.ManifestJson);
+                if (manifest?.Items != null && manifest.Items.Count > 0)
+                {
+                    var detailPaths = detail.SavePathsList;
+                    for (int i = 0; i < manifest.Items.Count; i++)
+                    {
+                        var item = manifest.Items[i];
+                        string destPath;
+                        if (manifest.Items.Count == 1 && !string.IsNullOrWhiteSpace(detail.SourcePath))
+                        {
+                            destPath = detail.SourcePath;
+                        }
+                        else if (detailPaths.Count > i && !string.IsNullOrWhiteSpace(detailPaths[i]))
+                        {
+                            destPath = detailPaths[i];
+                        }
+                        else
+                        {
+                            destPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : detail.SourcePath;
+                        }
+
+                        var origPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : destPath;
+
+                        result.Add(new RestoreItemTarget
+                        {
+                            IsSelected = true,
+                            OriginalSourcePath = origPath,
+                            RestoreDestinationPath = destPath,
+                            SubFolder = item.SubFolder,
+                            FileCount = item.FileCount,
+                            TotalSizeBytes = item.TotalSizeBytes
+                        });
+                    }
+                    return result;
+                }
+            }
+            catch { /* fallback below */ }
+        }
+
+        // 2. Fallback sang SavePathsList
+        var paths = detail.SavePathsList;
+        if (paths.Count > 0)
+        {
+            int avgFiles = Math.Max(1, detail.FileCount / paths.Count);
+            long avgBytes = Math.Max(0, detail.TotalSizeBytes / paths.Count);
+
+            for (int i = 0; i < paths.Count; i++)
+            {
+                var p = paths[i];
+                string subFolder = paths.Count > 1
+                    ? $"{i + 1}_{SanitizeFolderName(Path.GetFileName(p.TrimEnd('\\', '/')))}"
+                    : string.Empty;
+
+                result.Add(new RestoreItemTarget
+                {
+                    IsSelected = true,
+                    OriginalSourcePath = p,
+                    RestoreDestinationPath = p,
+                    SubFolder = subFolder,
+                    FileCount = avgFiles,
+                    TotalSizeBytes = avgBytes
+                });
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(detail.SourcePath))
+        {
+            result.Add(new RestoreItemTarget
+            {
+                IsSelected = true,
+                OriginalSourcePath = detail.SourcePath,
+                RestoreDestinationPath = detail.SourcePath,
+                SubFolder = string.Empty,
+                FileCount = detail.FileCount,
+                TotalSizeBytes = detail.TotalSizeBytes
+            });
+        }
+
+        return result;
+    }
+
+    public Task RestoreAsync(
+        BackupHistoryDetail detail, 
+        IProgress<BackupProgress>? progress = null, 
+        CancellationToken cancellationToken = default)
+    {
+        var items = GetRestoreItemsFromBackup(detail);
+        return RestoreAsync(detail, items, restoreFromCloud: false, cloudService: null, progress, cancellationToken);
+    }
+
+    public Task RestoreAsync(
+        BackupHistoryDetail detail,
+        List<RestoreItemTarget> itemsToRestore,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        return RestoreAsync(detail, itemsToRestore, restoreFromCloud: false, cloudService: null, progress, cancellationToken);
+    }
+
+    public async Task RestoreAsync(
+        BackupHistoryDetail detail,
+        List<RestoreItemTarget> itemsToRestore,
+        bool restoreFromCloud,
+        ICloudStorageService? cloudService = null,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var selectedItems = itemsToRestore
+            .Where(i => i.IsSelected && !string.IsNullOrWhiteSpace(i.RestoreDestinationPath))
+            .ToList();
+
+        if (selectedItems.Count == 0)
+        {
+            throw new InvalidOperationException("Không có vị trí lưu nào được chọn để khôi phục!");
+        }
+
+        string zipFilePath = detail.BackupPath;
+        string? tempDownloadedZip = null;
+
+        if (restoreFromCloud)
+        {
+            if (cloudService == null)
+            {
+                throw new InvalidOperationException("Chưa cấu hình dịch vụ lưu trữ đám mây để tải bản sao lưu!");
+            }
+            if (string.IsNullOrEmpty(detail.CloudFileId))
+            {
+                throw new InvalidOperationException("Bản sao lưu này chưa có mã tệp trên Cloud!");
+            }
+
+            tempDownloadedZip = Path.Combine(Path.GetTempPath(), $"SaveVault_CloudDl_{Guid.NewGuid():N}.zip");
+            progress?.Report(new BackupProgress { Percent = 0, Message = $"Bắt đầu tải từ {cloudService.DisplayName}..." });
+
+            var dlProgress = new Progress<BackupProgress>(p =>
+            {
+                progress?.Report(new BackupProgress
+                {
+                    Percent = (int)(p.Percent * 0.5), // 0% -> 50%
+                    CurrentFile = p.CurrentFile,
+                    ProcessedBytes = p.ProcessedBytes,
+                    TotalBytes = p.TotalBytes,
+                    SpeedText = p.SpeedText,
+                    Message = $"[1/2] {p.Message}"
+                });
+            });
+
+            await cloudService.DownloadFileAsync(detail.CloudFileId, tempDownloadedZip, dlProgress, cancellationToken);
+            zipFilePath = tempDownloadedZip;
+        }
+
+        try
+        {
+            if (detail.IsCompressed || restoreFromCloud)
+            {
+                if (!File.Exists(zipFilePath))
+                    throw new FileNotFoundException($"Không tìm thấy file zip backup: {zipFilePath}");
+
+                int extractStart = restoreFromCloud ? 50 : 10;
+                int extractEnd = restoreFromCloud ? 75 : 40;
+
+                progress?.Report(new BackupProgress { Percent = extractStart, Message = "Đang chuẩn bị giải nén dữ liệu sao lưu..." });
+
+                var tempExtractDir = Path.Combine(Path.GetTempPath(), "SaveBackup_Restore_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(tempExtractDir);
+
+                try
+                {
+                    await ExtractZipWithProgressAsync(zipFilePath, tempExtractDir, progress, extractStart, extractEnd, cancellationToken);
+
+                    var restoreProgress = new Progress<BackupProgress>(p =>
+                    {
+                        var start = extractEnd;
+                        var span = 99 - start;
+                        var scaled = start + (int)(p.Percent / 100.0 * span);
+                        progress?.Report(new BackupProgress
+                        {
+                            Percent = Math.Clamp(scaled, start, 99),
+                            CurrentFile = p.CurrentFile,
+                            ProcessedBytes = p.ProcessedBytes,
+                            TotalBytes = p.TotalBytes,
+                            Message = restoreFromCloud ? $"[2/2] {p.Message}" : p.Message
+                        });
+                    });
+
+                    await RestoreSelectedFromDirectoryAsync(tempExtractDir, selectedItems, restoreProgress, cancellationToken);
+                }
+                finally
+                {
+                    try { Directory.Delete(tempExtractDir, true); } catch { /* Ignore */ }
+                }
+            }
+            else
+            {
+                if (!Directory.Exists(detail.BackupPath))
+                    throw new DirectoryNotFoundException($"Không tìm thấy thư mục backup: {detail.BackupPath}");
+
+                await RestoreSelectedFromDirectoryAsync(detail.BackupPath, selectedItems, progress, cancellationToken);
+            }
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(tempDownloadedZip) && File.Exists(tempDownloadedZip))
+            {
+                try { File.Delete(tempDownloadedZip); } catch { /* Ignore */ }
+            }
+        }
+
+        progress?.Report(new BackupProgress { Percent = 100, Message = "Khôi phục hoàn tất!" });
+    }
+
     public Task RestoreAsync(BackupRecord record, IProgress<BackupProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         var items = GetRestoreItemsFromBackup(record);
@@ -397,15 +739,27 @@ public class BackupService
             if (!File.Exists(record.BackupPath))
                 throw new FileNotFoundException($"Không tìm thấy file zip backup: {record.BackupPath}");
 
-            progress?.Report(new BackupProgress { Percent = 10, Message = "Đang giải nén dữ liệu sao lưu tạm thời..." });
+            progress?.Report(new BackupProgress { Percent = 10, Message = "Đang giải nén dữ liệu sao lưu..." });
 
             var tempExtractDir = Path.Combine(Path.GetTempPath(), "SaveBackup_Restore_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempExtractDir);
 
             try
             {
-                ZipFile.ExtractToDirectory(record.BackupPath, tempExtractDir);
-                await RestoreSelectedFromDirectoryAsync(tempExtractDir, selectedItems, progress, cancellationToken);
+                await ExtractZipWithProgressAsync(record.BackupPath, tempExtractDir, progress, 10, 40, cancellationToken);
+
+                var restoreProgress = new Progress<BackupProgress>(p =>
+                {
+                    var scaled = 40 + (int)(p.Percent / 100.0 * 59);
+                    progress?.Report(new BackupProgress
+                    {
+                        Percent = Math.Clamp(scaled, 40, 99),
+                        CurrentFile = p.CurrentFile,
+                        Message = p.Message
+                    });
+                });
+
+                await RestoreSelectedFromDirectoryAsync(tempExtractDir, selectedItems, restoreProgress, cancellationToken);
             }
             finally
             {
@@ -421,6 +775,161 @@ public class BackupService
         }
 
         progress?.Report(new BackupProgress { Percent = 100, Message = "Khôi phục hoàn tất!" });
+    }
+
+    public async Task DeleteSnapshotWithProgressAsync(
+        BackupHistoryDetail detail,
+        bool deleteFromCloud = false,
+        ICloudStorageService? cloudService = null,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (detail == null) return;
+
+        progress?.Report(new BackupProgress { Percent = 5, Message = "Bắt đầu xóa bản sao lưu..." });
+
+        // 1. Xóa file vật lý trên đĩa
+        if (File.Exists(detail.BackupPath))
+        {
+            progress?.Report(new BackupProgress { Percent = 30, Message = "Đang xóa file sao lưu trên ổ đĩa..." });
+            try
+            {
+                File.SetAttributes(detail.BackupPath, FileAttributes.Normal);
+                File.Delete(detail.BackupPath);
+            }
+            catch { }
+
+            // Dọn dẹp thư mục game cha nếu rỗng
+            try
+            {
+                var parentDir = Path.GetDirectoryName(detail.BackupPath);
+                if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                {
+                    if (Directory.GetFiles(parentDir).Length == 0 && Directory.GetDirectories(parentDir).Length == 0)
+                    {
+                        Directory.Delete(parentDir);
+                    }
+                }
+            }
+            catch { }
+        }
+        else if (Directory.Exists(detail.BackupPath))
+        {
+            await DeleteDirectoryWithProgressAsync(detail.BackupPath, progress, 10, 60, cancellationToken);
+
+            // Dọn dẹp thư mục cha nếu rỗng
+            try
+            {
+                var parentDir = Path.GetDirectoryName(detail.BackupPath);
+                if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                {
+                    if (Directory.GetFiles(parentDir).Length == 0 && Directory.GetDirectories(parentDir).Length == 0)
+                    {
+                        Directory.Delete(parentDir);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        progress?.Report(new BackupProgress { Percent = 65, Message = "Đã xóa dữ liệu trên ổ đĩa cục bộ." });
+
+        // 2. Xóa trên Cloud nếu được chọn
+        if (deleteFromCloud && detail.IsCloudSynced && !string.IsNullOrEmpty(detail.CloudFileId))
+        {
+            progress?.Report(new BackupProgress { Percent = 70, Message = $"Đang xóa file trên {detail.CloudProvider}..." });
+            if (cloudService != null)
+            {
+                try
+                {
+                    await cloudService.DeleteFileAsync(detail.CloudFileId, cancellationToken);
+                    progress?.Report(new BackupProgress { Percent = 85, Message = $"Đã xóa file trên {detail.CloudProvider} thành công." });
+                }
+                catch (Exception ex)
+                {
+                    progress?.Report(new BackupProgress { Percent = 85, Message = $"Cảnh báo: Không thể xóa file trên Cloud ({ex.Message})" });
+                }
+            }
+        }
+
+        // 3. Xóa trong database SQLite
+        progress?.Report(new BackupProgress { Percent = 90, Message = "Đang cập nhật cơ sở dữ liệu SQLite..." });
+        await _databaseService.DeleteHistoryDetailAsync(detail.Id, detail.GameHistoryId);
+
+        progress?.Report(new BackupProgress { Percent = 100, Message = "Xóa bản sao lưu hoàn tất!" });
+    }
+
+    public async Task DeleteGameHistoryWithProgressAsync(
+        GameHistoryEntry gameHistory,
+        bool deleteFromCloud = false,
+        ICloudStorageService? cloudService = null,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (gameHistory == null) return;
+
+        progress?.Report(new BackupProgress { Percent = 5, Message = $"Bắt đầu xóa toàn bộ lịch sử game '{gameHistory.GameName}'..." });
+
+        var details = await _databaseService.GetHistoryDetailsByGameIdAsync(gameHistory.Id);
+
+        for (int i = 0; i < details.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var d = details[i];
+
+            int startPct = 5 + (int)((double)i / Math.Max(1, details.Count) * 80);
+            int endPct = 5 + (int)((double)(i + 1) / Math.Max(1, details.Count) * 80);
+
+            var itemProgress = new Progress<BackupProgress>(p =>
+            {
+                int scaled = startPct + (int)(p.Percent / 100.0 * (endPct - startPct));
+                progress?.Report(new BackupProgress
+                {
+                    Percent = Math.Clamp(scaled, 5, 88),
+                    CurrentFile = p.CurrentFile,
+                    Message = $"[{i + 1}/{details.Count}] {p.Message}"
+                });
+            });
+
+            // Xóa đĩa
+            if (File.Exists(d.BackupPath))
+            {
+                try { File.Delete(d.BackupPath); } catch { }
+            }
+            else if (Directory.Exists(d.BackupPath))
+            {
+                try { Directory.Delete(d.BackupPath, true); } catch { }
+            }
+
+            // Xóa cloud
+            if (deleteFromCloud && d.IsCloudSynced && !string.IsNullOrEmpty(d.CloudFileId) && cloudService != null)
+            {
+                try { await cloudService.DeleteFileAsync(d.CloudFileId, cancellationToken); } catch { }
+            }
+        }
+
+        // Dọn dẹp thư mục game rỗng trên đĩa
+        if (details.Count > 0)
+        {
+            try
+            {
+                var firstDetail = details[0];
+                var parentDir = Path.GetDirectoryName(firstDetail.BackupPath);
+                if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                {
+                    if (Directory.GetFiles(parentDir).Length == 0 && Directory.GetDirectories(parentDir).Length == 0)
+                    {
+                        Directory.Delete(parentDir);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        progress?.Report(new BackupProgress { Percent = 90, Message = "Đang dọn dẹp cơ sở dữ liệu SQLite..." });
+        await _databaseService.DeleteGameHistoryAsync(gameHistory.Id);
+
+        progress?.Report(new BackupProgress { Percent = 100, Message = $"Đã xóa sạch toàn bộ lịch sử game '{gameHistory.GameName}'!" });
     }
 
     private static async Task RestoreSelectedFromDirectoryAsync(
@@ -474,7 +983,6 @@ public class BackupService
         }
     }
 
-
     private static async Task CopyAllFilesAsync(string sourceDir, string destinationDir, IProgress<BackupProgress>? progress, CancellationToken cancellationToken, bool skipManifest = false)
     {
         Directory.CreateDirectory(destinationDir);
@@ -508,5 +1016,142 @@ public class BackupService
 
             await Task.Yield();
         }
+    }
+
+    private static async Task CreateZipFromDirectoryWithProgressAsync(
+        string sourceDirectory,
+        string destinationZipPath,
+        IProgress<BackupProgress>? progress,
+        int startPercent,
+        int endPercent,
+        CancellationToken cancellationToken)
+    {
+        var files = Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories);
+        long totalBytes = 0;
+        foreach (var file in files)
+        {
+            try { totalBytes += new FileInfo(file).Length; } catch { }
+        }
+
+        if (File.Exists(destinationZipPath)) File.Delete(destinationZipPath);
+
+        var zipDir = Path.GetDirectoryName(destinationZipPath);
+        if (!string.IsNullOrEmpty(zipDir)) Directory.CreateDirectory(zipDir);
+
+        using var zipToOpen = new FileStream(destinationZipPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        using var archive = new ZipArchive(zipToOpen, ZipArchiveMode.Create);
+
+        long bytesProcessed = 0;
+        var buffer = new byte[64 * 1024];
+
+        for (int i = 0; i < files.Length; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var file = files[i];
+            var relative = Path.GetRelativePath(sourceDirectory, file);
+            var entry = archive.CreateEntry(relative, CompressionLevel.Optimal);
+
+            using var sourceStream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var entryStream = entry.Open();
+
+            int read;
+            while ((read = await sourceStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
+            {
+                await entryStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                bytesProcessed += read;
+
+                double ratio = totalBytes > 0 ? (double)bytesProcessed / totalBytes : (double)(i + 1) / files.Length;
+                int pct = startPercent + (int)(ratio * (endPercent - startPercent));
+
+                progress?.Report(new BackupProgress
+                {
+                    Percent = Math.Clamp(pct, startPercent, endPercent),
+                    CurrentFile = relative,
+                    ProcessedBytes = bytesProcessed,
+                    TotalBytes = totalBytes,
+                    ProcessedItems = i + 1,
+                    TotalItems = files.Length,
+                    Message = $"Đang nén ({i + 1}/{files.Length}): {Path.GetFileName(file)} ({pct}%)"
+                });
+            }
+        }
+    }
+
+    private static async Task ExtractZipWithProgressAsync(
+        string zipPath,
+        string destinationDir,
+        IProgress<BackupProgress>? progress,
+        int startPercent,
+        int endPercent,
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(destinationDir);
+        using var archive = ZipFile.OpenRead(zipPath);
+        var entries = archive.Entries.ToList();
+
+        for (int i = 0; i < entries.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var entry = entries[i];
+            if (string.IsNullOrEmpty(entry.Name)) continue; // Directory entry
+
+            var destPath = Path.Combine(destinationDir, entry.FullName);
+            var dir = Path.GetDirectoryName(destPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+            entry.ExtractToFile(destPath, true);
+
+            int pct = startPercent + (int)((i + 1.0) / Math.Max(1, entries.Count) * (endPercent - startPercent));
+            progress?.Report(new BackupProgress
+            {
+                Percent = Math.Clamp(pct, startPercent, endPercent),
+                CurrentFile = entry.Name,
+                ProcessedItems = i + 1,
+                TotalItems = entries.Count,
+                Message = $"Đang giải nén: {entry.Name} ({pct}%)"
+            });
+
+            await Task.Yield();
+        }
+    }
+
+    private static async Task DeleteDirectoryWithProgressAsync(
+        string directoryPath,
+        IProgress<BackupProgress>? progress,
+        int startPercent,
+        int endPercent,
+        CancellationToken cancellationToken)
+    {
+        if (!Directory.Exists(directoryPath)) return;
+
+        var files = Directory.GetFiles(directoryPath, "*", SearchOption.AllDirectories);
+        for (int i = 0; i < files.Length; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                File.SetAttributes(files[i], FileAttributes.Normal);
+                File.Delete(files[i]);
+            }
+            catch { }
+
+            int pct = startPercent + (int)((i + 1.0) / Math.Max(1, files.Length) * (endPercent - startPercent));
+            progress?.Report(new BackupProgress
+            {
+                Percent = Math.Clamp(pct, startPercent, endPercent),
+                CurrentFile = Path.GetFileName(files[i]),
+                ProcessedItems = i + 1,
+                TotalItems = files.Length,
+                Message = $"Đang xóa tệp ({i + 1}/{files.Length}): {Path.GetFileName(files[i])}"
+            });
+
+            await Task.Yield();
+        }
+
+        try
+        {
+            Directory.Delete(directoryPath, true);
+        }
+        catch { }
     }
 }
