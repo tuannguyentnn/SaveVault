@@ -243,7 +243,7 @@ public class BackupService
         var detail = new BackupHistoryDetail
         {
             GameName = gameInfo.GameName,
-            BackupPath = finalBackupPath,
+            BackupPath = new BackupPathLocations { LocalPath = finalBackupPath }.ToJson(),
             SourcePath = sourcePathRecord,
             SavePaths = JsonSerializer.Serialize(pathsToBackup),
             ManifestJson = manifestJson,
@@ -287,14 +287,14 @@ public class BackupService
         if (detail == null) throw new ArgumentNullException(nameof(detail));
         if (cloudService == null) throw new ArgumentNullException(nameof(cloudService));
 
-        string fileToUpload = detail.BackupPath;
+        string fileToUpload = detail.LocalBackupPath;
         string? tempZipToCleanup = null;
 
-        if (!detail.IsCompressed && Directory.Exists(detail.BackupPath))
+        if (!detail.IsCompressed && Directory.Exists(fileToUpload))
         {
             progress?.Report(new BackupProgress { Percent = 5, Message = "Đang đóng gói file zip để đồng bộ Cloud..." });
             tempZipToCleanup = Path.Combine(Path.GetTempPath(), $"{SanitizeFolderName(detail.GameName)}_{detail.BackupDate:yyyy-MM-dd_HH-mm-ss}.zip");
-            await CreateZipFromDirectoryWithProgressAsync(detail.BackupPath, tempZipToCleanup, progress, 5, 25, cancellationToken);
+            await CreateZipFromDirectoryWithProgressAsync(fileToUpload, tempZipToCleanup, progress, 5, 25, cancellationToken);
             fileToUpload = tempZipToCleanup;
         }
 
@@ -312,6 +312,14 @@ public class BackupService
             {
                 var syncDate = DateTime.UtcNow;
 
+                var webUrl = uploadResult.WebUrl;
+                if (string.IsNullOrEmpty(webUrl) && !string.IsNullOrEmpty(uploadResult.FileId))
+                {
+                    webUrl = cloudService.ProviderName.Equals("OneDrive", StringComparison.OrdinalIgnoreCase)
+                        ? $"https://onedrive.live.com/?id={Uri.EscapeDataString(uploadResult.FileId)}"
+                        : $"https://drive.google.com/file/d/{Uri.EscapeDataString(uploadResult.FileId)}/view";
+                }
+
                 // Cập nhật hoặc thêm mới provider vào CloudSyncList
                 var existing = detail.CloudSyncList.FirstOrDefault(c => c.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase));
                 if (existing != null)
@@ -319,7 +327,7 @@ public class BackupService
                     existing.FileId = uploadResult.FileId;
                     existing.FileName = uploadResult.FileName;
                     existing.SyncDate = syncDate;
-                    existing.WebViewUrl = uploadResult.WebUrl;
+                    existing.WebViewUrl = webUrl;
                 }
                 else
                 {
@@ -329,8 +337,13 @@ public class BackupService
                         FileId = uploadResult.FileId,
                         FileName = uploadResult.FileName,
                         SyncDate = syncDate,
-                        WebViewUrl = uploadResult.WebUrl
+                        WebViewUrl = webUrl
                     });
+                }
+
+                if (!string.IsNullOrEmpty(webUrl))
+                {
+                    detail.SetCloudUrl(cloudService.ProviderName, webUrl);
                 }
 
                 detail.CloudSyncJson = JsonSerializer.Serialize(detail.CloudSyncList);
@@ -347,7 +360,8 @@ public class BackupService
                     detail.CloudFileId,
                     detail.CloudFileName,
                     syncDate,
-                    detail.CloudSyncJson);
+                    detail.CloudSyncJson,
+                    detail.BackupPath);
             }
 
             return uploadResult;
@@ -632,7 +646,7 @@ public class BackupService
             throw new InvalidOperationException("Không có vị trí lưu nào được chọn để khôi phục!");
         }
 
-        string zipFilePath = detail.BackupPath;
+        string zipFilePath = detail.LocalBackupPath;
         string? tempDownloadedZip = null;
 
         if (restoreFromCloud)
@@ -720,10 +734,11 @@ public class BackupService
             }
             else
             {
-                if (!Directory.Exists(detail.BackupPath))
-                    throw new DirectoryNotFoundException($"Không tìm thấy thư mục backup: {detail.BackupPath}");
+                var localDirPath = detail.LocalBackupPath;
+                if (!Directory.Exists(localDirPath))
+                    throw new DirectoryNotFoundException($"Không tìm thấy thư mục backup: {localDirPath}");
 
-                await RestoreSelectedFromDirectoryAsync(detail.BackupPath, selectedItems, progress, cancellationToken);
+                await RestoreSelectedFromDirectoryAsync(localDirPath, selectedItems, progress, cancellationToken);
             }
         }
         finally
@@ -853,6 +868,18 @@ public class BackupService
             }
         }
 
+        foreach (var kvp in detail.CloudUrls)
+        {
+            if (!targets.Any(t => t.Provider.Equals(kvp.Key, StringComparison.OrdinalIgnoreCase)))
+            {
+                targets.Add(new CloudSyncInfo
+                {
+                    Provider = kvp.Key,
+                    WebViewUrl = kvp.Value
+                });
+            }
+        }
+
         return targets;
     }
 
@@ -882,6 +909,8 @@ public class BackupService
 
     public async Task DeleteSnapshotWithProgressAsync(
         BackupHistoryDetail detail,
+        bool deleteLocal = true,
+        IEnumerable<string>? cloudProvidersToDelete = null,
         bool deleteFromCloud = false,
         ICloudStorageService? cloudService = null,
         IProgress<BackupProgress>? progress = null,
@@ -890,119 +919,164 @@ public class BackupService
     {
         if (detail == null) return;
 
-        progress?.Report(new BackupProgress { Percent = 5, Message = "Bắt đầu xóa bản sao lưu..." });
+        progress?.Report(new BackupProgress { Percent = 5, Message = "Bắt đầu xử lý xóa bản sao lưu..." });
 
-        // 1. Xóa file vật lý trên đĩa
-        if (File.Exists(detail.BackupPath))
+        // 1. Xóa file vật lý trên đĩa nếu deleteLocal == true
+        if (deleteLocal)
         {
-            progress?.Report(new BackupProgress { Percent = 30, Message = "Đang xóa file sao lưu trên ổ đĩa..." });
-            try
+            var localPath = detail.LocalBackupPath;
+            if (File.Exists(localPath))
             {
-                File.SetAttributes(detail.BackupPath, FileAttributes.Normal);
-                File.Delete(detail.BackupPath);
-            }
-            catch { }
-
-            // Dọn dẹp thư mục game cha nếu rỗng
-            try
-            {
-                var parentDir = Path.GetDirectoryName(detail.BackupPath);
-                if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                progress?.Report(new BackupProgress { Percent = 30, Message = "Đang xóa file sao lưu trên ổ đĩa..." });
+                try
                 {
-                    if (Directory.GetFiles(parentDir).Length == 0 && Directory.GetDirectories(parentDir).Length == 0)
-                    {
-                        Directory.Delete(parentDir);
-                    }
+                    File.SetAttributes(localPath, FileAttributes.Normal);
+                    File.Delete(localPath);
                 }
-            }
-            catch { }
-        }
-        else if (Directory.Exists(detail.BackupPath))
-        {
-            await DeleteDirectoryWithProgressAsync(detail.BackupPath, progress, 10, 60, cancellationToken);
+                catch { }
 
-            // Dọn dẹp thư mục cha nếu rỗng
-            try
-            {
-                var parentDir = Path.GetDirectoryName(detail.BackupPath);
-                if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                // Dọn dẹp thư mục game cha nếu rỗng
+                try
                 {
-                    if (Directory.GetFiles(parentDir).Length == 0 && Directory.GetDirectories(parentDir).Length == 0)
+                    var parentDir = Path.GetDirectoryName(localPath);
+                    if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
                     {
-                        Directory.Delete(parentDir);
-                    }
-                }
-            }
-            catch { }
-        }
-
-        progress?.Report(new BackupProgress { Percent = 65, Message = "Đã xóa dữ liệu trên ổ đĩa cục bộ." });
-
-        // 2. Xóa trên Cloud nếu được chọn (hỗ trợ xóa trên TẤT CẢ các cloud đã đồng bộ: Google Drive, OneDrive...)
-        if (deleteFromCloud && (detail.IsCloudSynced || !string.IsNullOrEmpty(detail.CloudFileId) || detail.CloudSyncList.Count > 0))
-        {
-            var targets = GetAllCloudTargets(detail, cloudService);
-            if (targets.Count > 0)
-            {
-                int totalCloudTargets = targets.Count;
-                for (int ci = 0; ci < totalCloudTargets; ci++)
-                {
-                    var target = targets[ci];
-                    if (string.IsNullOrEmpty(target.FileId)) continue;
-
-                    var targetService = ResolveCloudProvider(target.Provider, cloudService, cloudServiceResolver);
-                    var providerDisplay = targetService?.DisplayName ?? target.Provider;
-
-                    int stepStart = 70 + (int)((double)ci / totalCloudTargets * 18);
-                    int stepEnd = 70 + (int)((double)(ci + 1) / totalCloudTargets * 18);
-
-                    progress?.Report(new BackupProgress
-                    {
-                        Percent = stepStart,
-                        Message = totalCloudTargets > 1
-                            ? $"Đang xóa file trên {providerDisplay} ({ci + 1}/{totalCloudTargets})..."
-                            : $"Đang xóa file trên {providerDisplay}..."
-                    });
-
-                    if (targetService != null)
-                    {
-                        try
+                        if (Directory.GetFiles(parentDir).Length == 0 && Directory.GetDirectories(parentDir).Length == 0)
                         {
-                            await targetService.DeleteFileAsync(target.FileId, cancellationToken);
-                            progress?.Report(new BackupProgress
-                            {
-                                Percent = stepEnd,
-                                Message = $"Đã xóa file trên {providerDisplay} thành công."
-                            });
-                            LoggingService.LogAction("Cloud_File_Deleted", new { Provider = target.Provider, FileId = target.FileId });
-                        }
-                        catch (Exception ex)
-                        {
-                            LoggingService.Warn("Cảnh báo: Không thể xóa file trên cloud {Provider} (FileId: {FileId}): {Message}", target.Provider, target.FileId, ex.Message);
-                            progress?.Report(new BackupProgress
-                            {
-                                Percent = stepEnd,
-                                Message = $"Cảnh báo: Không thể xóa trên {providerDisplay} ({ex.Message})"
-                            });
+                            Directory.Delete(parentDir);
                         }
                     }
-                    else
+                }
+                catch { }
+            }
+            else if (Directory.Exists(localPath))
+            {
+                await DeleteDirectoryWithProgressAsync(localPath, progress, 10, 50, cancellationToken);
+
+                // Dọn dẹp thư mục cha nếu rỗng
+                try
+                {
+                    var parentDir = Path.GetDirectoryName(localPath);
+                    if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
                     {
-                        LoggingService.Warn("Không tìm thấy dịch vụ cloud tương ứng cho provider: {Provider}", target.Provider);
+                        if (Directory.GetFiles(parentDir).Length == 0 && Directory.GetDirectories(parentDir).Length == 0)
+                        {
+                            Directory.Delete(parentDir);
+                        }
                     }
                 }
+                catch { }
+            }
+
+            // Gỡ bỏ LocalPath khỏi BackupPathLocations
+            detail.SetLocalPath(null);
+            progress?.Report(new BackupProgress { Percent = 55, Message = "Đã xóa dữ liệu trên ổ đĩa cục bộ." });
+        }
+
+        // 2. Xóa trên Cloud theo danh sách providers được chọn
+        var cloudTargets = GetAllCloudTargets(detail, cloudService);
+        var providersToDel = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (cloudProvidersToDelete != null)
+        {
+            foreach (var p in cloudProvidersToDelete)
+            {
+                if (!string.IsNullOrWhiteSpace(p)) providersToDel.Add(p);
+            }
+        }
+        else if (deleteFromCloud)
+        {
+            foreach (var t in cloudTargets)
+            {
+                if (!string.IsNullOrWhiteSpace(t.Provider)) providersToDel.Add(t.Provider);
             }
         }
 
-        // 3. Xóa trong database SQLite
-        progress?.Report(new BackupProgress { Percent = 90, Message = "Đang cập nhật cơ sở dữ liệu SQLite..." });
-        await _databaseService.DeleteHistoryDetailAsync(detail.Id, detail.GameHistoryId);
+        if (providersToDel.Count > 0 && cloudTargets.Count > 0)
+        {
+            var targetsToDelete = cloudTargets.Where(t => providersToDel.Contains(t.Provider)).ToList();
+            int total = targetsToDelete.Count;
 
-        progress?.Report(new BackupProgress { Percent = 100, Message = "Xóa bản sao lưu hoàn tất!" });
+            for (int ci = 0; ci < total; ci++)
+            {
+                var target = targetsToDelete[ci];
+                if (string.IsNullOrEmpty(target.FileId)) continue;
+
+                var targetService = ResolveCloudProvider(target.Provider, cloudService, cloudServiceResolver);
+                var providerDisplay = targetService?.DisplayName ?? target.Provider;
+
+                int stepStart = 60 + (int)((double)ci / Math.Max(1, total) * 25);
+                int stepEnd = 60 + (int)((double)(ci + 1) / Math.Max(1, total) * 25);
+
+                progress?.Report(new BackupProgress
+                {
+                    Percent = stepStart,
+                    Message = total > 1
+                        ? $"Đang xóa file trên {providerDisplay} ({ci + 1}/{total})..."
+                        : $"Đang xóa file trên {providerDisplay}..."
+                });
+
+                if (targetService != null)
+                {
+                    try
+                    {
+                        await targetService.DeleteFileAsync(target.FileId, cancellationToken);
+                        progress?.Report(new BackupProgress
+                        {
+                            Percent = stepEnd,
+                            Message = $"Đã xóa file trên {providerDisplay} thành công."
+                        });
+                        LoggingService.LogAction("Cloud_File_Deleted", new { Provider = target.Provider, FileId = target.FileId });
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggingService.Warn("Cảnh báo: Không thể xóa file trên cloud {Provider} (FileId: {FileId}): {Message}", target.Provider, target.FileId, ex.Message);
+                        progress?.Report(new BackupProgress
+                        {
+                            Percent = stepEnd,
+                            Message = $"Cảnh báo: Không thể xóa trên {providerDisplay} ({ex.Message})"
+                        });
+                    }
+                }
+                else
+                {
+                    LoggingService.Warn("Không tìm thấy dịch vụ cloud tương ứng cho provider: {Provider}", target.Provider);
+                }
+
+                // Gỡ bỏ cloud khỏi detail
+                detail.RemoveCloudUrl(target.Provider);
+                detail.CloudSyncList.RemoveAll(c => c.Provider.Equals(target.Provider, StringComparison.OrdinalIgnoreCase));
+            }
+
+            // Đồng bộ lại metadata cloud của detail
+            detail.IsCloudSynced = detail.CloudSyncList.Count > 0;
+            detail.CloudProvider = string.Join(", ", detail.CloudSyncList.Select(c => c.Provider));
+            var firstRemaining = detail.CloudSyncList.FirstOrDefault();
+            detail.CloudFileId = firstRemaining?.FileId;
+            detail.CloudFileName = firstRemaining?.FileName;
+            detail.CloudSyncDate = firstRemaining?.SyncDate;
+            detail.CloudSyncJson = detail.CloudSyncList.Count > 0 ? JsonSerializer.Serialize(detail.CloudSyncList) : null;
+        }
+
+        // 3. Database: Nếu còn ít nhất 1 bản lưu (local hoặc cloud) thì chỉ cập nhật record; nếu không còn bản nào thì xóa hẳn khỏi SQLite
+        if (detail.HasAnyBackup)
+        {
+            progress?.Report(new BackupProgress { Percent = 90, Message = "Đang cập nhật vị trí lưu trong SQLite..." });
+            await _databaseService.UpdateSnapshotLocationsAsync(detail.Id, detail);
+            progress?.Report(new BackupProgress { Percent = 100, Message = "Đã cập nhật vị trí lưu của bản sao lưu!" });
+        }
+        else
+        {
+            progress?.Report(new BackupProgress { Percent = 90, Message = "Đang dọn dẹp cơ sở dữ liệu SQLite..." });
+            await _databaseService.DeleteHistoryDetailAsync(detail.Id, detail.GameHistoryId);
+            progress?.Report(new BackupProgress { Percent = 100, Message = "Xóa bản sao lưu hoàn tất!" });
+        }
     }
 
     public async Task DeleteGameHistoryWithProgressAsync(
         GameHistoryEntry gameHistory,
+        bool deleteLocal = true,
+        IEnumerable<string>? cloudProvidersToDelete = null,
         bool deleteFromCloud = false,
         ICloudStorageService? cloudService = null,
         IProgress<BackupProgress>? progress = null,
@@ -1015,39 +1089,109 @@ public class BackupService
 
         var details = await _databaseService.GetHistoryDetailsByGameIdAsync(gameHistory.Id);
 
-        for (int i = 0; i < details.Count; i++)
+        // 1. Xóa các file bản sao lưu trên đĩa hoặc xóa các folder trong gameHistory.BackupFolderPaths
+        if (deleteLocal)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var d = details[i];
-
-            int startPct = 5 + (int)((double)i / Math.Max(1, details.Count) * 80);
-            int endPct = 5 + (int)((double)(i + 1) / Math.Max(1, details.Count) * 80);
-
-            var itemProgress = new Progress<BackupProgress>(p =>
+            for (int i = 0; i < details.Count; i++)
             {
-                int scaled = startPct + (int)(p.Percent / 100.0 * (endPct - startPct));
+                cancellationToken.ThrowIfCancellationRequested();
+                var d = details[i];
+                var localPath = d.LocalBackupPath;
+
+                int startPct = 5 + (int)((double)i / Math.Max(1, details.Count) * 40);
+                int endPct = 5 + (int)((double)(i + 1) / Math.Max(1, details.Count) * 40);
+
+                if (File.Exists(localPath))
+                {
+                    try { File.Delete(localPath); } catch { }
+                }
+                else if (Directory.Exists(localPath))
+                {
+                    try { Directory.Delete(localPath, true); } catch { }
+                }
+
                 progress?.Report(new BackupProgress
                 {
-                    Percent = Math.Clamp(scaled, 5, 88),
-                    CurrentFile = p.CurrentFile,
-                    Message = $"[{i + 1}/{details.Count}] {p.Message}"
+                    Percent = endPct,
+                    Message = $"Đã xóa file bản lưu {i + 1}/{details.Count}..."
                 });
-            });
-
-            // Xóa đĩa
-            if (File.Exists(d.BackupPath))
-            {
-                try { File.Delete(d.BackupPath); } catch { }
-            }
-            else if (Directory.Exists(d.BackupPath))
-            {
-                try { Directory.Delete(d.BackupPath, true); } catch { }
             }
 
-            // Xóa cloud (hỗ trợ xóa trên TẤT CẢ các cloud đã đồng bộ: Google Drive, OneDrive...)
-            if (deleteFromCloud && (d.IsCloudSynced || !string.IsNullOrEmpty(d.CloudFileId) || d.CloudSyncList.Count > 0))
+            // Xóa toàn bộ các folder game được lưu trữ trong gameHistory.BackupFolderPaths
+            var folders = gameHistory.BackupFolderPaths;
+            if (folders.Count == 0 && !string.IsNullOrWhiteSpace(gameHistory.LatestBackupPath))
             {
-                var targets = GetAllCloudTargets(d, cloudService);
+                var fallback = Path.GetDirectoryName(gameHistory.LatestBackupPath);
+                if (!string.IsNullOrEmpty(fallback)) folders.Add(fallback);
+            }
+
+            foreach (var folder in folders)
+            {
+                if (Directory.Exists(folder))
+                {
+                    try
+                    {
+                        await DeleteDirectoryWithProgressAsync(folder, progress, 45, 60, cancellationToken);
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        // 2. Xóa trên Cloud
+        var providersToDel = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (cloudProvidersToDelete != null)
+        {
+            foreach (var p in cloudProvidersToDelete)
+            {
+                if (!string.IsNullOrWhiteSpace(p)) providersToDel.Add(p);
+            }
+        }
+        else if (deleteFromCloud)
+        {
+            if (cloudService != null && !string.IsNullOrWhiteSpace(cloudService.ProviderName))
+            {
+                providersToDel.Add(cloudService.ProviderName);
+            }
+            foreach (var d in details)
+            {
+                foreach (var t in GetAllCloudTargets(d, cloudService))
+                {
+                    if (!string.IsNullOrWhiteSpace(t.Provider)) providersToDel.Add(t.Provider);
+                }
+                foreach (var k in d.CloudUrls.Keys)
+                {
+                    if (!string.IsNullOrWhiteSpace(k)) providersToDel.Add(k);
+                }
+                if (!string.IsNullOrWhiteSpace(d.CloudProvider))
+                {
+                    foreach (var cp in d.CloudProvider.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        if (!string.IsNullOrWhiteSpace(cp)) providersToDel.Add(cp);
+                    }
+                }
+            }
+
+            if (cloudServiceResolver != null)
+            {
+                foreach (var p in new[] { "GoogleDrive", "OneDrive" })
+                {
+                    var prov = cloudServiceResolver(p);
+                    if (prov != null && prov.IsAuthenticated)
+                    {
+                        providersToDel.Add(p);
+                    }
+                }
+            }
+        }
+
+        if (providersToDel.Count > 0)
+        {
+            // Xóa các file chi tiết của từng snapshot
+            for (int i = 0; i < details.Count; i++)
+            {
+                var d = details[i];
+                var targets = GetAllCloudTargets(d, cloudService).Where(t => providersToDel.Contains(t.Provider)).ToList();
                 foreach (var target in targets)
                 {
                     if (string.IsNullOrEmpty(target.FileId)) continue;
@@ -1057,33 +1201,38 @@ public class BackupService
                         try
                         {
                             await targetService.DeleteFileAsync(target.FileId, cancellationToken);
-                            LoggingService.LogAction("Cloud_File_Deleted_GameHistory", new { Game = gameHistory.GameName, Provider = target.Provider, FileId = target.FileId });
                         }
                         catch (Exception ex)
                         {
-                            LoggingService.Warn("Cảnh báo: Không thể xóa file trên cloud {Provider} khi xóa game history: {Message}", target.Provider, ex.Message);
+                            LoggingService.Warn("Cảnh báo: Không thể xóa file trên cloud {Provider}: {Message}", target.Provider, ex.Message);
                         }
                     }
                 }
             }
-        }
 
-        // Dọn dẹp thư mục game rỗng trên đĩa
-        if (details.Count > 0)
-        {
-            try
+            // Gọi DeleteFolderAsync xóa cả thư mục game trên cloud
+            var remoteGameFolder = SanitizeFolderName(gameHistory.GameName);
+            foreach (var provider in providersToDel)
             {
-                var firstDetail = details[0];
-                var parentDir = Path.GetDirectoryName(firstDetail.BackupPath);
-                if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                var targetService = ResolveCloudProvider(provider, cloudService, cloudServiceResolver);
+                if (targetService != null)
                 {
-                    if (Directory.GetFiles(parentDir).Length == 0 && Directory.GetDirectories(parentDir).Length == 0)
+                    progress?.Report(new BackupProgress
                     {
-                        Directory.Delete(parentDir);
+                        Percent = 80,
+                        Message = $"Đang xóa thư mục game '{remoteGameFolder}' trên {targetService.DisplayName}..."
+                    });
+                    try
+                    {
+                        await targetService.DeleteFolderAsync(remoteGameFolder, cancellationToken);
+                        LoggingService.LogAction("Cloud_Game_Folder_Deleted", new { Game = gameHistory.GameName, Provider = provider });
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggingService.Warn("Không thể xóa thư mục game trên {Provider}: {Message}", provider, ex.Message);
                     }
                 }
             }
-            catch { }
         }
 
         progress?.Report(new BackupProgress { Percent = 90, Message = "Đang dọn dẹp cơ sở dữ liệu SQLite..." });

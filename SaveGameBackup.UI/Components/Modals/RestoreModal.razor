@@ -1,0 +1,209 @@
+@namespace SaveGameBackup.UI.Components.Modals
+@inject MainViewModel VM
+@inject IBlazorDialogService DialogService
+@inject INativeDialogService NativeDialog
+@implements IDisposable
+
+@if (RestoreVM.IsRestoreModalOpen || DialogService.IsRestoreModalOpen)
+{
+    var activeDetail = RestoreVM.ActiveRestoreDetail ?? DialogService.ActiveRestoreDetail;
+    var restoreItems = (RestoreVM.ActiveRestoreItems.Count > 0 
+        ? RestoreVM.ActiveRestoreItems 
+        : (IEnumerable<RestoreItemTarget>)DialogService.ActiveRestoreItems).ToList();
+
+    <div class="modal-backdrop">
+        <div class="modal-content w-full max-w-4xl border-2 border-emerald-500 flex flex-col max-h-[85vh]">
+            <!-- Header (Image 4.JPG) -->
+            <div class="bg-[#1E293B] border-b border-[#334155] px-6 py-4 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-lg bg-emerald-600/30 border border-emerald-500/50 flex items-center justify-center">
+                        <span class="text-emerald-400 font-bold text-lg">⚡</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-[17px] font-bold text-white tracking-wide">KHÔI PHỤC SAVE GAME</h3>
+                            @if (activeDetail != null)
+                            {
+                                <span class="badge-count text-[11px] bg-emerald-600/30 text-emerald-300 border border-emerald-500/30">
+                                    @activeDetail.GameName
+                                </span>
+                            }
+                        </div>
+                        <div class="text-[11px] text-slate-400">
+                            @if (activeDetail != null)
+                            {
+                                <span>Bản lưu: <strong class="text-white font-mono">@activeDetail.BackupDate.ToString("dd/MM/yyyy HH:mm:ss")</strong> (@activeDetail.FormattedSize)</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <button class="text-slate-400 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-700/50 transition-colors"
+                        disabled="@RestoreVM.IsModalRestoring"
+                        @onclick="CloseModal">
+                    ✕
+                </button>
+            </div>
+
+            <!-- Instruction & Toolbar (Image 4.JPG) -->
+            <div class="bg-[#0F172A] border-b border-[#1E293B] px-6 py-3 flex items-center justify-between flex-shrink-0">
+                <div class="text-[12px] text-slate-300 flex-1 mr-4">
+                    Chọn các mục muốn khôi phục. Bạn có thể nhấn <strong>"Duyệt..."</strong> để đổi đường dẫn đích nếu muốn khôi phục ra vị trí khác.
+                </div>
+
+                <div class="flex items-center space-x-2 flex-shrink-0">
+                    <button class="btn-secondary text-[11px] py-1 px-2.5"
+                            disabled="@RestoreVM.IsModalRestoring"
+                            @onclick="() => RestoreVM.ModalSelectAllRestoreItemsCommand.Execute(null)">
+                        ✓ Chọn Tất Cả
+                    </button>
+                    <button class="btn-secondary text-[11px] py-1 px-2.5"
+                            disabled="@RestoreVM.IsModalRestoring"
+                            @onclick="() => RestoreVM.ModalDeselectAllRestoreItemsCommand.Execute(null)">
+                        ✕ Bỏ Chọn
+                    </button>
+                    <button class="btn-secondary text-[11px] py-1 px-2.5 text-blue-400 border-blue-500/30"
+                            disabled="@RestoreVM.IsModalRestoring"
+                            @onclick="() => RestoreVM.ModalResetRestorePathsCommand.Execute(null)">
+                        ↺ Đặt Lại Gốc
+                    </button>
+                </div>
+            </div>
+
+            <!-- List of Restore Items (Image 4.JPG) -->
+            <div class="flex-1 overflow-y-auto p-5 space-y-3 min-h-0 bg-[#131C2E]">
+                @if (restoreItems.Count == 0)
+                {
+                    <div class="p-8 text-center text-slate-400 text-[13px]">
+                        Không có dữ liệu mục khôi phục nào trong bản lưu này.
+                    </div>
+                }
+                else
+                {
+                    @foreach (var item in restoreItems)
+                    {
+                        <div class="bg-[#0F172A] border @(item.IsSelected ? "border-emerald-500/60 bg-emerald-950/10" : "border-[#2D3748]") rounded-xl p-4 transition-all">
+                            <div class="flex items-center space-x-3 mb-2">
+                                <input type="checkbox"
+                                       class="checkbox-custom"
+                                       checked="@item.IsSelected"
+                                       disabled="@RestoreVM.IsModalRestoring"
+                                       @onchange="() => ToggleItem(item)" />
+                                <span class="font-bold text-white text-[13px]">
+                                    @item.DisplayTitle
+                                </span>
+                                @if (item.FileCount > 0)
+                                {
+                                    <span class="text-[11px] text-slate-400 font-mono">
+                                        (@item.FileCount files - @item.FormattedSize)
+                                    </span>
+                                }
+                            </div>
+
+                            <div class="pl-7">
+                                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Đường dẫn đích khôi phục:</label>
+                                <div class="flex items-center space-x-2">
+                                    <input type="text"
+                                           class="input-dark font-mono text-[12px] py-1.5 px-3 flex-1 bg-[#131C2E] border-[#334155] text-slate-200"
+                                           @bind="item.RestoreDestinationPath"
+                                           disabled="@RestoreVM.IsModalRestoring" />
+                                    <button class="btn-secondary py-1.5 px-3 text-[12px] flex-shrink-0"
+                                            disabled="@RestoreVM.IsModalRestoring"
+                                            @onclick="() => BrowseItemDestination(item)">
+                                        📁 Duyệt...
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- Progress Bar if Restoring -->
+            @if (RestoreVM.IsModalRestoring)
+            {
+                <div class="bg-[#0F172A] border-t border-[#1E293B] px-6 py-3">
+                    <div class="flex items-center justify-between text-[12px] mb-1.5">
+                        <span class="font-medium text-emerald-400">@RestoreVM.ModalRestoreProgressMessage</span>
+                        <span class="font-bold text-white font-mono">@RestoreVM.ModalRestoreProgressPercent%</span>
+                    </div>
+                    <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                        <div class="bg-gradient-to-r from-emerald-500 to-green-400 h-2 transition-all duration-200"
+                             style="width: @(RestoreVM.ModalRestoreProgressPercent)%"></div>
+                    </div>
+                </div>
+            }
+
+            <!-- Footer (Image 4.JPG) -->
+            <div class="bg-[#0F172A] border-t border-[#1E293B] px-6 py-3.5 flex items-center justify-between flex-shrink-0">
+                <div class="text-[12px] text-slate-400">
+                    Đã chọn: <strong class="text-emerald-400 font-mono">@restoreItems.Count(x => x.IsSelected)</strong> / @restoreItems.Count mục
+                </div>
+
+                <div class="flex items-center space-x-3 ml-auto">
+
+                    <button class="btn-backup-primary py-2 px-6 text-[13px] font-bold"
+                            disabled="@(RestoreVM.IsModalRestoring || restoreItems.Count(x => x.IsSelected) == 0)"
+                            @onclick="ConfirmRestore">
+                        @if (RestoreVM.IsModalRestoring)
+                        {
+                            <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                            <span>ĐANG KHÔI PHỤC...</span>
+                        }
+                        else
+                        {
+                            <span>KHÔI PHỤC NGAY (@restoreItems.Count(x => x.IsSelected) MỤC)</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private RestoreSubViewModel RestoreVM => VM.RestoreVM;
+
+    protected override void OnInitialized()
+    {
+        RestoreVM.PropertyChanged += OnStateChanged;
+        DialogService.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleItem(RestoreItemTarget item)
+    {
+        item.IsSelected = !item.IsSelected;
+        RestoreVM.ModalToggleRestoreItemCommand.Execute(item);
+    }
+
+    private async Task BrowseItemDestination(RestoreItemTarget item)
+    {
+        var folder = await NativeDialog.PickFolderAsync($"Chọn thư mục đích cho {item.DisplayTitle}");
+        if (!string.IsNullOrEmpty(folder))
+        {
+            item.RestoreDestinationPath = folder;
+        }
+    }
+
+    private async Task ConfirmRestore()
+    {
+        await RestoreVM.ExecuteModalRestoreConfirmAsync();
+    }
+
+    private void CloseModal()
+    {
+        RestoreVM.CloseRestoreModalCommand.Execute(null);
+        DialogService.CloseRestore();
+    }
+
+    public void Dispose()
+    {
+        RestoreVM.PropertyChanged -= OnStateChanged;
+        DialogService.PropertyChanged -= OnStateChanged;
+    }
+}

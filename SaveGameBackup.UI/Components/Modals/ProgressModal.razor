@@ -1,0 +1,88 @@
+@namespace SaveGameBackup.UI.Components.Modals
+@inject MainViewModel VM
+@inject IBlazorDialogService DialogService
+@implements IDisposable
+
+@{
+    var isBlazorActive = DialogService.IsProgressModalOpen;
+    var isVmActive = VM.DialogService.IsProgressModalOpen;
+    var isOpen = isBlazorActive || isVmActive;
+    var title = isBlazorActive && !string.IsNullOrEmpty(DialogService.ProgressTitle) ? DialogService.ProgressTitle : VM.DialogService.ActiveProgressTitle;
+    var message = isBlazorActive && !string.IsNullOrEmpty(DialogService.ProgressMessage) ? DialogService.ProgressMessage : VM.DialogService.ActiveProgressMessage;
+    var percent = isBlazorActive ? DialogService.ProgressPercent : VM.DialogService.ActiveProgressPercent;
+    var subText = isBlazorActive ? DialogService.ProgressSubText : VM.DialogService.ActiveProgressSubText;
+    var canCancel = VM.DialogService.CanCancelProgress || DialogService.OnCancelProgressAction != null || VM.CloudVM.IsCloudSyncing;
+}
+
+@if (isOpen)
+{
+    <div class="modal-backdrop z-[60]">
+        <div class="modal-content w-full max-w-md border-2 border-blue-500 flex flex-col p-6 shadow-2xl bg-[#0F172A]" @onclick:stopPropagation="true">
+            <div class="flex items-center space-x-3 mb-4">
+                <div class="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center">
+                    <div class="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+                <h3 class="text-[16px] font-bold text-white tracking-wide">
+                    @title
+                </h3>
+            </div>
+
+            <p class="text-[13px] text-slate-300 mb-3">
+                @message
+            </p>
+
+            <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden mb-2">
+                <div class="bg-gradient-to-r from-blue-500 to-cyan-400 h-2.5 transition-all duration-200"
+                     style="width: @(Math.Clamp(percent, 0, 100))%"></div>
+            </div>
+
+            <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono @(canCancel ? "mb-4" : "")">
+                <span>@subText</span>
+                <span class="font-bold text-white">@percent%</span>
+            </div>
+
+            @if (canCancel)
+            {
+                <div class="flex justify-end pt-2 border-t border-slate-800">
+                    <button type="button"
+                            class="py-1.5 px-4 rounded-md text-[12px] font-semibold bg-red-600/20 hover:bg-red-600 border border-red-500 text-red-300 hover:text-white transition-all inline-flex items-center space-x-1.5"
+                            @onclick="CancelProgress">
+                        <span>✕</span>
+                        <span>Hủy tác vụ</span>
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        VM.DialogService.PropertyChanged += OnStateChanged;
+        DialogService.PropertyChanged += OnStateChanged;
+        VM.CloudVM.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void CancelProgress()
+    {
+        VM.DialogService.CancelActiveProgress();
+        DialogService.OnCancelProgressAction?.Invoke();
+        if (VM.CloudVM.IsCloudSyncing)
+        {
+            VM.CloudVM.ExecuteCancelSync();
+        }
+    }
+
+    public void Dispose()
+    {
+        VM.DialogService.PropertyChanged -= OnStateChanged;
+        DialogService.PropertyChanged -= OnStateChanged;
+        VM.CloudVM.PropertyChanged -= OnStateChanged;
+    }
+}

@@ -7,7 +7,6 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using Microsoft.Win32;
 using SaveGameBackup.Core.Models;
 using SaveGameBackup.Core.Services;
 using SaveGameBackup.UI.Services;
@@ -20,6 +19,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
     private readonly GameSearchCoordinator _searchCoordinator;
     private readonly IDialogService _dialogService;
     private readonly IAppEventBus _eventBus;
+    private readonly INativeDialogService? _nativeDialog;
 
     private static readonly string[] DefaultPopularGames = new[]
     {
@@ -55,12 +55,14 @@ public class SearchSubViewModel : INotifyPropertyChanged
         DatabaseService databaseService,
         GameSearchCoordinator searchCoordinator,
         IDialogService dialogService,
-        IAppEventBus eventBus)
+        IAppEventBus eventBus,
+        INativeDialogService? nativeDialog = null)
     {
         _databaseService = databaseService;
         _searchCoordinator = searchCoordinator;
         _dialogService = dialogService;
         _eventBus = eventBus;
+        _nativeDialog = nativeDialog;
 
         foreach (var g in DefaultPopularGames)
         {
@@ -68,7 +70,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
         }
 
         SearchCommand = new RelayCommand(async _ => await ExecuteSearchAsync(), _ => !IsSearching && !string.IsNullOrWhiteSpace(SearchQuery));
-        AddCustomPathCommand = new RelayCommand(_ => ExecuteAddCustomPath());
+        AddCustomPathCommand = new RelayCommand(async _ => await ExecuteAddCustomPathAsync());
         SelectAllPathsCommand = new RelayCommand(_ => ExecuteSelectAllPaths(), _ => DetectedPathItems.Count > 0);
         DeselectAllPathsCommand = new RelayCommand(_ => ExecuteDeselectAllPaths(), _ => DetectedPathItems.Count > 0);
         OpenSpecificDetectedPathCommand = new RelayCommand(param => ExecuteOpenSpecificDetectedPath(param as string));
@@ -269,16 +271,14 @@ public class SearchSubViewModel : INotifyPropertyChanged
         (DeselectAllPathsCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
-    private void ExecuteAddCustomPath()
+    private async Task ExecuteAddCustomPathAsync()
     {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "Chọn thư mục chứa Save Game muốn thêm vào danh sách"
-        };
+        var folder = _nativeDialog != null
+            ? await _nativeDialog.PickFolderAsync("Chọn thư mục chứa Save Game muốn thêm vào danh sách")
+            : null;
 
-        if (dialog.ShowDialog() == true)
+        if (!string.IsNullOrEmpty(folder))
         {
-            var folder = dialog.FolderName;
             if (!DetectedPathItems.Any(x => string.Equals(x.Path, folder, StringComparison.OrdinalIgnoreCase)))
             {
                 int fileCount = 0;

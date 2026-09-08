@@ -1,0 +1,15 @@
+@namespace SaveGameBackup.UI.Components
+
+<Router AppAssembly="@typeof(MauiProgram).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <div class="p-8 text-center text-slate-400">
+                <p>Trang không tồn tại.</p>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

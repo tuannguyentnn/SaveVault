@@ -1,0 +1,103 @@
+@namespace SaveGameBackup.UI.Components.Modals
+@inject MainViewModel VM
+@inject IBlazorDialogService DialogService
+@implements IDisposable
+
+@{
+    var isOpen = VM.DialogService.IsMessageModalOpen || DialogService.IsMessageModalOpen;
+    var title = !string.IsNullOrEmpty(DialogService.MessageTitle) ? DialogService.MessageTitle : VM.DialogService.MessageModalTitle;
+    var content = !string.IsNullOrEmpty(DialogService.MessageContent) ? DialogService.MessageContent : VM.DialogService.MessageModalContent;
+    var type = !string.IsNullOrEmpty(DialogService.MessageType) ? DialogService.MessageType : VM.DialogService.MessageModalType;
+    var actionUrl = !string.IsNullOrEmpty(DialogService.MessageActionUrl) ? DialogService.MessageActionUrl : VM.DialogService.MessageActionUrl;
+    var actionText = !string.IsNullOrEmpty(DialogService.MessageActionText) ? DialogService.MessageActionText : VM.DialogService.MessageActionText;
+}
+
+@if (isOpen)
+{
+    var (borderColor, iconBg, iconColor, iconSymbol) = type.ToLowerInvariant() switch
+    {
+        "success" => ("border-[#10B981]", "bg-emerald-600/20 border-emerald-500/40", "text-emerald-400", "✓"),
+        "error" => ("border-[#EF4444]", "bg-red-600/20 border-red-500/40", "text-red-400", "✕"),
+        "warning" => ("border-[#F59E0B]", "bg-amber-600/20 border-amber-500/40", "text-amber-400", "!"),
+        _ => ("border-[#3B82F6]", "bg-blue-600/20 border-blue-500/40", "text-blue-400", "i")
+    };
+
+    <div class="modal-backdrop">
+        <div class="modal-content w-full max-w-md border-2 @borderColor flex flex-col items-center text-center p-6 shadow-2xl">
+            <!-- Icon Circle (Image 6.JPG) -->
+            <div class="w-16 h-16 rounded-full border-2 @iconBg flex items-center justify-center mb-4">
+                <span class="@iconColor font-bold text-3xl">@iconSymbol</span>
+            </div>
+
+            <!-- Title -->
+            <h3 class="text-[18px] font-bold text-white mb-2 tracking-wide">
+                @title
+            </h3>
+
+            <!-- Message Body -->
+            <p class="text-[13px] text-slate-300 leading-relaxed mb-4 whitespace-pre-line select-text">
+                @content
+            </p>
+
+            @if (!string.IsNullOrEmpty(actionUrl))
+            {
+                <div class="w-full bg-[#0A0F1D] border border-cyan-500/40 rounded-lg p-3 mb-5 text-left">
+                    <div class="text-[11px] text-slate-400 mb-1 flex items-center justify-between">
+                        <span>🔗 Đường dẫn file vừa đồng bộ:</span>
+                        <span class="text-[10px] text-cyan-400">Có thể copy hoặc mở</span>
+                    </div>
+                    <div class="font-mono text-[11px] text-cyan-300 truncate select-text mb-2 bg-[#131C2E] p-1.5 rounded border border-cyan-500/20"
+                         title="@actionUrl">
+                        @actionUrl
+                    </div>
+                    <button type="button"
+                            class="w-full py-2 px-3 bg-cyan-600/30 hover:bg-cyan-600 border border-cyan-500 text-cyan-200 hover:text-white rounded-md text-[12px] font-semibold transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
+                            @onclick="() => OpenActionUrl(actionUrl)">
+                        <span>🌐</span>
+                        <span>@(string.IsNullOrEmpty(actionText) ? "Mở Xem File Trên Cloud ↗" : actionText)</span>
+                    </button>
+                </div>
+            }
+
+            <!-- OK Button -->
+            <button class="btn-blue py-2.5 px-8 text-[13px] font-bold rounded-lg shadow-md hover:shadow-blue-500/20 w-full max-w-xs"
+                    @onclick="CloseMessage">
+                Đồng Ý
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        VM.DialogService.PropertyChanged += OnStateChanged;
+        DialogService.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OpenActionUrl(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = url, UseShellExecute = true });
+        }
+        catch { }
+    }
+
+    private void CloseMessage()
+    {
+        VM.DialogService.CloseMessage();
+        DialogService.CloseMessage();
+    }
+
+    public void Dispose()
+    {
+        VM.DialogService.PropertyChanged -= OnStateChanged;
+        DialogService.PropertyChanged -= OnStateChanged;
+    }
+}

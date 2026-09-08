@@ -4,13 +4,13 @@ echo =========================================================
 echo       SaveVault - Build Executable (.EXE)
 echo =========================================================
 echo.
-echo Dang tien hanh build SaveVault sang file .exe...
+echo Dang tien hanh build SaveVault sang file .exe (.NET 10 MAUI)...
 echo Vui long cho trong giay lat...
 echo.
 
 if not exist "publish" mkdir "publish"
 
-dotnet publish SaveGameBackup.UI\SaveGameBackup.UI.csproj -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o "publish"
+dotnet publish SaveGameBackup.UI\SaveGameBackup.UI.csproj -f net10.0-windows10.0.19041.0 -c Release -p:WindowsPackageType=None -o "publish"
 
 if errorlevel 1 goto BUILD_ERROR
 

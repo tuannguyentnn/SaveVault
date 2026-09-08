@@ -421,6 +421,29 @@ public class GoogleDriveApiService : ICloudStorageService
         return true;
     }
 
+    public async Task<bool> DeleteFolderAsync(string remoteFolderName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(remoteFolderName)) return true;
+        try
+        {
+            await EnsureAccessTokenAsync(cancellationToken);
+            var rootFolderId = await FindFolderIdAsync("SaveVault_Backups", null, cancellationToken);
+            if (rootFolderId != null)
+            {
+                var gameFolderId = await FindFolderIdAsync(remoteFolderName, rootFolderId, cancellationToken);
+                if (gameFolderId != null)
+                {
+                    return await DeleteFileAsync(gameFolderId, cancellationToken);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("GoogleDrive: Lỗi xóa thư mục game '{Folder}': {Message}", remoteFolderName, ex.Message);
+        }
+        return false;
+    }
+
     public async Task<List<CloudFileInfo>> ListBackupsAsync(
         string? remoteGameFolderName = null,
         CancellationToken cancellationToken = default)

@@ -1,0 +1,348 @@
+@namespace SaveGameBackup.UI.Components.Pages
+@inject MainViewModel VM
+@inject IBlazorDialogService DialogService
+@inject INativeDialogService NativeDialog
+@implements IDisposable
+
+<div class="h-full flex flex-col p-5 space-y-3.5 overflow-hidden" style="background-color: #0A0F1D;" @onclick="DeselectEntry">
+    <!-- Sub-header bar with Search Box -->
+    <div class="flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center space-x-3">
+            <h2 class="text-[13.5px] font-bold text-white tracking-wide">
+                Danh sách game đã sao lưu:
+            </h2>
+            <div class="relative w-72" @onclick:stopPropagation="true">
+                <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[12px]">🔍</span>
+                <input type="text"
+                       class="w-full bg-[#070B14] border border-[#1E2D42] focus:border-blue-500 rounded-lg pl-8 pr-7 py-1.5 text-[12px] text-white placeholder-slate-500 outline-none transition-all"
+                       placeholder="Tìm kiếm theo tên game..."
+                       value="@FilterText"
+                       @oninput="OnSearchInput" />
+                @if (!string.IsNullOrEmpty(FilterText))
+                {
+                    <button type="button"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-[11px] font-bold p-0.5"
+                            @onclick="ClearSearch">
+                        ✕
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="text-[11.5px] text-slate-400 flex items-center space-x-1.5">
+            <span>💡</span>
+            <span>Nhấp đúp vào dòng để xem chi tiết tất cả snapshot</span>
+        </div>
+    </div>
+
+    <!-- Master Table Container (Image 2.JPG) -->
+    <div class="flex-1 sv-card p-0 overflow-hidden flex flex-col min-h-0" @onclick="DeselectEntry">
+        <div class="flex-1 overflow-y-auto overflow-x-auto min-h-0">
+            <table class="custom-table w-full overflow-hidden" style="border-collapse: separate; border-spacing: 0;">
+                <thead class="sticky top-0 z-10 shadow-sm" style="background-color: #101726;">
+                    <tr style="background-color: #101726; border-bottom: 1px solid #1E293B;">
+                        <th style="padding: 10px 16px; text-align: left; font-size: 11.5px; color: #94A3B8; font-weight: 600; background-color: #101726; border-bottom: 1px solid #1E293B;"
+                            class="cursor-pointer select-none hover:text-white transition-colors sticky top-0 z-10"
+                            @onclick='() => SortBy("GameName")' @onclick:stopPropagation="true"
+                            title="Nhấp để sắp xếp theo Tên Game">
+                            <div class="inline-flex items-center space-x-1">
+                                <span>Tên Game</span>
+                                <span class="text-cyan-400 font-bold">@(SortColumn == "GameName" ? (SortAscending ? "▲" : "▼") : "")</span>
+                            </div>
+                        </th>
+                        <th style="padding: 10px 16px; text-align: center; font-size: 11.5px; color: #94A3B8; font-weight: 600; width: 140px; background-color: #101726; border-bottom: 1px solid #1E293B;"
+                            class="cursor-pointer select-none hover:text-white transition-colors sticky top-0 z-10"
+                            @onclick='() => SortBy("Count")' @onclick:stopPropagation="true"
+                            title="Nhấp để sắp xếp theo Số bản sao lưu">
+                            <div class="inline-flex items-center space-x-1 justify-center">
+                                <span>Số bản sao lưu</span>
+                                <span class="text-cyan-400 font-bold">@(SortColumn == "Count" ? (SortAscending ? "▲" : "▼") : "")</span>
+                            </div>
+                        </th>
+                        <th style="padding: 10px 16px; text-align: left; font-size: 11.5px; color: #94A3B8; font-weight: 600; width: 180px; background-color: #101726; border-bottom: 1px solid #1E293B;"
+                            class="cursor-pointer select-none hover:text-white transition-colors sticky top-0 z-10"
+                            @onclick='() => SortBy("Date")' @onclick:stopPropagation="true"
+                            title="Nhấp để sắp xếp theo Ngày sao lưu gần nhất">
+                            <div class="inline-flex items-center space-x-1">
+                                <span>Lần sao lưu gần nhất</span>
+                                <span class="text-cyan-400 font-bold">@(SortColumn == "Date" ? (SortAscending ? "▲" : "▼") : "")</span>
+                            </div>
+                        </th>
+                        <th style="padding: 10px 16px; text-align: left; font-size: 11.5px; color: #94A3B8; font-weight: 600; width: 180px; background-color: #101726; border-bottom: 1px solid #1E293B;"
+                            class="cursor-pointer select-none hover:text-white transition-colors sticky top-0 z-10"
+                            @onclick='() => SortBy("LatestSize")' @onclick:stopPropagation="true"
+                            title="Nhấp để sắp xếp theo Dung lượng mới nhất">
+                            <div class="inline-flex items-center space-x-1">
+                                <span>Dung lượng (Mới nhất)</span>
+                                <span class="text-cyan-400 font-bold">@(SortColumn == "LatestSize" ? (SortAscending ? "▲" : "▼") : "")</span>
+                            </div>
+                        </th>
+                        <th style="padding: 10px 16px; text-align: left; font-size: 11.5px; color: #94A3B8; font-weight: 600; width: 180px; background-color: #101726; border-bottom: 1px solid #1E293B;"
+                            class="cursor-pointer select-none hover:text-white transition-colors sticky top-0 z-10"
+                            @onclick='() => SortBy("TotalSize")' @onclick:stopPropagation="true"
+                            title="Nhấp để sắp xếp theo Tổng dung lượng">
+                            <div class="inline-flex items-center space-x-1">
+                                <span>Tổng dung lượng</span>
+                                <span class="text-cyan-400 font-bold">@(SortColumn == "TotalSize" ? (SortAscending ? "▲" : "▼") : "")</span>
+                            </div>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (PagedHistories.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="5" class="text-center py-16 text-slate-400 text-[12.5px]">
+                                <div>
+                                    <div class="text-[32px] mb-2">📁</div>
+                                    <div class="font-semibold text-slate-300">
+                                        @(string.IsNullOrWhiteSpace(FilterText) ? "Chưa có bản sao lưu nào trong hệ thống" : $"Không tìm thấy game nào khớp với '{FilterText}'")
+                                    </div>
+                                    <div class="text-[11.5px] text-slate-500 mt-1">
+                                        @(string.IsNullOrWhiteSpace(FilterText) ? "Hãy chuyển sang tab 'Tìm kiếm & Sao lưu' để bắt đầu sao lưu game đầu tiên." : "Hãy thử từ khóa khác hoặc xóa tìm kiếm.")
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var entry in PagedHistories)
+                        {
+                            var isSelected = SelectedEntry == entry;
+                            <tr class="cursor-pointer transition-colors @(isSelected ? "selected bg-[#065F46]" : "hover:bg-[#131C2E]")"
+                                style="border-bottom: 1px solid #162030;"
+                                @onclick="() => SelectedEntry = entry"
+                                @onclick:stopPropagation="true"
+                                @ondblclick="() => OpenGameDetails(entry)">
+                                <td style="padding: 10px 16px;">
+                                    <div class="flex items-center space-x-2.5">
+                                        <span style="font-size: 14px; color: #64748B;">🎮</span>
+                                        <span class="font-bold text-white text-[13px]">
+                                            @entry.GameName
+                                        </span>
+                                    </div>
+                                </td>
+                                <td style="padding: 10px 16px; text-align: center;">
+                                    <span style="background-color: #0A1E3F; border: 1px solid #1E3A8A; color: #38BDF8; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 9999px;">
+                                        @entry.BackupCount bản
+                                    </span>
+                                </td>
+                                <td style="padding: 10px 16px; font-family: var(--font-mono); font-size: 12px; color: #CBD5E1;">
+                                    @entry.FormattedLatestDate
+                                </td>
+                                <td style="padding: 10px 16px; font-family: var(--font-mono); font-size: 12px; color: #CBD5E1;">
+                                    @entry.FormattedLatestSize
+                                </td>
+                                <td style="padding: 10px 16px; font-family: var(--font-mono); font-size: 12px; color: #CBD5E1;">
+                                    @entry.FormattedTotalSize
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination Bar (10 items / page) -->
+        @if (TotalPages > 1)
+        {
+            <div class="px-4 py-2 border-t border-[#182234] flex items-center justify-between text-[11.5px] text-slate-400 flex-shrink-0"
+                 style="background-color: #0A0F1D;" @onclick:stopPropagation="true">
+                <div>
+                    Hiển thị <span class="font-mono text-white font-semibold">@FromItem</span> - <span class="font-mono text-white font-semibold">@ToItem</span> trong tổng số <span class="font-mono text-cyan-400 font-bold">@TotalItems</span> game
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button type="button"
+                            class="py-1 px-2.5 rounded text-[11px] font-medium border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            disabled="@(CurrentPage <= 1)"
+                            @onclick="() => CurrentPage--">
+                        ◀ Trước
+                    </button>
+                    <span class="px-2 font-mono text-[11.5px] text-white">
+                        Trang @CurrentPage / @TotalPages
+                    </span>
+                    <button type="button"
+                            class="py-1 px-2.5 rounded text-[11px] font-medium border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            disabled="@(CurrentPage >= TotalPages)"
+                            @onclick="() => CurrentPage++">
+                        Tiếp ▶
+                    </button>
+                </div>
+            </div>
+        }
+
+        <!-- Table Bottom Action Bar (Clone chuẩn 2.JPG) -->
+        <div class="border-t border-[#182234] p-3 flex items-center justify-between text-[11.5px] text-slate-400 flex-shrink-0"
+             style="background-color: #0A0F1D;" @onclick:stopPropagation="true">
+            <div style="color: #64748B;">
+                Nhấp đúp vào dòng game hoặc bấm '📋 Chi tiết sao lưu' để xem và khôi phục các bản snapshot.
+            </div>
+
+            <div class="flex items-center space-x-2.5">
+                <button type="button"
+                        class="sv-btn-dark"
+                        style="background-color: #059669; border-color: #10B981; color: #FFFFFF;"
+                        disabled="@(SelectedEntry == null)"
+                        @onclick="() => TriggerBackupSelected()">
+                    <span>📋</span>
+                    <span>Sao lưu game đã chọn</span>
+                </button>
+
+                <button type="button"
+                        class="sv-btn-dark"
+                        style="background-color: #1E3A8A; border-color: #3B82F6; color: #FFFFFF;"
+                        disabled="@(SelectedEntry == null)"
+                        @onclick="() => OpenGameDetails(SelectedEntry!)">
+                    <span>📋</span>
+                    <span>Xem chi tiết game đã chọn</span>
+                </button>
+
+                <button type="button"
+                        class="sv-btn-dark"
+                        style="background-color: #DC2626; border-color: #EF4444; color: #FFFFFF;"
+                        disabled="@(SelectedEntry == null)"
+                        @onclick="() => RequestDeleteGame(SelectedEntry!)">
+                    <span>🗑</span>
+                    <span>Xóa game đã chọn</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private HistorySubViewModel HistoryVM => VM.HistoryVM;
+    private string FilterText { get; set; } = string.Empty;
+    private GameHistoryEntry? SelectedEntry { get; set; }
+
+    // Column Sorting & Pagination (Configurable PageSize)
+    private string SortColumn { get; set; } = "Date";
+    private bool SortAscending { get; set; } = false; // Default newest first
+    private int CurrentPage { get; set; } = 1;
+    private int PageSize => Math.Max(1, AppConfigService.GetConfig().PageSize);
+
+    private List<GameHistoryEntry> ProcessedHistories
+    {
+        get
+        {
+            var list = HistoryVM.GameHistories.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(FilterText))
+            {
+                list = list.Where(x => x.GameName.Contains(FilterText, StringComparison.OrdinalIgnoreCase));
+            }
+
+            list = SortColumn switch
+            {
+                "GameName" => SortAscending ? list.OrderBy(x => x.GameName) : list.OrderByDescending(x => x.GameName),
+                "Count" => SortAscending ? list.OrderBy(x => x.BackupCount) : list.OrderByDescending(x => x.BackupCount),
+                "Date" => SortAscending ? list.OrderBy(x => x.LatestBackupDate) : list.OrderByDescending(x => x.LatestBackupDate),
+                "LatestSize" => SortAscending ? list.OrderBy(x => x.LatestSizeBytes) : list.OrderByDescending(x => x.LatestSizeBytes),
+                "TotalSize" => SortAscending ? list.OrderBy(x => x.TotalSizeBytes) : list.OrderByDescending(x => x.TotalSizeBytes),
+                _ => list.OrderByDescending(x => x.LatestBackupDate)
+            };
+
+            return list.ToList();
+        }
+    }
+
+    private int TotalItems => ProcessedHistories.Count;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(TotalItems / (double)PageSize));
+    private int FromItem => TotalItems == 0 ? 0 : (CurrentPage - 1) * PageSize + 1;
+    private int ToItem => Math.Min(CurrentPage * PageSize, TotalItems);
+
+    private List<GameHistoryEntry> PagedHistories
+    {
+        get
+        {
+            if (CurrentPage > TotalPages) CurrentPage = TotalPages;
+            if (CurrentPage < 1) CurrentPage = 1;
+            return ProcessedHistories.Skip((CurrentPage - 1) * PageSize).Take(PageSize).ToList();
+        }
+    }
+
+    private void SortBy(string column)
+    {
+        if (SortColumn == column)
+        {
+            SortAscending = !SortAscending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortAscending = (column == "Date") ? false : true;
+        }
+        CurrentPage = 1;
+    }
+
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        FilterText = e.Value?.ToString() ?? string.Empty;
+        CurrentPage = 1;
+    }
+
+    private void ClearSearch()
+    {
+        FilterText = string.Empty;
+        CurrentPage = 1;
+    }
+
+    private void DeselectEntry()
+    {
+        SelectedEntry = null;
+    }
+
+    private async Task TriggerBackupSelected()
+    {
+        if (SelectedEntry == null) return;
+        VM.SelectedTabIndex = 0;
+        VM.SearchVM.SearchQuery = SelectedEntry.GameName;
+        await VM.SearchVM.ExecuteSearchAsync();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        HistoryVM.PropertyChanged += OnStateChanged;
+        await RefreshHistory();
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (SelectedEntry != null && !HistoryVM.GameHistories.Contains(SelectedEntry))
+        {
+            SelectedEntry = null;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshHistory()
+    {
+        await HistoryVM.RefreshHistoryAsync();
+    }
+
+    private void OpenGameDetails(GameHistoryEntry entry)
+    {
+        HistoryVM.SelectedGameHistory = entry;
+        HistoryVM.OpenGameDetailsCommand.Execute(entry);
+    }
+
+    private void RequestDeleteGame(GameHistoryEntry entry)
+    {
+        SelectedEntry = null;
+        HistoryVM.RequestDeleteGameHistoryCommand.Execute(entry);
+    }
+
+    private string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{(bytes / 1024.0):F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{(bytes / (1024.0 * 1024.0)):F2} MB";
+        return $"{(bytes / (1024.0 * 1024.0 * 1024.0)):F2} GB";
+    }
+
+    public void Dispose()
+    {
+        HistoryVM.PropertyChanged -= OnStateChanged;
+    }
+}
+

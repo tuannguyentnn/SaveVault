@@ -1,0 +1,324 @@
+@namespace SaveGameBackup.UI.Components.Pages
+@inject MainViewModel VM
+@inject INativeDialogService NativeDialog
+@implements IDisposable
+
+<div class="h-full flex flex-col space-y-3.5 p-5 overflow-y-auto" style="background-color: #0A0F1D;">
+    <!-- Card 1: Nhập tên game để tìm kiếm vị trí save game (Clone chuẩn Image 2 / 0.JPG) -->
+    <div class="sv-card">
+        <label class="sv-card-label">Nhập tên game để tìm kiếm vị trí save game:</label>
+        <div class="flex items-center space-x-2.5 mb-2.5">
+            <input type="text" class="sv-input" style="height: 38px;"
+                   placeholder="Nhập tên game (ví dụ: Elden Ring, Cyberpunk 2077, Black Myth: Wukong, Baldur's Gate 3...)"
+                   @bind="SearchVM.SearchQuery" @bind:event="oninput" @onkeydown="HandleKeyDown" />
+
+            <button type="button" class="sv-btn-dark" style="height: 38px; padding: 0 16px;"
+                    disabled="@(SearchVM.IsSearching || string.IsNullOrWhiteSpace(SearchVM.SearchQuery))"
+                    @onclick="ExecuteSearch">
+                @if (SearchVM.IsSearching)
+                {
+                    <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Đang quét...</span>
+                }
+                else
+                {
+                    <span>🔎</span>
+                    <span>Tìm kiếm &amp; Quét máy</span>
+                }
+            </button>
+        </div>
+
+        <!-- Gợi ý nhanh (Pill buttons as in Image 2 / 0.JPG) -->
+        <div class="flex items-center flex-wrap gap-2 pt-0.5">
+            <span style="font-size: 11.5px; color: #64748B; margin-right: 4px;">Gợi ý nhanh:</span>
+            @foreach (var game in SearchVM.PopularGameSuggestions.Take(6))
+            {
+                <button type="button" class="sv-pill" @onclick="() => SelectPopularGame(game)">
+                    @game
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Card 2: Thông tin & Vị trí Save Game (LUÔN HIỆN, KHÔNG BAO GIỜ ẨN - Image 2 / 0.JPG) -->
+    <div class="sv-card">
+        <!-- Header: Title + Nguồn nếu có + Nút Chọn thư mục thủ công -->
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center space-x-2">
+                <h3 class="sv-card-title">Thông tin &amp; Vị trí Save Game</h3>
+                @if (SearchVM.HasGame && SearchVM.CurrentGame != null &&
+                !string.IsNullOrEmpty(SearchVM.CurrentGame.Source))
+                {
+                    <span
+                        style="font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background-color: #0A101E; border: 1px solid #1E3A8A; color: #60A5FA;">
+                        Nguồn: @SearchVM.CurrentGame.Source
+                    </span>
+                }
+            </div>
+            <button type="button" class="sv-btn-dark sv-btn-sm"
+                    @onclick="() => SearchVM.AddCustomPathCommand.Execute(null)">
+                <span>📁</span>
+                <span>Chọn thư mục thủ công</span>
+            </button>
+        </div>
+
+        <!-- Khối Thông tin game (Khi chưa chọn game vs khi đã chọn game - 0.JPG vs 1.JPG) -->
+        <div class="sv-box-inner mb-3">
+            @if (SearchVM.HasGame && SearchVM.CurrentGame != null)
+            {
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span style="font-size: 22px; color: #38BDF8;">📁</span>
+                        <div>
+                            <div style="color: #FFFFFF; font-weight: 700; font-size: 14px;">@SearchVM.CurrentGame.GameName
+                            </div>
+                            <div style="font-size: 11.5px; color: #8D9CB0; margin-top: 2px;">
+                                Tìm thấy @SearchVM.DetectedPathItems.Count vị trí lưu game trên máy
+                                (@SearchVM.DetectedFileCount tệp, @SearchVM.DetectedSizeFormatted).
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <div style="font-size: 16px; font-weight: 700; color: #34D399; font-family: var(--font-mono);">
+                            @SearchVM.SelectedSizeFormatted
+                        </div>
+                        <div style="font-size: 11px; color: #8D9CB0; margin-top: 2px;">
+                            @SearchVM.SelectedFileCount tệp đã chọn
+                        </div>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="flex items-center space-x-3">
+                    <span style="font-size: 22px; color: #64748B;">📁</span>
+                    <div>
+                        <div style="color: #FFFFFF; font-weight: 700; font-size: 13px;">Chưa chọn game nào</div>
+                        <div style="font-size: 11.5px; color: #64748B; margin-top: 2px;">Sẵn sàng. Hãy nhập tên game để tìm
+                            kiếm vị trí save game.</div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- Thanh tiêu đề danh sách thư mục -->
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center space-x-2" style="font-size: 12px; color: #94A3B8;">
+                    <span>Thư mục save phát hiện trên máy tính:</span>
+                    <span style="color: #64748B;">
+                        Đã chọn: <strong
+                        style="color: #38BDF8; font-family: var(--font-mono);">@SearchVM.SelectedPathCount/@SearchVM.DetectedPathItems.Count
+                        vị trí</strong>
+                    </span>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <button type="button" class="sv-btn-dark sv-btn-sm" disabled="@(SearchVM.DetectedPathItems.Count == 0)"
+                            @onclick="() => SearchVM.SelectAllPathsCommand.Execute(null)">
+                        ✓ Chọn tất cả
+                    </button>
+                    <button type="button" class="sv-btn-dark sv-btn-sm" disabled="@(SearchVM.DetectedPathItems.Count == 0)"
+                            @onclick="() => SearchVM.DeselectAllPathsCommand.Execute(null)">
+                        ✕ Bỏ chọn hết
+                    </button>
+                </div>
+            </div>
+
+            <!-- Khung danh sách thư mục (List box - Image 2 / 0.JPG & 1.JPG) -->
+            <div class="sv-listbox">
+                @if (SearchVM.DetectedPathItems.Count == 0)
+                {
+                    <div class="flex items-center justify-center h-full min-h-[60px]">
+                        <span style="color: #64748B; font-size: 12px; font-style: italic; text-align: center;">
+                            Chưa phát hiện thư mục save nào trên máy tính. Bạn có thể nhấn '📁 Chọn thư mục thủ công' ở góc trên
+                            để thêm vị trí lưu.
+                        </span>
+                    </div>
+                }
+                else
+                {
+                    <div class="space-y-1.5 w-full">
+                        @foreach (var item in SearchVM.DetectedPathItems)
+                        {
+                            <div class="flex items-center justify-between p-2 rounded"
+                                 style="background-color: #0F172A; border: 1px solid @(item.IsSelected ? "#059669" : "#1E293B");">
+                                <label class="flex items-center space-x-2.5 min-w-0 flex-1 mr-3 cursor-pointer select-none"
+                                       @onclick="() => TogglePathItem(item)"
+                                       @onclick:preventDefault="true">
+                                    <input type="checkbox" checked="@item.IsSelected" style="cursor: pointer;" />
+                                    <span style="font-size: 13px; color: #94A3B8;">📁</span>
+                                    <div class="min-w-0 flex-1">
+                                        <div style="font-family: var(--font-mono); font-size: 12px; color: #E2E8F0; word-break: break-all;">
+                                            @item.Path
+                                        </div>
+                                    </div>
+                                </label>
+
+                                <div class="flex items-center space-x-3 flex-shrink-0">
+                                    <span style="font-size: 11px; color: #8D9CB0; font-family: var(--font-mono);">
+                                        @item.FileCount tệp
+                                    </span>
+                                    <span style="font-size: 11px; color: #34D399; font-family: var(--font-mono); font-weight: 600;">
+                                        @item.FormattedSize
+                                    </span>
+                                    <button type="button" class="sv-btn-dark sv-btn-sm" title="Mở thư mục trong File Explorer"
+                                            @onclick="() => SearchVM.OpenSpecificDetectedPathCommand.Execute(item.Path)">
+                                        📁 Mở
+                                    </button>
+                                    <button type="button"
+                                            class="bg-red-600/20 hover:bg-red-600 border border-red-500/50 hover:border-red-500 text-red-300 hover:text-white font-semibold text-[11px] py-1 px-2.5 rounded transition-all cursor-pointer"
+                                            title="Xóa khỏi danh sách này"
+                                            @onclick="() => SearchVM.RemoveDetectedPathCommand.Execute(item)">
+                                        🗑 Xóa
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <!-- Toggle Xem các định dạng đường dẫn tra cứu từ mạng / wiki (Image 2 / 0.JPG) -->
+            <div class="mt-2.5">
+                <button type="button"
+                        style="background: transparent; border: none; color: #8D9CB0; font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;"
+                        @onclick="() => ShowOnlinePatterns = !ShowOnlinePatterns">
+                    <span>@(ShowOnlinePatterns ? "▼" : "👁")</span>
+                    <span>Xem các định dạng đường dẫn tra cứu từ mạng / wiki</span>
+                </button>
+
+                @if (ShowOnlinePatterns)
+                {
+                    <div class="mt-2 sv-box-inner font-mono text-[11px] text-slate-300 max-h-[110px] overflow-y-auto space-y-1">
+                        @if (SearchVM.OnlinePatternsList.Count == 0)
+                        {
+                            <div class="text-slate-500 italic">Chưa có mẫu đường dẫn online nào được nạp. Hãy tìm kiếm một game để
+                                xem các mẫu từ PCGamingWiki &amp; Steam.</div>
+                            }
+                    else
+                            {
+                                @foreach (var pattern in SearchVM.OnlinePatternsList)
+                                {
+                                    <div class="text-cyan-400 select-text break-all">• @pattern</div>
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Card 3: Tùy chọn & Thực hiện Sao lưu (Clone chuẩn Image 2 / 0.JPG & 1.JPG) -->
+            <div class="sv-card">
+                <h3 class="sv-card-title mb-2.5">Tùy chọn &amp; Thực hiện Sao lưu</h3>
+
+                <div class="mb-3">
+                    <label style="display: block; font-size: 12px; color: #94A3B8; margin-bottom: 6px;">Thư mục gốc lưu
+                        Backup:</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="text" class="sv-input"
+                                   style="flex: 1; font-family: var(--font-mono); font-size: 12px; height: 36px;"
+                                   value="@BackupVM.BackupDestinationRoot" readonly />
+                            <button type="button" class="sv-btn-dark" style="height: 36px;"
+                                    @onclick="() => BackupVM.BrowseBackupDirectoryCommand.Execute(null)">
+                                Duyệt thư mục...
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mb-3.5">
+                        <label class="flex items-center space-x-2 cursor-pointer select-none">
+                            <input type="checkbox" @bind="BackupVM.CreateTimestampSubfolder" />
+                            <span style="font-size: 12px; color: #E2E8F0; font-weight: 500;">Tạo thư mục con kèm ngày giờ
+                                (Snapshot)</span>
+                            </label>
+                        </div>
+
+                        <!-- Thanh tiến trình nếu đang backup -->
+                        @if (BackupVM.IsBackingUp)
+                        {
+                            <div class="mb-3 sv-box-inner" style="border-color: #059669;">
+                                <div class="flex items-center justify-between text-[12px] mb-1.5">
+                                    <span class="font-medium text-emerald-400">@BackupVM.BackupProgressText</span>
+                                    <span class="font-bold text-white font-mono">@BackupVM.BackupProgressPercent%</span>
+                                </div>
+                                <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                                    <div class="bg-gradient-to-r from-emerald-500 to-green-400 h-2 transition-all duration-200"
+                                         style="width: @(BackupVM.BackupProgressPercent)%"></div>
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Nút thực hiện sao lưu và mở thư mục (Image 2 / 0.JPG & 1.JPG) -->
+                        <div class="flex items-center space-x-3">
+                            <button type="button" class="sv-btn-backup @(CanBackup ? "ready" : "")" disabled="@(!CanBackup)"
+                                    @onclick="ExecuteBackup">
+                                <span>💾</span>
+                                <span>SAO LƯU NGAY (BACKUP NOW)</span>
+                            </button>
+
+                            <button type="button" class="sv-btn-dark" style="padding: 10px 18px; font-size: 12.5px; font-weight: 600;"
+                                    @onclick="() => BackupVM.OpenBackupFolderCommand.Execute(null)">
+                                <span>📁</span>
+                                <span>Mở thư mục Backup</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+@code {
+    private SearchSubViewModel SearchVM => VM.SearchVM;
+    private BackupSubViewModel BackupVM => VM.BackupVM;
+
+    private bool ShowOnlinePatterns { get; set; } = false;
+
+    private bool CanBackup => !BackupVM.IsBackingUp && SearchVM.HasGame && SearchVM.HasSelectedPaths;
+
+    protected override void OnInitialized()
+    {
+        SearchVM.PropertyChanged += OnStateChanged;
+        BackupVM.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(SearchVM.SearchQuery))
+        {
+            await ExecuteSearch();
+        }
+    }
+
+    private async Task ExecuteSearch()
+    {
+        if (SearchVM.IsSearching) return;
+        await SearchVM.ExecuteSearchAsync();
+    }
+
+    private async Task SelectPopularGame(string gameName)
+    {
+        SearchVM.SearchQuery = gameName;
+        await ExecuteSearch();
+    }
+
+    private void TogglePathItem(DetectedPathItem item)
+    {
+        item.IsSelected = !item.IsSelected;
+        SearchVM.UpdateSelectedPathsStats();
+    }
+
+    private async Task ExecuteBackup()
+    {
+        if (!CanBackup) return;
+        await BackupVM.ExecuteBackupAsync();
+    }
+
+    public void Dispose()
+    {
+        SearchVM.PropertyChanged -= OnStateChanged;
+        BackupVM.PropertyChanged -= OnStateChanged;
+    }
+}

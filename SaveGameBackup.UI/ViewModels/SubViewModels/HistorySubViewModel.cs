@@ -5,8 +5,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Threading.Tasks;
-using System.Windows;
 using System.Windows.Input;
 using SaveGameBackup.Core.Models;
 using SaveGameBackup.Core.Services;
@@ -149,14 +147,18 @@ public class HistorySubViewModel : INotifyPropertyChanged
                 }
             }
 
-            if (System.Windows.Application.Current?.Dispatcher != null && !System.Windows.Application.Current.Dispatcher.CheckAccess())
-            {
-                await System.Windows.Application.Current.Dispatcher.InvokeAsync(UpdateUiCollections);
-            }
-            else
+            if (Microsoft.Maui.ApplicationModel.MainThread.IsMainThread)
             {
                 UpdateUiCollections();
             }
+            else
+            {
+                await Microsoft.Maui.ApplicationModel.MainThread.InvokeOnMainThreadAsync(UpdateUiCollections);
+            }
+
+            OnPropertyChanged(nameof(GameHistories));
+            OnPropertyChanged(nameof(GroupedBackupHistory));
+            OnPropertyChanged(nameof(BackupHistory));
 
             LoggingService.LogAction("History_Refreshed", new { TotalGames = entries.Count, TotalRecords = rawRecords.Count });
         }
@@ -211,53 +213,63 @@ public class HistorySubViewModel : INotifyPropertyChanged
     public void RequestDeleteHistoryDetail(BackupHistoryDetail? detail)
     {
         if (detail == null) return;
-
-        var hasCloud = !string.IsNullOrEmpty(detail.CloudFileId) || detail.IsCloudSynced;
-        var dateFormatted = detail.BackupDate.ToString("dd/MM/yyyy HH:mm");
-        var msg = $"Bạn có chắc chắn muốn xóa bản snapshot ngày {dateFormatted} của game '{detail.GameName}' không?\n\nFile trên ổ cứng sẽ bị xóa vĩnh viễn.";
-
-        _dialogService.ShowConfirm(
-            "Xác Nhận Xóa Bản Snapshot",
-            msg,
-            detail.BackupPath,
-            async () =>
-            {
-                await ExecuteDeleteSnapshotAsync(detail, _dialogService.DeleteAlsoFromCloud);
-            },
-            showCloudOption: hasCloud);
+        _dialogService.ShowConfirmDeleteSnapshot(detail, async (deleteLocal, cloudProviders) =>
+        {
+            await ExecuteDeleteSnapshotAsync(detail, deleteLocal, cloudProviders);
+        });
     }
 
-    private async Task ExecuteDeleteSnapshotAsync(BackupHistoryDetail detail, bool deleteFromCloud)
+    private async Task ExecuteDeleteSnapshotAsync(BackupHistoryDetail detail, bool deleteLocal, List<string> cloudProviders)
     {
-        _dialogService.SetConfirmDeletingState(true, 10, "Đang chuẩn bị xóa bản snapshot...");
-        LoggingService.LogAction("Delete_Snapshot_Start", new { Game = detail.GameName, DetailId = detail.Id, DeleteFromCloud = deleteFromCloud });
+        _dialogService.ShowProgress("Đang Xóa Bản Snapshot", $"Đang chuẩn bị xóa bản snapshot ngày {detail.BackupDate:dd/MM/yyyy HH:mm}...", 10);
+        LoggingService.LogAction("Delete_Snapshot_Start", new { Game = detail.GameName, DetailId = detail.Id, deleteLocal, Clouds = cloudProviders });
 
         var progress = new Progress<BackupProgress>(p =>
         {
-            _dialogService.SetConfirmDeletingState(true, p.Percent, p.Message);
+            _dialogService.UpdateProgress(p.Percent, p.Message);
         });
 
         try
         {
             await _backupService.DeleteSnapshotWithProgressAsync(
                 detail, 
-                deleteFromCloud, 
-                _cloudManager.CurrentProvider, 
-                progress,
+                deleteLocal: deleteLocal,
+                cloudProvidersToDelete: cloudProviders,
+                cloudService: _cloudManager.CurrentProvider, 
+                progress: progress,
                 cloudServiceResolver: providerName => _cloudManager.GetProvider(providerName));
 
-            CurrentHistoryDetails.Remove(detail);
-            if (CurrentHistoryDetails.Count == 0)
+            if (!detail.HasAnyBackup)
             {
-                IsHistoryDetailsModalOpen = false;
+                CurrentHistoryDetails.Remove(detail);
+                if (CurrentHistoryDetails.Count == 0)
+                {
+                    IsHistoryDetailsModalOpen = false;
+                }
             }
+            else
+            {
+                try
+                {
+                    var freshDetails = await _databaseService.GetHistoryDetailsByGameIdAsync(detail.GameHistoryId);
+                    CurrentHistoryDetails.Clear();
+                    foreach (var fd in freshDetails)
+                    {
+                        CurrentHistoryDetails.Add(fd);
+                    }
+                }
+                catch { }
+            }
+            SelectedHistoryDetail = null;
             await RefreshHistoryAsync();
 
             LoggingService.LogAction("Delete_Snapshot_Success", new { DetailId = detail.Id });
-            _dialogService.ShowMessage("Xóa Thành Công", "Đã xóa bản snapshot thành công.", "Success");
+            _dialogService.CloseProgress();
+            _dialogService.ShowMessage("Xóa Thành Công", "Đã xử lý xóa bản snapshot thành công.", "Success");
         }
         catch (Exception ex)
         {
+            _dialogService.CloseProgress();
             LoggingService.Error(ex, "Lỗi khi xóa snapshot {Id}: {Message}", detail.Id, ex.Message);
             _dialogService.ShowMessage("Lỗi Xóa Snapshot", ex.Message, "Error", ex.StackTrace);
         }
@@ -266,48 +278,46 @@ public class HistorySubViewModel : INotifyPropertyChanged
     public void RequestDeleteGameHistory(GameHistoryEntry? entry)
     {
         if (entry == null) return;
-
-        var msg = $"CẢNH BÁO NGUY HIỂM:\n\nBạn đang yêu cầu xóa TOÀN BỘ lịch sử và tất cả {entry.BackupCount} bản sao lưu của game '{entry.GameName}'.\n\nTất cả file trên ổ cứng sẽ bị xóa.";
-
-        _dialogService.ShowConfirm(
-            "Xác Nhận Xóa Game Khỏi Lịch Sử",
-            msg,
-            entry.LatestBackupPath,
-            async () =>
-            {
-                await ExecuteDeleteGameAsync(entry, _dialogService.DeleteAlsoFromCloud);
-            },
-            showCloudOption: true);
+        _dialogService.ShowConfirmDeleteGame(entry, async (deleteLocal, deleteCloud) =>
+        {
+            await ExecuteDeleteGameAsync(entry, deleteLocal, deleteCloud);
+        });
     }
 
-    private async Task ExecuteDeleteGameAsync(GameHistoryEntry entry, bool deleteFromCloud)
+    private async Task ExecuteDeleteGameAsync(GameHistoryEntry entry, bool deleteLocal, bool deleteFromCloud)
     {
-        _dialogService.SetConfirmDeletingState(true, 10, $"Đang xóa toàn bộ sao lưu của {entry.GameName}...");
-        LoggingService.LogAction("Delete_Game_Start", new { Game = entry.GameName, Snapshots = entry.BackupCount, DeleteFromCloud = deleteFromCloud });
+        _dialogService.ShowProgress("Đang Xóa Toàn Bộ Game", $"Đang xóa toàn bộ sao lưu của {entry.GameName}...", 10);
+        LoggingService.LogAction("Delete_Game_Start", new { Game = entry.GameName, Snapshots = entry.BackupCount, deleteLocal, deleteFromCloud });
 
         var progress = new Progress<BackupProgress>(p =>
         {
-            _dialogService.SetConfirmDeletingState(true, p.Percent, p.Message);
+            _dialogService.UpdateProgress(p.Percent, p.Message);
         });
 
         try
         {
             await _backupService.DeleteGameHistoryWithProgressAsync(
                 entry, 
-                deleteFromCloud, 
-                _cloudManager.CurrentProvider, 
-                progress,
+                deleteLocal: deleteLocal,
+                cloudProvidersToDelete: null,
+                deleteFromCloud: deleteFromCloud,
+                cloudService: _cloudManager.CurrentProvider, 
+                progress: progress,
                 cloudServiceResolver: providerName => _cloudManager.GetProvider(providerName));
 
             GameHistories.Remove(entry);
+            SelectedGameHistory = null;
+            SelectedGameSummary = null;
             IsHistoryDetailsModalOpen = false;
             await RefreshHistoryAsync();
 
             LoggingService.LogAction("Delete_Game_Success", new { Game = entry.GameName });
+            _dialogService.CloseProgress();
             _dialogService.ShowMessage("Xóa Thành Công", $"Đã xóa sạch toàn bộ sao lưu của '{entry.GameName}'.", "Success");
         }
         catch (Exception ex)
         {
+            _dialogService.CloseProgress();
             LoggingService.Error(ex, "Lỗi khi xóa game {Game}: {Message}", entry.GameName, ex.Message);
             _dialogService.ShowMessage("Lỗi Xóa Game", ex.Message, "Error", ex.StackTrace);
         }
@@ -340,6 +350,11 @@ public class HistorySubViewModel : INotifyPropertyChanged
             }
         }
         catch { }
+    }
+
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

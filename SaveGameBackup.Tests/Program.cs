@@ -441,7 +441,7 @@ try
 
     // [13] Testing Physical File Deletion & Database Cascade/Update Sync
     Console.WriteLine("\n[13] Testing Physical File Deletion on Disk & Real-time List Reload");
-    var fileToDelete = latestDetail.BackupPath;
+    var fileToDelete = !string.IsNullOrEmpty(latestDetail.LocalBackupPath) ? latestDetail.LocalBackupPath : latestDetail.BackupPath;
     if (!File.Exists(fileToDelete)) throw new Exception($"File to delete does not exist: {fileToDelete}");
 
     // Xóa vật lý trên đĩa
@@ -617,7 +617,7 @@ try
     Console.WriteLine("  ✓ Multi-cloud restore resolved correct provider-specific FileId ('onedrive-file-id-correct')!");
 
     // 15.3: Test DeleteSnapshotWithProgressAsync (Disk + Cloud + DB)
-    var localZipPath = sekiroDetail.BackupPath;
+    var localZipPath = !string.IsNullOrEmpty(sekiroDetail.LocalBackupPath) ? sekiroDetail.LocalBackupPath : sekiroDetail.BackupPath;
     if (!File.Exists(localZipPath)) throw new Exception("FAIL: Expected local zip file to exist before delete!");
 
     var progressList = new List<int>();
@@ -625,6 +625,7 @@ try
 
     await backupService.DeleteSnapshotWithProgressAsync(
         sekiroDetail,
+        deleteLocal: true,
         deleteFromCloud: true,
         cloudService: mockCloud,
         progress: delProgress);
@@ -647,6 +648,63 @@ try
         throw new Exception("FAIL: DeleteSnapshotWithProgressAsync did not report 100% progress!");
     }
     Console.WriteLine("  ✓ DeleteSnapshotWithProgressAsync deleted local file, called Cloud delete API & cleaned SQLite with 100% progress!");
+
+    // 15.4: Test Selective Deletion (Delete Local only -> Record preserved in DB; Delete Cloud -> Record deleted)
+    Console.WriteLine("\n[15.4] Testing Selective Deletion (Delete Local only -> Record preserved in DB; Delete Cloud -> Record deleted)");
+    var selGameDir = Path.Combine(tempTestDir, "SelectiveDeleteSaves");
+    Directory.CreateDirectory(selGameDir);
+    File.WriteAllText(Path.Combine(selGameDir, "save.dat"), "Selective delete test");
+    var selGameInfo = new GameSaveInfo
+    {
+        GameName = "Cyberpunk 2077",
+        NormalizedName = DatabaseService.NormalizeGameName("Cyberpunk 2077"),
+        DetectedPathsOnDisk = new List<string> { selGameDir }
+    };
+    var selSettings = new AppSettings
+    {
+        BackupRootDirectory = Path.Combine(tempTestDir, "Phase2_Backups"),
+        AutoCompressZip = true,
+        CreateTimestampSubfolder = false
+    };
+    await backupService.BackupGameAsync(selGameInfo, selSettings);
+    var selHistories = await db.GetGameHistoriesAsync();
+    var selMaster = selHistories.First(h => h.GameName == "Cyberpunk 2077");
+    var selDetails = await db.GetHistoryDetailsByGameIdAsync(selMaster.Id);
+    var selDetail = selDetails.First();
+
+    // Sync lên MockCloud
+    var selMockCloud = new MockCloudService { ProviderName = "GoogleDrive" };
+    await backupService.SyncSnapshotToCloudAsync(selDetail, selMockCloud);
+
+    // Xóa Local CHỈ ĐỊNH (deleteLocal = true, cloudProvidersToDelete = empty)
+    var selLocalFile = selDetail.LocalBackupPath;
+    await backupService.DeleteSnapshotWithProgressAsync(
+        selDetail,
+        deleteLocal: true,
+        cloudProvidersToDelete: new List<string>());
+
+    if (File.Exists(selLocalFile)) throw new Exception("FAIL: Local file should be deleted!");
+    if (selMockCloud.DeleteCalled) throw new Exception("FAIL: Cloud file should NOT be deleted!");
+
+    // Kiểm tra SQLite: record VẪN CÒN vì còn Cloud!
+    var detailsAfterLocalDel = await db.GetHistoryDetailsByGameIdAsync(selMaster.Id);
+    if (detailsAfterLocalDel.Count == 0) throw new Exception("FAIL: Detail record in SQLite should NOT be deleted while cloud save remains!");
+    var reloadedDetail = detailsAfterLocalDel.First();
+    if (reloadedDetail.HasLocalBackup) throw new Exception("FAIL: Reloaded detail should have HasLocalBackup == false!");
+    if (!reloadedDetail.HasCloudBackup) throw new Exception("FAIL: Reloaded detail should have HasCloudBackup == true!");
+    Console.WriteLine("  ✓ Selective deletion: Local deleted, Cloud kept, record preserved in SQLite with updated BackupPath!");
+
+    // Giờ xóa nốt Cloud: không còn vị trí nào -> xóa hẳn khỏi SQLite!
+    await backupService.DeleteSnapshotWithProgressAsync(
+        reloadedDetail,
+        deleteLocal: false,
+        cloudProvidersToDelete: new List<string> { "GoogleDrive" },
+        cloudService: selMockCloud);
+
+    if (!selMockCloud.DeleteCalled) throw new Exception("FAIL: Cloud delete should have been called!");
+    var detailsAfterBothDel = await db.GetHistoryDetailsByGameIdAsync(selMaster.Id);
+    if (detailsAfterBothDel.Count != 0) throw new Exception("FAIL: Detail record should be completely removed from SQLite when 0 locations remain!");
+    Console.WriteLine("  ✓ Selective deletion: Remaining cloud deleted -> Snapshot completely removed from SQLite!");
 
     // ==========================================
     // TEST 16: Testing DeleteGameHistoryWithProgressAsync (Batch Snapshots + Cloud Deletion + Progress %)
@@ -688,8 +746,8 @@ try
     var mockCloud2 = new MockCloudService();
     await backupService.SyncSnapshotToCloudAsync(erDetails[0], mockCloud2);
 
-    var erZip0 = erDetails[0].BackupPath;
-    var erZip1 = erDetails[1].BackupPath;
+    var erZip0 = !string.IsNullOrEmpty(erDetails[0].LocalBackupPath) ? erDetails[0].LocalBackupPath : erDetails[0].BackupPath;
+    var erZip1 = !string.IsNullOrEmpty(erDetails[1].LocalBackupPath) ? erDetails[1].LocalBackupPath : erDetails[1].BackupPath;
     if (!File.Exists(erZip0) || !File.Exists(erZip1))
     {
         throw new Exception("FAIL: Both Elden Ring backup files must exist before history delete!");
@@ -970,6 +1028,16 @@ public class MockCloudService : SaveGameBackup.Core.Services.Cloud.ICloudStorage
     {
         DeleteCalled = true;
         LastDeletedFileId = remoteFileId;
+        return Task.FromResult(true);
+    }
+
+    public bool DeleteFolderCalled { get; private set; }
+    public string? LastDeletedFolderName { get; private set; }
+
+    public Task<bool> DeleteFolderAsync(string remoteFolderName, CancellationToken cancellationToken = default)
+    {
+        DeleteFolderCalled = true;
+        LastDeletedFolderName = remoteFolderName;
         return Task.FromResult(true);
     }
 

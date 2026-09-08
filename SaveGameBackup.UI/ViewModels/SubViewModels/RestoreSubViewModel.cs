@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using Microsoft.Win32;
 using SaveGameBackup.Core.Models;
 using SaveGameBackup.Core.Services;
 using SaveGameBackup.Core.Services.Cloud;
@@ -22,6 +21,7 @@ public class RestoreSubViewModel : INotifyPropertyChanged
     private readonly DatabaseService _databaseService;
     private readonly IDialogService _dialogService;
     private readonly IAppEventBus _eventBus;
+    private readonly INativeDialogService? _nativeDialog;
 
     private bool _isRestoreModalOpen;
     private BackupRecord? _activeRestoreRecord;
@@ -50,13 +50,15 @@ public class RestoreSubViewModel : INotifyPropertyChanged
         CloudManagerService cloudManager,
         DatabaseService databaseService,
         IDialogService dialogService,
-        IAppEventBus eventBus)
+        IAppEventBus eventBus,
+        INativeDialogService? nativeDialog = null)
     {
         _backupService = backupService;
         _cloudManager = cloudManager;
         _databaseService = databaseService;
         _dialogService = dialogService;
         _eventBus = eventBus;
+        _nativeDialog = nativeDialog;
 
         OpenRestoreModalCommand = new RelayCommand(param => ExecuteOpenRestoreModal(param), _ => !IsModalRestoring);
         CloseRestoreModalCommand = new RelayCommand(_ => ExecuteCloseRestoreModal(), _ => !IsModalRestoring);
@@ -65,7 +67,7 @@ public class RestoreSubViewModel : INotifyPropertyChanged
         ModalDeselectAllRestoreItemsCommand = new RelayCommand(_ => ExecuteModalDeselectAllRestoreItems(), _ => !IsModalRestoring);
         ModalResetRestorePathsCommand = new RelayCommand(_ => ExecuteModalResetRestorePaths(), _ => !IsModalRestoring);
         ModalToggleRestoreItemCommand = new RelayCommand(param => ExecuteModalToggleRestoreItem(param as RestoreItemTarget), _ => !IsModalRestoring);
-        ModalBrowseRestoreDestCommand = new RelayCommand(param => ExecuteModalBrowseRestoreDest(param as RestoreItemTarget), _ => !IsModalRestoring);
+        ModalBrowseRestoreDestCommand = new RelayCommand(async param => await ExecuteModalBrowseRestoreDestAsync(param as RestoreItemTarget), _ => !IsModalRestoring);
 
         ConfirmRestoreFromLocalCommand = new RelayCommand(_ => ExecuteConfirmRestoreFromLocal());
         ConfirmRestoreFromCloudCommand = new RelayCommand(_ => ExecuteConfirmRestoreFromCloud());
@@ -190,7 +192,7 @@ public class RestoreSubViewModel : INotifyPropertyChanged
     {
         if (param is BackupHistoryDetail detail)
         {
-            var isLocalAvailable = !string.IsNullOrEmpty(detail.BackupPath) && (File.Exists(detail.BackupPath) || Directory.Exists(detail.BackupPath));
+            var isLocalAvailable = detail.HasLocalBackup;
             var hasGdrive = detail.IsSyncedTo("GoogleDrive");
             var hasOnedrive = detail.IsSyncedTo("OneDrive");
 
@@ -352,18 +354,17 @@ public class RestoreSubViewModel : INotifyPropertyChanged
         UpdateModalRestoreStats();
     }
 
-    private void ExecuteModalBrowseRestoreDest(RestoreItemTarget? item)
+    private async Task ExecuteModalBrowseRestoreDestAsync(RestoreItemTarget? item)
     {
         if (item == null) return;
-        var dialog = new OpenFolderDialog
-        {
-            Title = $"Chọn thư mục đích mới để khôi phục cho: {item.DisplayTitle}"
-        };
+        var folder = _nativeDialog != null
+            ? await _nativeDialog.PickFolderAsync($"Chọn thư mục đích mới để khôi phục cho: {item.DisplayTitle}")
+            : null;
 
-        if (dialog.ShowDialog() == true)
+        if (!string.IsNullOrEmpty(folder))
         {
-            item.RestoreDestinationPath = dialog.FolderName;
-            LoggingService.LogAction("Restore_Change_Destination", new { Original = item.OriginalSourcePath, Custom = dialog.FolderName });
+            item.RestoreDestinationPath = folder;
+            LoggingService.LogAction("Restore_Change_Destination", new { Original = item.OriginalSourcePath, Custom = folder });
         }
     }
 

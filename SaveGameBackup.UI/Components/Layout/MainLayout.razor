@@ -1,0 +1,127 @@
+@namespace SaveGameBackup.UI.Components.Layout
+@inherits LayoutComponentBase
+@inject MainViewModel VM
+@inject IBlazorDialogService DialogService
+@inject INativeDialogService NativeDialog
+@implements IDisposable
+
+<div class="sv-app-container">
+    <!-- Top Header Bar (Clone chuẩn Image 2 / 0.JPG) -->
+    <header class="sv-header">
+        <!-- Logo & App Title -->
+        <div class="flex items-center space-x-3.5">
+            <div class="sv-logo-badge">
+                🎮
+            </div>
+            <div>
+                <div class="flex items-center space-x-2">
+                    <h1 class="sv-header-title">Game Save Backup</h1>
+                    <span class="sv-badge-net">
+                        .NET 10
+                    </span>
+                    <span class="sv-badge-sqlite">
+                        SQLite
+                    </span>
+                </div>
+                <div class="sv-header-subtitle">
+                    Tự động tìm kiếm đường dẫn save game trên mạng và sao lưu trên máy
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Lịch sử sao lưu badge -->
+        <div>
+            <div class="sv-history-count-badge">
+                <span>Lịch sử sao lưu:</span>
+                <span class="sv-history-count-val">@VM.HistoryVM.GameHistories.Count</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tab Bar (Clone chuẩn Image 2 / 0.JPG: Flat underline tabs) -->
+    <nav class="sv-nav-bar">
+        <button type="button"
+                class="sv-tab @(VM.SelectedTabIndex == 0 ? "active" : "")"
+                @onclick="() => SetTab(0)">
+            <span class="text-sm">🔍</span>
+            <span>Tìm kiếm &amp; Sao lưu</span>
+        </button>
+
+        <button type="button"
+                class="sv-tab @(VM.SelectedTabIndex == 1 ? "active" : "")"
+                @onclick="() => SetTab(1)">
+            <span class="text-sm">🗂</span>
+            <span>Lịch sử sao lưu</span>
+        </button>
+
+        <button type="button"
+                class="sv-tab @(VM.SelectedTabIndex == 2 ? "active" : "")"
+                @onclick="() => SetTab(2)">
+            <span class="text-sm">⚙</span>
+            <span>Cài đặt</span>
+        </button>
+    </nav>
+
+    <!-- Main Tab Viewport -->
+    <main class="flex-1 overflow-hidden relative" style="background-color: #0A0F1D;">
+        @if (VM.SelectedTabIndex == 0)
+        {
+            <SearchTab />
+        }
+        else if (VM.SelectedTabIndex == 1)
+        {
+            <HistoryTab />
+        }
+        else if (VM.SelectedTabIndex == 2)
+        {
+            <SettingsTab />
+        }
+    </main>
+
+    <!-- Bottom Status Bar (Clone chuẩn Image 2 / 0.JPG) -->
+    <footer class="sv-footer">
+        <div class="flex items-center space-x-2">
+            <span style="color: #64748B;">Trạng thái:</span>
+            <span style="color: #CBD5E1;">@VM.SearchVM.StatusMessage</span>
+        </div>
+
+        <div style="color: #475569; font-family: var(--font-mono); font-size: 11px;">
+            SaveGameBackup v1.0 • .NET 10
+        </div>
+    </footer>
+
+    <!-- All Modals Host -->
+    <ModalHost />
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        VM.PropertyChanged += OnStateChanged;
+        VM.SearchVM.PropertyChanged += OnStateChanged;
+        VM.HistoryVM.PropertyChanged += OnStateChanged;
+        VM.CloudVM.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SetTab(int tabIndex)
+    {
+        VM.SelectedTabIndex = tabIndex;
+        if (tabIndex == 1)
+        {
+            await VM.HistoryVM.RefreshHistoryAsync();
+        }
+    }
+
+    public void Dispose()
+    {
+        VM.PropertyChanged -= OnStateChanged;
+        VM.SearchVM.PropertyChanged -= OnStateChanged;
+        VM.HistoryVM.PropertyChanged -= OnStateChanged;
+        VM.CloudVM.PropertyChanged -= OnStateChanged;
+    }
+}

@@ -1,0 +1,107 @@
+@namespace SaveGameBackup.UI.Components.Modals
+@inject MainViewModel VM
+@inject IBlazorDialogService DialogService
+@implements IDisposable
+
+@if (RestoreVM.IsRestoreSourceModalOpen || DialogService.IsRestoreSourceModalOpen)
+{
+    <div class="modal-backdrop">
+        <div class="modal-content w-full max-w-md border-2 border-emerald-500 flex flex-col shadow-2xl">
+            <!-- Header -->
+            <div class="bg-[#1E293B] border-b border-[#334155] px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-lg bg-emerald-600/30 border border-emerald-500/50 flex items-center justify-center">
+                        <span class="text-emerald-400 font-bold text-lg">⚡</span>
+                    </div>
+                    <h3 class="text-[16px] font-bold text-white tracking-wide">
+                        CHỌN NGUỒN KHÔI PHỤC
+                    </h3>
+                </div>
+
+                <button class="text-slate-400 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-700/50"
+                        @onclick="Cancel">
+                    ✕
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div class="p-6 space-y-3 bg-[#131C2E]">
+                <p class="text-[12px] text-slate-300 mb-2">
+                    Bạn muốn khôi phục save game từ nguồn nào?
+                </p>
+
+                <!-- Local source button -->
+                <button class="w-full bg-[#0F172A] hover:bg-slate-800 border border-[#2D3748] hover:border-emerald-500 rounded-xl p-4 flex items-center space-x-3 transition-all text-left"
+                        @onclick="RestoreLocal">
+                    <span class="text-2xl">💻</span>
+                    <div>
+                        <div class="font-bold text-white text-[13px]">Khôi phục từ Ổ cứng máy tính</div>
+                        <div class="text-[11px] text-slate-400">Sử dụng trực tiếp file backup có sẵn trong thư mục Backups.</div>
+                    </div>
+                </button>
+
+                <!-- Cloud source button: Google Drive -->
+                <button class="w-full bg-[#0F172A] hover:bg-slate-800 border border-[#2D3748] hover:border-blue-500 rounded-xl p-4 flex items-center space-x-3 transition-all text-left"
+                        @onclick="RestoreGDrive">
+                    <span class="text-2xl">📁</span>
+                    <div>
+                        <div class="font-bold text-white text-[13px]">Tải từ Google Drive & Khôi phục</div>
+                        <div class="text-[11px] text-slate-400">Tải bản sao lưu từ Google Drive về máy rồi tiến hành khôi phục.</div>
+                    </div>
+                </button>
+
+                <!-- Cloud source button: OneDrive -->
+                <button class="w-full bg-[#0F172A] hover:bg-slate-800 border border-[#2D3748] hover:border-cyan-500 rounded-xl p-4 flex items-center space-x-3 transition-all text-left"
+                        @onclick="RestoreOneDrive">
+                    <span class="text-2xl">☁️</span>
+                    <div>
+                        <div class="font-bold text-white text-[13px]">Tải từ Microsoft OneDrive & Khôi phục</div>
+                        <div class="text-[11px] text-slate-400">Tải bản sao lưu từ OneDrive về máy rồi tiến hành khôi phục.</div>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private RestoreSubViewModel RestoreVM => VM.RestoreVM;
+
+    protected override void OnInitialized()
+    {
+        RestoreVM.PropertyChanged += OnStateChanged;
+        DialogService.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RestoreLocal()
+    {
+        RestoreVM.ConfirmRestoreFromLocalCommand.Execute(null);
+    }
+
+    private void RestoreGDrive()
+    {
+        RestoreVM.ConfirmRestoreFromGoogleDriveCommand.Execute(null);
+    }
+
+    private void RestoreOneDrive()
+    {
+        RestoreVM.ConfirmRestoreFromOneDriveCommand.Execute(null);
+    }
+
+    private void Cancel()
+    {
+        RestoreVM.CancelRestoreSourceModalCommand.Execute(null);
+        DialogService.CloseRestoreSource();
+    }
+
+    public void Dispose()
+    {
+        RestoreVM.PropertyChanged -= OnStateChanged;
+        DialogService.PropertyChanged -= OnStateChanged;
+    }
+}

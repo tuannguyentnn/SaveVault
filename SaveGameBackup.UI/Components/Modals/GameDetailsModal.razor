@@ -1,0 +1,504 @@
+@namespace SaveGameBackup.UI.Components.Modals
+@inject MainViewModel VM
+@inject IBlazorDialogService DialogService
+@inject INativeDialogService NativeDialog
+@implements IDisposable
+
+@if (HistoryVM.IsHistoryDetailsModalOpen || DialogService.IsDetailsModalOpen)
+{
+    var currentEntry = HistoryVM.SelectedGameHistory ?? DialogService.DetailsGameHistory;
+    var detailsList = (HistoryVM.CurrentHistoryDetails.Count > 0
+        ? HistoryVM.CurrentHistoryDetails
+        : (IEnumerable<BackupHistoryDetail>)DialogService.CurrentGameDetails).ToList();
+
+    var sortedDetails = GetSortedDetails(detailsList);
+    var totalDetails = sortedDetails.Count;
+    var totalDetailPages = Math.Max(1, (int)Math.Ceiling(totalDetails / (double)DetailPageSize));
+    if (CurrentDetailPage > totalDetailPages) CurrentDetailPage = totalDetailPages;
+    if (CurrentDetailPage < 1) CurrentDetailPage = 1;
+
+    var pagedDetails = sortedDetails.Skip((CurrentDetailPage - 1) * DetailPageSize).Take(DetailPageSize).ToList();
+    var fromDetailItem = totalDetails == 0 ? 0 : (CurrentDetailPage - 1) * DetailPageSize + 1;
+    var toDetailItem = Math.Min(CurrentDetailPage * DetailPageSize, totalDetails);
+
+    <div class="modal-backdrop" @onclick="DeselectDetail">
+        <div class="modal-content w-full max-w-5xl border-2 border-blue-500 flex flex-col max-h-[85vh]" @onclick="DeselectDetail">
+            <!-- Modal Header (Image 3.JPG) -->
+            <div class="bg-[#1E293B] border-b border-[#334155] px-6 py-4 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center space-x-3">
+                    <div
+                        class="w-9 h-9 rounded-lg bg-blue-600/30 border border-blue-500/50 flex items-center justify-center">
+                        <span class="text-blue-400 font-bold text-lg">🎮</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-[17px] font-bold text-white tracking-wide">
+                                @(currentEntry?.GameName ?? HistoryVM.SelectedHistoryGameTitle)
+                            </h3>
+                            <span class="badge-count text-[11px] bg-blue-600/30 text-blue-300 border border-blue-500/30">
+                                @detailsList.Count snapshots
+                            </span>
+                        </div>
+                        <div class="text-[11px] text-slate-400">
+                            Chi tiết các bản sao lưu (Snapshots) và lịch sử lưu trữ
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Header Right: Đã chọn bản + Nút Đóng X duy nhất -->
+                <div class="flex items-center space-x-3">
+                    @if (ActiveDetail != null)
+                    {
+                        <div
+                            class="text-[12px] bg-[#0A0F1D] border border-blue-500/40 px-3.5 py-1.5 rounded-lg text-slate-300 flex items-center space-x-2 shadow-inner">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            <span>Đã chọn bản:</span>
+                            <strong class="text-white font-mono">@ActiveDetail.BackupDate.ToString("dd/MM/yyyy HH:mm")</strong>
+                            <span class="text-emerald-400 font-mono font-bold">(@ActiveDetail.FormattedSize)</span>
+                        </div>
+                    }
+
+                    <button
+                        class="text-slate-400 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-700/50 transition-colors"
+                        @onclick="CloseModal" @onclick:stopPropagation="true" title="Đóng cửa sổ">
+                        ✕
+                    </button>
+                </div>
+            </div>
+
+            <!-- Top 3-Column Stats Bar (Image 3.JPG) -->
+            <div class="bg-[#0F172A] border-b border-[#1E293B] px-6 py-3 grid grid-cols-3 gap-4 flex-shrink-0">
+                <div class="border-r border-[#1E293B] pr-4">
+                    <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Tổng bản lưu:</div>
+                    <div class="text-[16px] font-bold text-white font-mono mt-0.5">
+                        @detailsList.Count bản lưu
+                    </div>
+                </div>
+                <div class="border-r border-[#1E293B] pr-4">
+                    <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Tổng dung lượng:</div>
+                    <div class="text-[16px] font-bold text-emerald-400 font-mono mt-0.5">
+                        @FormatBytes(detailsList.Sum(x => x.TotalSizeBytes))
+                    </div>
+                </div>
+                <div>
+                    <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Bản lưu gần nhất:</div>
+                    <div class="text-[15px] font-bold text-blue-400 font-mono mt-0.5">
+                        @(detailsList.FirstOrDefault()?.BackupDate.ToString("dd/MM/yyyy HH:mm:ss") ?? "Chưa có")
+                    </div>
+                </div>
+            </div>
+
+            <!-- Snapshots Table (Image 3.JPG) -->
+            <div class="flex-1 overflow-y-auto p-4 min-h-0 bg-[#131C2E]">
+                <table class="custom-table overflow-hidden" style="border-collapse: separate; border-spacing: 0;">
+                    <thead class="sticky top-0 z-10 shadow-sm" style="background-color: #1E293B;">
+                        <tr style="background-color: #1E293B; border-bottom: 1px solid #334155;">
+                            <th style="width: 175px; background-color: #1E293B; border-bottom: 1px solid #334155;" class="cursor-pointer select-none hover:text-white transition-colors sticky top-0 z-10"
+                                @onclick='() => SortDetailBy("Date")' @onclick:stopPropagation="true"
+                                title="Nhấp để sắp xếp theo Ngày sao lưu">
+                                <div class="inline-flex items-center space-x-1">
+                                    <span>NGÀY SAO LƯU</span>
+                                    <span class="text-cyan-400 font-bold">@(DetailSortColumn == "Date" ? (DetailSortAscending ? "▲" : "▼") : "")</span>
+                                </div>
+                            </th>
+                            <th style="width: 120px; background-color: #1E293B; border-bottom: 1px solid #334155;" class="cursor-pointer select-none hover:text-white transition-colors sticky top-0 z-10"
+                                @onclick='() => SortDetailBy("Size")' @onclick:stopPropagation="true"
+                                title="Nhấp để sắp xếp theo Dung lượng">
+                                <div class="inline-flex items-center space-x-1">
+                                    <span>DUNG LƯỢNG</span>
+                                    <span class="text-cyan-400 font-bold">@(DetailSortColumn == "Size" ? (DetailSortAscending ? "▲" : "▼") : "")</span>
+                                </div>
+                            </th>
+                            <th style="width: 100px; background-color: #1E293B; border-bottom: 1px solid #334155;" class="sticky top-0 z-10">ĐỊNH DẠNG</th>
+                            <th style="background-color: #1E293B; border-bottom: 1px solid #334155;" class="sticky top-0 z-10">ĐƯỜNG DẪN BẢN LƯU</th>
+                            <th style="width: 160px; background-color: #1E293B; border-bottom: 1px solid #334155;" class="text-center cursor-pointer select-none hover:text-white transition-colors sticky top-0 z-10"
+                                @onclick='() => SortDetailBy("Cloud")' @onclick:stopPropagation="true"
+                                title="Nhấp để sắp xếp theo Trạng thái Cloud">
+                                <div class="inline-flex items-center space-x-1 justify-center">
+                                    <span>CLOUD SYNC</span>
+                                    <span class="text-cyan-400 font-bold">@(DetailSortColumn == "Cloud" ? (DetailSortAscending ? "▲" : "▼") : "")</span>
+                                </div>
+                            </th>
+                            <th style="width: 90px; background-color: #1E293B; border-bottom: 1px solid #334155;" class="text-right sticky top-0 z-10">THAO TÁC</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (pagedDetails.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="6" class="text-center py-8 text-slate-400 text-[12px]">
+                                    Không có bản sao lưu nào cho game này.
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var detail in pagedDetails)
+                            {
+                                var isSelected = (HistoryVM.SelectedHistoryDetail?.Id == detail.Id) || (SelectedDetail?.Id == detail.Id);
+                                <tr class="cursor-pointer transition-colors @(isSelected ? "selected bg-[#065F46]" : "hover:bg-[#182234]")"
+                                    @onclick="() => SelectDetail(detail)"
+                                    @onclick:stopPropagation="true"
+                                    @ondblclick="() => OpenRestoreForDetail(detail)">
+                                    <td>
+                                        <div class="font-mono text-white text-[12px] font-medium">
+                                            @detail.BackupDate.ToString("dd/MM/yyyy HH:mm:ss")
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="font-mono text-emerald-400 font-semibold text-[12px]">
+                                            @detail.FormattedSize
+                                        </span>
+                                    </td>
+                                    <td>
+                                        @if (detail.IsCompressed)
+                                        {
+                                            <span class="badge-zip">ZIP</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge-folder">FOLDER</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @{
+                                            var displayPath = !string.IsNullOrEmpty(detail.LocalBackupPath) 
+                                                ? detail.LocalBackupPath 
+                                                : (detail.CloudUrls.Count > 0 ? string.Join(", ", detail.CloudUrls.Values) : (detail.BackupPath.TrimStart().StartsWith("{") ? "-" : detail.BackupPath));
+                                        }
+                                        <span class="font-mono text-[11px] text-slate-300 select-text truncate block max-w-sm"
+                                              title="@displayPath">
+                                            @if (detail.HasLocalBackup)
+                                            {
+                                                <span>@detail.LocalBackupPath</span>
+                                            }
+                                            else if (detail.HasCloudBackup)
+                                            {
+                                                <span class="text-cyan-400">☁️ Chỉ lưu trên Cloud (@detail.CloudUrls.Count cloud)</span>
+                                            }
+                                            else
+                                            {
+                                                <span>@displayPath</span>
+                                            }
+                                        </span>
+                                    </td>
+                                    <td class="text-center">
+                                        @if (detail.IsCloudSynced && detail.CloudSyncList.Count > 1)
+                                        {
+                                            var providerNames = string.Join(" + ", detail.CloudSyncList.Select(s => s.Provider.Contains("Google", StringComparison.OrdinalIgnoreCase) ? "Google Drive" : (s.Provider.Contains("OneDrive", StringComparison.OrdinalIgnoreCase) ? "OneDrive" : s.Provider)));
+                                            <button type="button"
+                                                    class="badge-count text-[11px] bg-gradient-to-r from-blue-600/30 via-indigo-600/30 to-cyan-600/30 text-cyan-200 border border-cyan-500/40 hover:from-blue-600/50 hover:to-cyan-600/50 hover:border-cyan-300 transition-all cursor-pointer inline-flex items-center space-x-1.5 py-0.5 px-2.5 rounded shadow-sm"
+                                                    title="Đã đồng bộ lên @(detail.CloudSyncList.Count) Cloud (@providerNames). Nhấp để mở tất cả liên kết trên trình duyệt web."
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => OpenAllOnlineSyncItems(detail)">
+                                                <span>☁️ @providerNames</span>
+                                                <span class="text-[9px] font-bold">↗</span>
+                                            </button>
+                                        }
+                                        else if (detail.IsCloudSynced && detail.CloudSyncList.Count == 1)
+                                        {
+                                            var syncItem = detail.CloudSyncList[0];
+                                            var isDrive = syncItem.Provider.Contains("Google", StringComparison.OrdinalIgnoreCase);
+                                            var badgeColor = isDrive
+                                                ? "bg-blue-600/30 text-blue-300 border-blue-500/40 hover:bg-blue-600/50 hover:border-blue-400"
+                                                : "bg-cyan-600/30 text-cyan-300 border-cyan-500/40 hover:bg-cyan-600/50 hover:border-cyan-400";
+                                            var providerShort = isDrive ? "Google Drive" : (syncItem.Provider.Contains("OneDrive", StringComparison.OrdinalIgnoreCase) ? "OneDrive" : syncItem.Provider);
+
+                                            <button type="button"
+                                                    class="badge-count text-[11px] @badgeColor border transition-all cursor-pointer inline-flex items-center space-x-1 py-0.5 px-2 rounded shadow-sm"
+                                                    title="Mở file trên @providerShort trong trình duyệt web"
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => OpenOnlineSyncItem(syncItem)">
+                                                <span>☁️ @providerShort</span>
+                                                <span class="text-[9px]">↗</span>
+                                            </button>
+                                        }
+                                        else if (detail.IsCloudSynced)
+                                        {
+                                            <button type="button"
+                                                    class="badge-count text-[11px] bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-600/50 hover:border-cyan-400 transition-all cursor-pointer inline-flex items-center space-x-1 py-0.5 px-2 rounded shadow-sm"
+                                                    title="Nhấp để mở xem bản lưu này trên @(detail.CloudProvider ?? "Cloud") trong trình duyệt web"
+                                                    @onclick:stopPropagation="true"
+                                                    @onclick="() => OpenOnlineCloud(detail)">
+                                                <span>☁️ @(detail.CloudProvider ?? "Synced")</span>
+                                                <span class="text-[9px]">↗</span>
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-slate-500 text-[11px]">Chưa đồng bộ</span>
+                                        }
+                                    </td>
+                                    <td class="text-right">
+                                        <div class="inline-flex items-center space-x-1.5">
+                                            <button class="btn-secondary text-[11px] py-1 px-2" title="Mở thư mục chứa bản lưu"
+                                                    @onclick:stopPropagation="true" @onclick="() => OpenDetailFolder(detail)">
+                                                📂
+                                            </button>
+                                            <button
+                                                class="btn-secondary text-[11px] py-1 px-2.5 bg-red-600/20 border border-red-500 text-red-400 hover:bg-red-600 hover:text-white hover:border-red-600 transition-all font-bold rounded shadow-sm cursor-pointer"
+                                                title="Xóa bản snapshot này" @onclick:stopPropagation="true"
+                                                @onclick="() => DeleteSnapshot(detail)">
+                                                ✕
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination Bar (10 items / page) -->
+            @if (totalDetailPages > 1)
+            {
+                <div class="px-6 py-2 bg-[#0F172A] border-t border-[#1E293B] flex items-center justify-between text-[11.5px] text-slate-400 flex-shrink-0"
+                     @onclick:stopPropagation="true">
+                    <div>
+                        Hiển thị <span class="font-mono text-white font-semibold">@fromDetailItem</span> - <span class="font-mono text-white font-semibold">@toDetailItem</span> trong tổng số <span class="font-mono text-cyan-400 font-bold">@totalDetails</span> bản lưu
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button type="button"
+                                class="py-1 px-2.5 rounded text-[11px] font-medium border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                disabled="@(CurrentDetailPage <= 1)"
+                                @onclick="() => CurrentDetailPage--">
+                            ◀ Trước
+                        </button>
+                        <span class="px-2 font-mono text-[11.5px] text-white">
+                            Trang @CurrentDetailPage / @totalDetailPages
+                        </span>
+                        <button type="button"
+                                class="py-1 px-2.5 rounded text-[11px] font-medium border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                disabled="@(CurrentDetailPage >= totalDetailPages)"
+                                @onclick="() => CurrentDetailPage++">
+                            Tiếp ▶
+                        </button>
+                    </div>
+                </div>
+            }
+
+            <!-- Modal Footer with Action Buttons Aligned Right & Normalized Exact Sizes -->
+            <div class="bg-[#0F172A] border-t border-[#1E293B] px-6 py-3.5 flex items-center justify-between flex-shrink-0">
+                <!-- Text Hướng Dẫn Kèm Bóng Đèn 💡 bên trái -->
+                <div class="text-[12px] text-slate-400 flex items-center space-x-2 w-[300px]">
+                    <span class="text-base">💡</span>
+                    <span>Nhấp chọn một bản snapshot để khôi phục hoặc đồng bộ. Nhấp badge ☁️ để mở xem online.</span>
+                </div>
+
+                <!-- Hàng button khôi phục, sao lưu, đồng bộ align về phía bên phải và size đồng bộ 100% -->
+                <div class="flex items-center space-x-3 ml-auto">
+                    <button
+                        class="h-[36px] px-4 py-0 leading-[34px] text-[12px] font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/80 rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        disabled="@(ActiveDetail == null)"
+                        @onclick="() => OpenRestoreForDetail(ActiveDetail!)"
+                        @onclick:stopPropagation="true"
+                        title="@(ActiveDetail == null ? "Vui lòng chọn một bản sao lưu trong danh sách để khôi phục" : "Khôi phục dữ liệu từ bản sao lưu này")">
+                        <span>⚡</span>
+                        <span>Khôi Phục Bản Này</span>
+                    </button>
+
+                    <button
+                        class="h-[36px] px-4 py-0 leading-[34px] text-[12px] font-semibold text-white bg-[#0284C7] hover:bg-[#0369A1] border border-[#06B6D4] rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        disabled="@(ActiveDetail == null)"
+                        @onclick="() => OpenSyncForDetail(ActiveDetail!)"
+                        @onclick:stopPropagation="true"
+                        title="@(ActiveDetail == null ? "Vui lòng chọn một bản sao lưu trong danh sách để đồng bộ" : "Đồng bộ bản lưu này lên đám mây")">
+                        <span>☁️</span>
+                        <span>Đồng Bộ Cloud</span>
+                    </button>
+
+                    <button
+                        class="h-[36px] px-4 py-0 leading-[34px] text-[12px] font-semibold text-white bg-emerald-700/70 hover:bg-emerald-600 border border-emerald-500 rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        disabled="@(ActiveDetail == null)"
+                        @onclick="TriggerBackupCurrentGame"
+                        @onclick:stopPropagation="true"
+                        title="@(ActiveDetail == null ? "Vui lòng chọn một bản sao lưu trong danh sách để sao lưu game này" : "Mở tab Sao lưu để tạo một bản sao lưu mới cho game này")">
+                        <span>💾</span>
+                        <span>Sao Lưu Game Này</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private HistorySubViewModel HistoryVM => VM.HistoryVM;
+    private BackupHistoryDetail? SelectedDetail { get; set; }
+    private bool _lastIsOpen = false;
+
+    // Sorting & Pagination States (Configurable PageSize)
+    private string DetailSortColumn { get; set; } = "Date";
+    private bool DetailSortAscending { get; set; } = false; // Default newest first
+    private int CurrentDetailPage { get; set; } = 1;
+    private int DetailPageSize => Math.Max(1, AppConfigService.GetConfig().PageSize);
+
+    private BackupHistoryDetail? ActiveDetail => HistoryVM.SelectedHistoryDetail ?? SelectedDetail ?? DialogService.SelectedDetail;
+
+    protected override void OnInitialized()
+    {
+        HistoryVM.PropertyChanged += OnStateChanged;
+        DialogService.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        var isOpen = HistoryVM.IsHistoryDetailsModalOpen || DialogService.IsDetailsModalOpen;
+        if (isOpen && !_lastIsOpen)
+        {
+            SelectedDetail = null;
+            HistoryVM.SelectedHistoryDetail = null;
+            DialogService.SelectedDetail = null;
+            CurrentDetailPage = 1;
+            DetailSortColumn = "Date";
+            DetailSortAscending = false;
+        }
+        else if (SelectedDetail != null)
+        {
+            var exists = HistoryVM.CurrentHistoryDetails.Any(d => d.Id == SelectedDetail.Id) || DialogService.CurrentGameDetails.Any(d => d.Id == SelectedDetail.Id);
+            if (!exists)
+            {
+                SelectedDetail = null;
+                HistoryVM.SelectedHistoryDetail = null;
+                DialogService.SelectedDetail = null;
+            }
+        }
+        _lastIsOpen = isOpen;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void SortDetailBy(string column)
+    {
+        if (DetailSortColumn == column)
+        {
+            DetailSortAscending = !DetailSortAscending;
+        }
+        else
+        {
+            DetailSortColumn = column;
+            DetailSortAscending = (column == "Date") ? false : true;
+        }
+        CurrentDetailPage = 1;
+    }
+
+    private List<BackupHistoryDetail> GetSortedDetails(List<BackupHistoryDetail> raw)
+    {
+        return DetailSortColumn switch
+        {
+            "Date" => DetailSortAscending ? raw.OrderBy(x => x.BackupDate).ToList() : raw.OrderByDescending(x => x.BackupDate).ToList(),
+            "Size" => DetailSortAscending ? raw.OrderBy(x => x.TotalSizeBytes).ToList() : raw.OrderByDescending(x => x.TotalSizeBytes).ToList(),
+            "Cloud" => DetailSortAscending ? raw.OrderBy(x => x.IsCloudSynced).ThenBy(x => x.CloudProvider).ToList() : raw.OrderByDescending(x => x.IsCloudSynced).ThenByDescending(x => x.CloudProvider).ToList(),
+            _ => raw.OrderByDescending(x => x.BackupDate).ToList()
+        };
+    }
+
+    private void SelectDetail(BackupHistoryDetail detail)
+    {
+        SelectedDetail = detail;
+        HistoryVM.SelectedHistoryDetail = detail;
+        DialogService.SelectedDetail = detail;
+    }
+
+    private void DeselectDetail()
+    {
+        SelectedDetail = null;
+        HistoryVM.SelectedHistoryDetail = null;
+        DialogService.SelectedDetail = null;
+    }
+
+    private void OpenRestoreForDetail(BackupHistoryDetail detail)
+    {
+        VM.RestoreVM.OpenRestoreModalCommand.Execute(detail);
+    }
+
+    private void OpenSyncForDetail(BackupHistoryDetail detail)
+    {
+        VM.CloudVM.OpenSyncCloudSelectModalCommand.Execute(detail);
+    }
+
+    private void OpenOnlineSyncItem(CloudSyncInfo syncItem)
+    {
+        VM.CloudVM.OpenCloudWebViewCommand.Execute(syncItem);
+    }
+
+    private void OpenAllOnlineSyncItems(BackupHistoryDetail detail)
+    {
+        if (detail.CloudSyncList != null && detail.CloudSyncList.Count > 0)
+        {
+            foreach (var syncItem in detail.CloudSyncList)
+            {
+                VM.CloudVM.OpenCloudWebViewCommand.Execute(syncItem);
+            }
+        }
+        else
+        {
+            VM.CloudVM.OpenCloudWebViewCommand.Execute(detail);
+        }
+    }
+
+    private void OpenOnlineCloud(BackupHistoryDetail detail)
+    {
+        VM.CloudVM.OpenCloudWebViewCommand.Execute(detail);
+    }
+
+    private async Task TriggerBackupCurrentGame()
+    {
+        var gameName = (HistoryVM.SelectedGameHistory ?? DialogService.DetailsGameHistory)?.GameName
+                       ?? HistoryVM.SelectedHistoryGameTitle
+                       ?? ActiveDetail?.GameName;
+        if (string.IsNullOrEmpty(gameName)) return;
+        CloseModal();
+        VM.SelectedTabIndex = 0;
+        VM.SearchVM.SearchQuery = gameName;
+        await VM.SearchVM.ExecuteSearchAsync();
+    }
+
+    private void OpenDetailFolder(BackupHistoryDetail detail)
+    {
+        var localPath = detail.LocalBackupPath;
+        if (File.Exists(localPath))
+        {
+            NativeDialog.OpenFileInExplorer(localPath);
+        }
+        else if (Directory.Exists(localPath))
+        {
+            NativeDialog.OpenFolderInExplorer(localPath);
+        }
+        else if (detail.HasCloudBackup)
+        {
+            OpenAllOnlineSyncItems(detail);
+        }
+    }
+
+    private void DeleteSnapshot(BackupHistoryDetail detail)
+    {
+        if (SelectedDetail?.Id == detail.Id || HistoryVM.SelectedHistoryDetail?.Id == detail.Id)
+        {
+            SelectedDetail = null;
+            HistoryVM.SelectedHistoryDetail = null;
+            DialogService.SelectedDetail = null;
+        }
+        HistoryVM.RequestDeleteHistoryDetailCommand.Execute(detail);
+    }
+
+    private void CloseModal()
+    {
+        HistoryVM.CloseModalCommand.Execute(null);
+        DialogService.CloseDetails();
+    }
+
+    private string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{(bytes / 1024.0):F1} KB";
+        if (bytes < 1024 * 1024 * 1024) return $"{(bytes / (1024.0 * 1024.0)):F2} MB";
+        return $"{(bytes / (1024.0 * 1024.0 * 1024.0)):F2} GB";
+    }
+
+    public void Dispose()
+    {
+        HistoryVM.PropertyChanged -= OnStateChanged;
+        DialogService.PropertyChanged -= OnStateChanged;
+    }
+}

@@ -1,0 +1,704 @@
+@namespace SaveGameBackup.UI.Components.Modals
+@inject MainViewModel VM
+@inject IBlazorDialogService DialogService
+@implements IDisposable
+
+@{
+    var isBlazorActive = DialogService.IsConfirmModalOpen;
+    var isVmActive = VM.DialogService.IsConfirmModalOpen;
+    var isConfirmOpen = isBlazorActive || isVmActive;
+
+    var deleteType = isBlazorActive && DialogService.DeleteType != ConfirmDeleteType.None 
+        ? DialogService.DeleteType 
+        : VM.DialogService.DeleteType;
+
+    var targetDetail = isBlazorActive && DialogService.TargetDetail != null 
+        ? DialogService.TargetDetail 
+        : VM.DialogService.TargetDetail;
+
+    var targetGameHistory = isBlazorActive && DialogService.TargetGameHistory != null 
+        ? DialogService.TargetGameHistory 
+        : VM.DialogService.TargetGameHistory;
+
+    var title = isBlazorActive && !string.IsNullOrEmpty(DialogService.ConfirmTitle) 
+        ? DialogService.ConfirmTitle 
+        : VM.DialogService.ConfirmModalTitle;
+
+    var message = isBlazorActive && !string.IsNullOrEmpty(DialogService.ConfirmMessage) 
+        ? DialogService.ConfirmMessage 
+        : VM.DialogService.ConfirmModalMessage;
+
+    var targetPath = isBlazorActive && !string.IsNullOrEmpty(DialogService.ConfirmTargetPath) 
+        ? DialogService.ConfirmTargetPath 
+        : VM.DialogService.ConfirmModalTargetPath;
+
+    var showCloudOption = isBlazorActive 
+        ? DialogService.ShowDeleteCloudOption 
+        : VM.DialogService.ShowDeleteCloudOption;
+
+    var isDeleting = isBlazorActive 
+        ? DialogService.IsConfirmDeleting 
+        : VM.DialogService.IsConfirmModalDeleting;
+
+    var progressText = isBlazorActive 
+        ? DialogService.ConfirmProgressText 
+        : VM.DialogService.ConfirmModalProgressText;
+
+    var progressPercent = isBlazorActive 
+        ? DialogService.ConfirmProgressPercent 
+        : VM.DialogService.ConfirmModalProgressPercent;
+
+    var cloudSelections = isBlazorActive && DialogService.CloudDeleteSelections.Count > 0 
+        ? DialogService.CloudDeleteSelections 
+        : VM.DialogService.CloudDeleteSelections;
+
+    var hasLocal = targetDetail?.HasLocalBackup == true;
+    var canProceedSnapshot = (hasLocal && DeleteLocalChecked) || cloudSelections.Values.Any(v => v);
+    var canProceedGame = string.Equals(SecurityInputText?.Trim(), "Delete All", StringComparison.OrdinalIgnoreCase);
+
+    var snapshotLocalPath = targetDetail?.LocalBackupPath ?? "";
+
+    var willDeleteEntireRecord = (!hasLocal || DeleteLocalChecked) && (cloudSelections.Count == 0 || !cloudSelections.Values.Any(v => !v));
+
+    var gameFolders = new List<string>();
+    if (targetGameHistory != null)
+    {
+        gameFolders = targetGameHistory.BackupFolderPaths;
+        if (gameFolders.Count == 0 && !string.IsNullOrEmpty(targetGameHistory.LatestBackupPath))
+        {
+            gameFolders = new List<string> { targetGameHistory.LatestBackupPath };
+        }
+    }
+
+    bool isStep1Valid = true;
+    if (deleteType == ConfirmDeleteType.Snapshot) isStep1Valid = canProceedSnapshot;
+    else if (deleteType == ConfirmDeleteType.Game) isStep1Valid = canProceedGame;
+}
+
+@if (isConfirmOpen)
+{
+    <div class="modal-backdrop z-50">
+        <div class="modal-content w-full max-w-lg border-2 border-red-500 flex flex-col shadow-2xl bg-[#0F172A]" @onclick:stopPropagation="true">
+            @if (ConfirmStep == 1)
+            {
+                <!-- STEP 1: Modal Xác Nhận Ban Đầu -->
+                <div class="bg-[#1E293B] border-b border-[#334155] px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-9 h-9 rounded-lg bg-red-600/20 border border-red-500/40 flex items-center justify-center">
+                            <span class="text-red-400 font-bold text-lg">⚠️</span>
+                        </div>
+                        <div>
+                            <h3 class="text-[16px] font-bold text-white tracking-wide">
+                                @title
+                            </h3>
+                            <span class="text-[11px] text-slate-400">
+                                @(deleteType == ConfirmDeleteType.Snapshot ? "Bước 1/2: Chọn vị trí lưu trữ muốn xóa" : (deleteType == ConfirmDeleteType.Game ? "Bước 1/2: Xác thực bảo mật xóa toàn bộ" : "Bước 1/2: Chọn phạm vi dữ liệu cần xóa"))
+                            </span>
+                        </div>
+                    </div>
+
+                    <button class="text-slate-400 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-700/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled="@isDeleting"
+                            @onclick="CancelConfirm">
+                        ✕
+                    </button>
+                </div>
+
+                <div class="p-6 space-y-4 bg-[#131C2E] max-h-[70vh] overflow-y-auto">
+                    <p class="text-[13px] text-slate-200 leading-relaxed whitespace-pre-line">
+                        @message
+                    </p>
+
+                    @if (deleteType == ConfirmDeleteType.Snapshot && targetDetail != null)
+                    {
+                        <!-- CÁC TÙY CHỌN XÓA TỪNG VỊ TRÍ CHO BẢN SNAPSHOT -->
+                        <div class="space-y-3 pt-1">
+                            <div class="text-[12px] font-bold text-slate-300 flex items-center justify-between">
+                                <span>Vị trí lưu trữ cần xóa:</span>
+                                @if (!canProceedSnapshot)
+                                {
+                                    <span class="text-[11px] text-amber-400 font-normal animate-pulse">⚠️ Chọn ít nhất 1 vị trí</span>
+                                }
+                            </div>
+
+                            <!-- Checkbox Local (Chỉ hiện khi bản sao lưu còn tồn tại trên máy) -->
+                            @if (hasLocal)
+                            {
+                                <div class="p-3.5 rounded-lg transition-colors border @(DeleteLocalChecked ? "border-red-500/70 bg-red-950/40 shadow-sm" : "border-slate-700/70 bg-slate-900/40")">
+                                    <label class="flex items-start gap-3 cursor-pointer select-none">
+                                        <input type="checkbox"
+                                               class="checkbox-custom mt-1"
+                                               checked="@DeleteLocalChecked"
+                                               disabled="@isDeleting"
+                                               @onchange="ToggleDeleteLocal" />
+                                        <div class="flex flex-col flex-1 min-w-0">
+                                            <span class="text-[13px] text-white font-semibold flex items-center space-x-1.5">
+                                                <span>💻</span>
+                                                <span>Xóa bản lưu trên máy tính (Local)</span>
+                                            </span>
+                                            @if (!string.IsNullOrEmpty(snapshotLocalPath))
+                                            {
+                                                <span class="text-[11px] text-red-300 font-mono mt-1 break-all select-text">
+                                                    @snapshotLocalPath
+                                                </span>
+                                            }
+                                        </div>
+                                    </label>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="p-3 rounded-lg border border-slate-800 bg-slate-900/50 flex items-center justify-between text-slate-400">
+                                    <div class="flex items-center space-x-2 text-[12.5px]">
+                                        <span>💻</span>
+                                        <span>Bản lưu trên máy tính:</span>
+                                    </div>
+                                    <span class="text-[11px] text-slate-400 font-medium bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/50">
+                                        Đã xóa khỏi máy tính
+                                    </span>
+                                </div>
+                            }
+
+                            <!-- Checkbox cho từng Cloud -->
+                            @if (cloudSelections.Count > 0)
+                            {
+                                @foreach (var kvp in cloudSelections)
+                                {
+                                    var provider = kvp.Key;
+                                    var isChecked = kvp.Value;
+                                    var cloudUrl = targetDetail.CloudUrls.GetValueOrDefault(provider) 
+                                        ?? targetDetail.CloudSyncList.FirstOrDefault(c => c.Provider.Equals(provider, StringComparison.OrdinalIgnoreCase))?.WebViewUrl 
+                                        ?? "";
+
+                                    <div class="p-3.5 rounded-lg transition-colors border @(isChecked ? "border-red-500/70 bg-red-950/40 shadow-sm" : "border-slate-700/70 bg-slate-900/40")">
+                                        <label class="flex items-start gap-3 cursor-pointer select-none">
+                                            <input type="checkbox"
+                                                   class="checkbox-custom mt-1"
+                                                   checked="@isChecked"
+                                                   disabled="@isDeleting"
+                                                   @onchange="(e) => ToggleCloudProvider(provider, e)" />
+                                            <div class="flex flex-col flex-1 min-w-0">
+                                                <span class="text-[13px] text-white font-semibold flex items-center space-x-1.5">
+                                                    <span>☁️</span>
+                                                    <span>Xóa bản lưu trên @provider</span>
+                                                </span>
+                                                @if (!string.IsNullOrEmpty(cloudUrl))
+                                                {
+                                                    <span class="text-[11px] text-cyan-400 font-mono mt-1 break-all select-text">
+                                                        @cloudUrl
+                                                    </span>
+                                                }
+                                            </div>
+                                        </label>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                    else if (deleteType == ConfirmDeleteType.Game && targetGameHistory != null)
+                    {
+                        <!-- XÁC THỰC BẢO MẬT KHI XÓA TOÀN BỘ GAME -->
+                        <div class="space-y-4 pt-1">
+                            <div class="p-4 rounded-xl bg-red-950/40 border border-red-500/50 space-y-2">
+                                <label class="text-[12.5px] font-bold text-red-200 block">
+                                    Nhập chữ <span class="px-2 py-0.5 rounded bg-red-600 text-white font-mono uppercase tracking-wider select-all">Delete All</span> để xác nhận:
+                                </label>
+                                <input type="text"
+                                       class="w-full bg-[#0A0F1D] border @(canProceedGame ? "border-emerald-500 text-emerald-300" : "border-red-500/60 text-white") rounded-lg px-3.5 py-2 text-sm font-mono focus:outline-none focus:border-red-400 placeholder-slate-500"
+                                       placeholder="Nhập 'Delete All' tại đây..."
+                                       value="@SecurityInputText"
+                                       disabled="@isDeleting"
+                                       @oninput="OnSecurityInputChanged" />
+                                @if (!string.IsNullOrEmpty(SecurityInputText) && !canProceedGame)
+                                {
+                                    <div class="text-[11px] text-red-400">Chữ nhập chưa khớp với 'Delete All'</div>
+                                }
+                            </div>
+
+                            @if (showCloudOption || targetGameHistory.HasCloudBackup)
+                            {
+                                <div class="p-3.5 rounded-lg transition-colors border @(DeleteAlsoFromCloud ? "border-red-500/70 bg-red-950/40" : "border-slate-700/70 bg-slate-900/40")">
+                                    <label class="flex items-start gap-3 cursor-pointer select-none">
+                                        <input type="checkbox"
+                                               class="checkbox-custom mt-0.5"
+                                               checked="@DeleteAlsoFromCloud"
+                                               disabled="@isDeleting"
+                                               @onchange="ToggleCloudDelete" />
+                                        <div class="flex flex-col">
+                                            <span class="text-[12.5px] text-white font-semibold">
+                                                Xóa luôn thư mục của game này trên Cloud (Google Drive / OneDrive)
+                                            </span>
+                                            <span class="text-[11px] text-slate-400 mt-0.5">
+                                                Xóa sạch folder game trên tài khoản đám mây đã đồng bộ
+                                            </span>
+                                        </div>
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- THAO TÁC XÓA THÔNG THƯỜNG -->
+                        @if (!string.IsNullOrEmpty(targetPath))
+                        {
+                            <div class="bg-red-950/20 border border-red-500/30 rounded-lg p-3 font-mono text-[11px] text-red-300 select-text break-all">
+                                @targetPath
+                            </div>
+                        }
+
+                        @if (showCloudOption)
+                        {
+                            <div class="p-3.5 rounded-lg bg-red-950/30 border border-red-500/30">
+                                <label class="flex items-center gap-3.5 cursor-pointer select-none">
+                                    <input type="checkbox"
+                                           class="checkbox-custom"
+                                           checked="@DeleteAlsoFromCloud"
+                                           disabled="@isDeleting"
+                                           @onchange="ToggleCloudDelete" />
+                                    <div class="flex flex-col">
+                                        <span class="text-[13px] text-white font-semibold">
+                                            Xóa luôn bản sao lưu tương ứng trên Cloud
+                                        </span>
+                                        <span class="text-[11px] text-slate-400">
+                                            Đồng thời xóa tệp sao lưu trên Google Drive hoặc Microsoft OneDrive
+                                        </span>
+                                    </div>
+                                </label>
+                            </div>
+                        }
+                    }
+
+                    @if (isDeleting)
+                    {
+                        <div class="bg-[#0F172A] border border-red-500/40 rounded-lg p-3.5 space-y-2">
+                            <div class="flex items-center justify-between text-[12px] text-red-400">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></div>
+                                    <span class="font-medium">@(string.IsNullOrEmpty(progressText) ? "Đang xóa dữ liệu..." : progressText)</span>
+                                </div>
+                                <span class="font-mono font-bold text-red-400">@progressPercent%</span>
+                            </div>
+                            <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+                                <div class="bg-gradient-to-r from-red-600 to-red-400 h-2 rounded-full transition-all duration-300"
+                                     style="width: @(Math.Clamp(progressPercent, 0, 100))%;"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Footer Bước 1 -->
+                <div class="bg-[#0F172A] border-t border-[#1E293B] px-6 py-3.5 flex items-center justify-between">
+                    <button class="btn-secondary py-2 px-4 text-[12px] flex items-center space-x-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled="@isDeleting"
+                            @onclick="CancelConfirm">
+                        <span>✕ Hủy bỏ</span>
+                    </button>
+
+                    <button class="btn-danger py-2 px-6 text-[12.5px] font-bold flex items-center space-x-2 bg-red-600 border-red-500 hover:bg-red-700 text-white rounded-lg shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled="@(isDeleting || !isStep1Valid)"
+                            @onclick="GoToStep2">
+                        @if (isDeleting)
+                        {
+                            <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
+                            <span>Đang Xử Lý...</span>
+                        }
+                        else
+                        {
+                            <span>Tiếp Tục ➔</span>
+                        }
+                    </button>
+                </div>
+            }
+            else
+            {
+                <!-- STEP 2: Modal Tóm Tắt Thông Tin Chi Tiết & Xác Nhận Xóa Cuối Cùng -->
+                <div class="bg-[#1E293B] border-b border-[#334155] px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-9 h-9 rounded-lg bg-red-600/30 border border-red-500/50 flex items-center justify-center">
+                            <span class="text-red-400 font-bold text-lg">🚨</span>
+                        </div>
+                        <div>
+                            <h3 class="text-[16px] font-bold text-white tracking-wide text-red-400">
+                                XÁC NHẬN LẦN CUỐI: TÓM TẮT DỮ LIỆU
+                            </h3>
+                            <span class="text-[11px] text-slate-400">Bước 2/2: Kiểm tra cẩn thận trước khi xóa vĩnh viễn</span>
+                        </div>
+                    </div>
+
+                    <button class="text-slate-400 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-700/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled="@isDeleting"
+                            @onclick="CancelConfirm">
+                        ✕
+                    </button>
+                </div>
+
+                <div class="p-6 space-y-4 bg-[#131C2E] max-h-[70vh] overflow-y-auto">
+                    <div class="text-[13px] text-red-200 font-medium">
+                        Hành động này <strong class="text-red-400 underline">không thể hoàn tác</strong>. Dữ liệu đã chọn xóa sẽ biến mất vĩnh viễn:
+                    </div>
+
+                    <!-- Bảng Tóm Tắt Chi Tiết -->
+                    <div class="bg-[#0A0F1D] border border-red-500/40 rounded-xl p-4 space-y-3 shadow-inner">
+                        @if (deleteType == ConfirmDeleteType.Snapshot && targetDetail != null)
+                        {
+                            <!-- RECAP CHO SNAPSHOT -->
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                                <span class="text-[12px] text-slate-400">Tên Game:</span>
+                                <span class="text-[12.5px] font-bold text-white">@targetDetail.GameName</span>
+                            </div>
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                                <span class="text-[12px] text-slate-400">Ngày sao lưu:</span>
+                                <span class="font-mono text-[12px] text-white">@targetDetail.BackupDate.ToString("dd/MM/yyyy HH:mm:ss")</span>
+                            </div>
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                                <span class="text-[12px] text-slate-400">Dung lượng:</span>
+                                <span class="font-mono text-[12px] text-emerald-400 font-bold">@targetDetail.FormattedSize</span>
+                            </div>
+
+                            <!-- Trạng thái Local -->
+                            <div class="border-b border-slate-800 pb-2.5 space-y-1">
+                                <div class="text-[11.5px] text-slate-400">Lưu trữ trên máy tính (Local):</div>
+                                @if (hasLocal)
+                                {
+                                    @if (DeleteLocalChecked)
+                                    {
+                                        <div class="bg-red-950/50 border border-red-500/50 p-2.5 rounded-lg text-red-300 text-[12px] font-semibold space-y-1">
+                                            <div class="flex items-center space-x-1.5 text-red-400">
+                                                <span>⚠️ SẼ XÓA VĨNH VIỄN KHỎI Ổ ĐĨA</span>
+                                            </div>
+                                            <div class="font-mono text-[11px] text-red-200/80 break-all select-text">@snapshotLocalPath</div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="bg-emerald-950/40 border border-emerald-500/50 p-2 rounded-lg text-emerald-300 text-[12px] font-semibold flex items-center space-x-1.5">
+                                            <span>🛡️ GIỮ LẠI TRÊN MÁY TÍNH</span>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="bg-slate-900/60 border border-slate-800 p-2 rounded-lg text-slate-400 text-[12px] flex items-center space-x-1.5">
+                                        <span>☁️ Đã xóa khỏi máy tính (Chỉ còn lưu trên Cloud)</span>
+                                    </div>
+                                }
+                            </div>
+
+                            <!-- Trạng thái từng Cloud -->
+                            <div class="space-y-2">
+                                <div class="text-[11.5px] text-slate-400">Lưu trữ Đám mây (Cloud):</div>
+                                @if (cloudSelections.Count > 0)
+                                {
+                                    @foreach (var kvp in cloudSelections)
+                                    {
+                                        var provider = kvp.Key;
+                                        var isDel = kvp.Value;
+                                        var cloudUrl = targetDetail.CloudUrls.GetValueOrDefault(provider) ?? "";
+
+                                        if (isDel)
+                                        {
+                                            <div class="bg-red-950/50 border border-red-500/50 p-2.5 rounded-lg text-red-300 text-[12px] font-semibold space-y-1">
+                                                <div class="flex items-center space-x-1.5 text-red-400">
+                                                    <span>⚠️ SẼ XÓA KHỎI @provider</span>
+                                                </div>
+                                                @if (!string.IsNullOrEmpty(cloudUrl))
+                                                {
+                                                    <div class="font-mono text-[11px] text-cyan-300/80 break-all select-text">@cloudUrl</div>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="bg-emerald-950/40 border border-emerald-500/50 p-2 rounded-lg text-emerald-300 text-[12px] font-semibold flex items-center space-x-1.5">
+                                                <span>🛡️ GIỮ LẠI TRÊN @provider</span>
+                                            </div>
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="text-[12px] text-slate-400 italic">Không có dữ liệu Cloud đồng bộ.</div>
+                                }
+                            </div>
+
+                            <!-- Quy tắc cập nhật record -->
+                            <div class="pt-2 border-t border-slate-800/80">
+                                @if (willDeleteEntireRecord)
+                                {
+                                    <div class="text-[11.5px] text-red-400 font-bold flex items-center space-x-1.5">
+                                        <span>🚨</span>
+                                        <span>Bản ghi snapshot này sẽ bị XÓA HOÀN TOÀN khỏi lịch sử.</span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="text-[11.5px] text-cyan-300 font-medium flex items-center space-x-1.5">
+                                        <span>ℹ️</span>
+                                        <span>Bản ghi vẫn được giữ trong lịch sử với các vị trí lưu còn lại.</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else if (deleteType == ConfirmDeleteType.Game && targetGameHistory != null)
+                        {
+                            <!-- RECAP CHO XÓA TOÀN BỘ GAME -->
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                                <span class="text-[12px] text-slate-400">Game cần xóa:</span>
+                                <span class="text-[13px] font-bold text-red-400">@targetGameHistory.GameName</span>
+                            </div>
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                                <span class="text-[12px] text-slate-400">Tổng số bản sao lưu:</span>
+                                <span class="font-mono text-[12px] text-white font-bold">@targetGameHistory.BackupCount bản</span>
+                            </div>
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                                <span class="text-[12px] text-slate-400">Tổng dung lượng giải phóng:</span>
+                                <span class="font-mono text-[12px] text-emerald-400 font-bold">@targetGameHistory.FormattedTotalSize</span>
+                            </div>
+
+                            <!-- Thư mục local sẽ bị xóa -->
+                            <div class="border-b border-slate-800 pb-2.5 space-y-1.5">
+                                <div class="text-[11.5px] text-slate-400">Thư mục trên ổ đĩa sẽ bị xóa:</div>
+                                @foreach (var f in gameFolders)
+                                {
+                                    <div class="font-mono text-[11px] text-red-300 bg-red-950/40 p-2 rounded border border-red-500/20 break-all select-text">
+                                        📁 @f
+                                    </div>
+                                }
+                            </div>
+
+                            <!-- Trạng thái Cloud -->
+                            <div>
+                                <div class="text-[11.5px] text-slate-400 mb-1">Trạng thái Cloud (Đám mây):</div>
+                                @if (DeleteAlsoFromCloud)
+                                {
+                                    <div class="bg-red-950/50 border border-red-500/50 p-2.5 rounded-lg text-red-300 text-[12px] font-bold">
+                                        ⚠️ CÓ XÓA TRÊN CLOUD: Toàn bộ thư mục game trên Google Drive / OneDrive sẽ bị xóa vĩnh viễn!
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="bg-emerald-950/40 border border-emerald-500/50 p-2 rounded-lg text-emerald-300 text-[12px] font-semibold">
+                                        🛡️ KHÔNG XÓA TRÊN CLOUD: Chỉ xóa file trên máy, thư mục trên Cloud được giữ an toàn.
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <!-- RECAP CHUNG -->
+                            <div class="flex items-start justify-between border-b border-slate-800 pb-2.5">
+                                <span class="text-[12px] text-slate-400">Hành động:</span>
+                                <span class="text-[12.5px] font-bold text-white text-right">@title</span>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(targetPath))
+                            {
+                                <div class="border-b border-slate-800 pb-2.5">
+                                    <div class="text-[11.5px] text-slate-400 mb-1">Vị trí lưu trên máy tính (Local):</div>
+                                    <div class="font-mono text-[11px] text-red-300 bg-red-950/30 p-2.5 rounded-lg border border-red-500/20 break-all select-text">
+                                        @targetPath
+                                    </div>
+                                </div>
+                            }
+
+                            <div>
+                                <div class="text-[11.5px] text-slate-400 mb-1">Trạng thái Cloud (Đám mây):</div>
+                                @if (showCloudOption && DeleteAlsoFromCloud)
+                                {
+                                    <div class="bg-red-950/50 border border-red-500/50 p-2.5 rounded-lg text-red-300 text-[12px] font-bold">
+                                        ⚠️ CÓ XÓA TRÊN CLOUD: Bản sao lưu tương ứng trên Google Drive / OneDrive cũng sẽ bị xóa vĩnh viễn!
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="bg-emerald-950/40 border border-emerald-500/50 p-2 rounded-lg text-emerald-300 text-[12px] font-semibold">
+                                        🛡️ KHÔNG XÓA TRÊN CLOUD: Bản sao lưu trên đám mây được giữ an toàn.
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    @if (isDeleting)
+                    {
+                        <div class="bg-[#0F172A] border border-red-500/40 rounded-lg p-3.5 space-y-2">
+                            <div class="flex items-center justify-between text-[12px] text-red-400">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></div>
+                                    <span class="font-medium">@(string.IsNullOrEmpty(progressText) ? "Đang xóa dữ liệu..." : progressText)</span>
+                                </div>
+                                <span class="font-mono font-bold text-red-400">@progressPercent%</span>
+                            </div>
+                            <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+                                <div class="bg-gradient-to-r from-red-600 to-red-400 h-2 rounded-full transition-all duration-300"
+                                     style="width: @(Math.Clamp(progressPercent, 0, 100))%;"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Footer Bước 2 -->
+                <div class="bg-[#0F172A] border-t border-[#1E293B] px-6 py-3.5 flex items-center justify-between">
+                    <button class="btn-secondary py-2 px-3 text-[12px] flex items-center space-x-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                            disabled="@isDeleting"
+                            @onclick="() => ConfirmStep = 1">
+                        <span>⬅ Quay Lại</span>
+                    </button>
+
+                    <button class="btn-danger py-2 px-6 text-[12.5px] font-bold flex items-center space-x-2 bg-red-600 border-red-500 hover:bg-red-700 text-white rounded-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled="@isDeleting"
+                            @onclick="ExecuteConfirm">
+                        @if (isDeleting)
+                        {
+                            <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
+                            <span>Đang Xóa...</span>
+                        }
+                        else
+                        {
+                            <span>🗑 Xác Nhận Xóa Vĩnh Viễn</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private int ConfirmStep { get; set; } = 1;
+
+    private bool DeleteAlsoFromCloud
+    {
+        get => DialogService.IsConfirmModalOpen 
+            ? DialogService.DeleteAlsoFromCloud 
+            : VM.DialogService.DeleteAlsoFromCloud;
+        set
+        {
+            DialogService.DeleteAlsoFromCloud = value;
+            VM.DialogService.DeleteAlsoFromCloud = value;
+        }
+    }
+
+    private bool DeleteLocalChecked
+    {
+        get
+        {
+            var target = DialogService.IsConfirmModalOpen && DialogService.TargetDetail != null
+                ? DialogService.TargetDetail
+                : VM.DialogService.TargetDetail;
+            if (target != null && !target.HasLocalBackup) return false;
+
+            return DialogService.IsConfirmModalOpen 
+                ? DialogService.DeleteLocalChecked 
+                : VM.DialogService.DeleteLocalChecked;
+        }
+        set
+        {
+            DialogService.DeleteLocalChecked = value;
+            VM.DialogService.DeleteLocalChecked = value;
+        }
+    }
+
+    private string SecurityInputText
+    {
+        get => DialogService.IsConfirmModalOpen 
+            ? DialogService.SecurityInputText 
+            : VM.DialogService.SecurityInputText;
+        set
+        {
+            DialogService.SecurityInputText = value;
+            VM.DialogService.SecurityInputText = value;
+        }
+    }
+
+    private bool _wasModalOpen = false;
+
+    protected override void OnInitialized()
+    {
+        VM.DialogService.PropertyChanged += OnStateChanged;
+        DialogService.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        var isOpen = VM.DialogService.IsConfirmModalOpen || DialogService.IsConfirmModalOpen;
+        if (isOpen && !_wasModalOpen)
+        {
+            ConfirmStep = 1;
+        }
+        else if (!isOpen)
+        {
+            ConfirmStep = 1;
+        }
+        _wasModalOpen = isOpen;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleCloudDelete(ChangeEventArgs e)
+    {
+        if (e.Value is bool val)
+        {
+            DeleteAlsoFromCloud = val;
+        }
+    }
+
+    private void ToggleDeleteLocal(ChangeEventArgs e)
+    {
+        if (e.Value is bool val)
+        {
+            DeleteLocalChecked = val;
+        }
+    }
+
+    private void ToggleCloudProvider(string provider, ChangeEventArgs e)
+    {
+        if (e.Value is bool val)
+        {
+            DialogService.CloudDeleteSelections[provider] = val;
+            VM.DialogService.CloudDeleteSelections[provider] = val;
+        }
+    }
+
+    private void OnSecurityInputChanged(ChangeEventArgs e)
+    {
+        SecurityInputText = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private void GoToStep2()
+    {
+        ConfirmStep = 2;
+    }
+
+    private async Task ExecuteConfirm()
+    {
+        ConfirmStep = 1;
+        var isBlazorActive = DialogService.IsConfirmModalOpen;
+        var isVmActive = VM.DialogService.IsConfirmModalOpen;
+
+        if (isBlazorActive)
+        {
+            await DialogService.ExecuteConfirmActionAsync();
+        }
+        else if (isVmActive)
+        {
+            await VM.DialogService.ExecuteConfirmActionAsync();
+        }
+    }
+
+    private void CancelConfirm()
+    {
+        var isDeleting = DialogService.IsConfirmDeleting || VM.DialogService.IsConfirmModalDeleting;
+        if (isDeleting) return;
+
+        ConfirmStep = 1;
+        VM.DialogService.CancelConfirm();
+        DialogService.CloseConfirm();
+    }
+
+    public void Dispose()
+    {
+        VM.DialogService.PropertyChanged -= OnStateChanged;
+        DialogService.PropertyChanged -= OnStateChanged;
+    }
+}

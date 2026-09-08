@@ -16,6 +16,7 @@ public class AppConfigFile
     public string? BackupRootDirectory { get; set; }
     public bool CreateTimestampSubfolder { get; set; } = true;
     public bool AutoCompressZip { get; set; } = true; // Mặc định và bắt buộc nén zip 100%
+    public int PageSize { get; set; } = 10; // Số dòng trên mỗi trang cho các bảng phân trang
 
     // Nhà cung cấp Cloud hiện thời ("GoogleDrive" hoặc "OneDrive")
     public string ActiveCloudProvider { get; set; } = "GoogleDrive";

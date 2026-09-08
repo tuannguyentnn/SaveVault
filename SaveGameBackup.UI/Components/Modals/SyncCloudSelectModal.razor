@@ -1,0 +1,162 @@
+@namespace SaveGameBackup.UI.Components.Modals
+@inject MainViewModel VM
+@inject IBlazorDialogService DialogService
+@implements IDisposable
+
+@if (CloudVM.IsSyncCloudSelectModalOpen || DialogService.IsSyncCloudSelectModalOpen)
+{
+    var targetDetail = CloudVM.TargetSyncDetail ?? DialogService.TargetSyncDetail;
+
+    <div class="modal-backdrop">
+        <div class="modal-content w-full max-w-xl border-2 border-[#0284C7] flex flex-col">
+            <!-- Header (Image 5.JPG) -->
+            <div class="bg-[#1E293B] border-b border-[#334155] px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-lg bg-cyan-600/30 border border-cyan-500/50 flex items-center justify-center">
+                        <span class="text-cyan-400 font-bold text-lg">☁️</span>
+                    </div>
+                    <div>
+                        <h3 class="text-[17px] font-bold text-white tracking-wide">CHỌN DỊCH VỤ CLOUD ĐỂ ĐỒNG BỘ</h3>
+                        @if (targetDetail != null)
+                        {
+                            <div class="text-[11px] text-slate-400">
+                                @targetDetail.GameName - @targetDetail.BackupDate.ToString("dd/MM/yyyy HH:mm") (@targetDetail.FormattedSize)
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <button class="text-slate-400 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-700/50 transition-colors"
+                        disabled="@CloudVM.IsCloudSyncing"
+                        @onclick="CloseModal">
+                    ✕
+                </button>
+            </div>
+
+            <!-- Body Options (Image 5.JPG) -->
+            <div class="p-6 space-y-4 bg-[#131C2E]">
+                <!-- Option 1: Google Drive -->
+                <div class="bg-[#0F172A] border border-[#2D3748] hover:border-cyan-500/60 rounded-xl p-5 transition-all flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-2xl">
+                            📁
+                        </div>
+                        <div>
+                            <div class="font-bold text-white text-[14px]">Google Drive REST API</div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">
+                                Lưu trữ bản sao lưu vào thư mục đám mây Google Drive an toàn.
+                            </div>
+                            <div class="flex items-center space-x-2 mt-1">
+                                @if (CloudVM.IsGoogleDriveLoggedIn)
+                                {
+                                    <span class="inline-flex items-center space-x-1.5 text-[11px] text-emerald-400 font-medium">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                        <span>Đã kết nối@(string.IsNullOrEmpty(CloudVM.GoogleDriveAccountEmail) ? "" : $": {CloudVM.GoogleDriveAccountEmail}")</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="inline-flex items-center space-x-1.5 text-[11px] text-amber-400/80">
+                                        <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                        <span>Chưa đăng nhập (vào Cấu hình để kết nối)</span>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn-blue text-[12px] py-2 px-4 bg-[#0284C7] border-[#06B6D4] hover:bg-[#0369A1] flex items-center space-x-1"
+                            disabled="@CloudVM.IsCloudSyncing"
+                            @onclick='() => SyncToProvider("GoogleDrive")'>
+                        <span>Đồng Bộ</span>
+                        <span>➔</span>
+                    </button>
+                </div>
+
+                <!-- Option 2: Microsoft OneDrive -->
+                <div class="bg-[#0F172A] border border-[#2D3748] hover:border-cyan-500/60 rounded-xl p-5 transition-all flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 rounded-xl bg-cyan-600/20 border border-cyan-500/40 flex items-center justify-center text-2xl">
+                            ☁️
+                        </div>
+                        <div>
+                            <div class="font-bold text-white text-[14px]">Microsoft OneDrive (Graph API)</div>
+                            <div class="text-[11px] text-slate-400 mt-0.5">
+                                Lưu trữ trực tiếp vào kho lưu trữ đám mây Microsoft OneDrive.
+                            </div>
+                            <div class="flex items-center space-x-2 mt-1">
+                                @if (CloudVM.IsOneDriveLoggedIn)
+                                {
+                                    <span class="inline-flex items-center space-x-1.5 text-[11px] text-emerald-400 font-medium">
+                                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                        <span>Đã kết nối@(string.IsNullOrEmpty(CloudVM.OneDriveAccountEmail) ? "" : $": {CloudVM.OneDriveAccountEmail}")</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="inline-flex items-center space-x-1.5 text-[11px] text-amber-400/80">
+                                        <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                        <span>Chưa đăng nhập (vào Cấu hình để kết nối)</span>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn-blue text-[12px] py-2 px-4 bg-[#0284C7] border-[#06B6D4] hover:bg-[#0369A1] flex items-center space-x-1"
+                            disabled="@CloudVM.IsCloudSyncing"
+                            @onclick='() => SyncToProvider("OneDrive")'>
+                        <span>Đồng Bộ</span>
+                        <span>➔</span>
+                    </button>
+                </div>
+
+                @if (CloudVM.IsCloudSyncing)
+                {
+                    <div class="bg-[#0F172A] border border-cyan-500/40 rounded-lg p-3 mt-4">
+                        <div class="flex items-center justify-between text-[12px] mb-1.5">
+                            <span class="font-medium text-cyan-400">@CloudVM.CloudSyncProgressText</span>
+                            <span class="font-bold text-white font-mono">@CloudVM.CloudSyncProgressPercent%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                            <div class="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 transition-all duration-200"
+                                 style="width: @(CloudVM.CloudSyncProgressPercent)%"></div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private CloudSubViewModel CloudVM => VM.CloudVM;
+
+    protected override void OnInitialized()
+    {
+        CloudVM.PropertyChanged += OnStateChanged;
+        DialogService.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SyncToProvider(string providerName)
+    {
+        await CloudVM.ConfirmSyncToProviderAsync(providerName);
+    }
+
+    private void CloseModal()
+    {
+        CloudVM.CloseSyncCloudSelectModalCommand.Execute(null);
+        DialogService.CloseSyncCloudSelect();
+    }
+
+    public void Dispose()
+    {
+        CloudVM.PropertyChanged -= OnStateChanged;
+        DialogService.PropertyChanged -= OnStateChanged;
+    }
+}

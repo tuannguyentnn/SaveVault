@@ -105,6 +105,12 @@ public class CloudSubViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool IsGoogleDriveLoggedIn => _cloudManager.GoogleDrive.IsAuthenticated;
+    public string? GoogleDriveAccountEmail => _cloudManager.GoogleDrive.CurrentAccountEmail;
+
+    public bool IsOneDriveLoggedIn => _cloudManager.OneDrive.IsAuthenticated;
+    public string? OneDriveAccountEmail => _cloudManager.OneDrive.CurrentAccountEmail;
+
     public string? CloudAccountEmail
     {
         get => _cloudAccountEmail;
@@ -195,6 +201,44 @@ public class CloudSubViewModel : INotifyPropertyChanged
     {
         IsCloudLoggedIn = _cloudManager.IsLoggedIn();
         CloudAccountEmail = _cloudManager.GetSavedUserEmail();
+        OnPropertyChanged(nameof(IsGoogleDriveLoggedIn));
+        OnPropertyChanged(nameof(GoogleDriveAccountEmail));
+        OnPropertyChanged(nameof(IsOneDriveLoggedIn));
+        OnPropertyChanged(nameof(OneDriveAccountEmail));
+    }
+
+    public async Task ConnectGoogleDriveAsync()
+    {
+        _cloudManager.SetActiveProvider("GoogleDrive");
+        SelectedCloudProviderIndex = 0;
+        await ExecuteConnectCloudAccountAsync();
+        UpdateCloudStatusDisplay();
+    }
+
+    public async Task DisconnectGoogleDriveAsync()
+    {
+        _cloudManager.SetActiveProvider("GoogleDrive");
+        SelectedCloudProviderIndex = 0;
+        await _cloudManager.GoogleDrive.SignOutAsync();
+        UpdateCloudStatusDisplay();
+        _dialogService.ShowMessage("Đã Đăng Xuất", "Đã ngắt kết nối tài khoản Google Drive.", "Info");
+    }
+
+    public async Task ConnectOneDriveAsync()
+    {
+        _cloudManager.SetActiveProvider("OneDrive");
+        SelectedCloudProviderIndex = 1;
+        await ExecuteConnectCloudAccountAsync();
+        UpdateCloudStatusDisplay();
+    }
+
+    public async Task DisconnectOneDriveAsync()
+    {
+        _cloudManager.SetActiveProvider("OneDrive");
+        SelectedCloudProviderIndex = 1;
+        await _cloudManager.OneDrive.SignOutAsync();
+        UpdateCloudStatusDisplay();
+        _dialogService.ShowMessage("Đã Đăng Xuất", "Đã ngắt kết nối tài khoản Microsoft OneDrive.", "Info");
     }
 
     public async Task ExecuteConnectCloudAccountAsync()
@@ -291,9 +335,10 @@ public class CloudSubViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (!File.Exists(detail.BackupPath))
+        var localPath = detail.LocalBackupPath;
+        if (!File.Exists(localPath) && !Directory.Exists(localPath))
         {
-            _dialogService.ShowMessage("Không Tìm Thấy File", $"File sao lưu cục bộ không còn tồn tại tại:\n{detail.BackupPath}", "Error");
+            _dialogService.ShowMessage("Không Tìm Thấy File", $"File sao lưu cục bộ không còn tồn tại tại:\n{localPath}", "Error");
             return;
         }
 
@@ -303,8 +348,8 @@ public class CloudSubViewModel : INotifyPropertyChanged
         _syncCts = new CancellationTokenSource();
 
         var dateFormatted = detail.BackupDate.ToString("dd/MM/yyyy HH:mm");
-        _dialogService.ShowProgress("Đồng Bộ Cloud", $"Đang đồng bộ snapshot ngày {dateFormatted} lên {provider.DisplayName}...", 0);
-        LoggingService.LogAction("Cloud_Upload_Start", new { Game = detail.GameName, Provider = providerName, File = detail.BackupPath });
+        _dialogService.ShowProgress("Đồng Bộ Cloud", $"Đang đồng bộ snapshot ngày {dateFormatted} lên {provider.DisplayName}...", 0, onCancel: () => ExecuteCancelSync());
+        LoggingService.LogAction("Cloud_Upload_Start", new { Game = detail.GameName, Provider = providerName, File = localPath });
 
         var progress = new Progress<BackupProgress>(p =>
         {
@@ -320,8 +365,23 @@ public class CloudSubViewModel : INotifyPropertyChanged
             _dialogService.CloseProgress();
             if (result.Success)
             {
-                _dialogService.ShowMessage("Đồng Bộ Thành Công", $"Đã tải snapshot của game '{detail.GameName}' lên {provider.DisplayName} thành công!", "Success");
-                LoggingService.LogAction("Cloud_Upload_Success", new { Game = detail.GameName, Provider = providerName });
+                var fileUrl = result.WebUrl;
+                if (string.IsNullOrEmpty(fileUrl) && !string.IsNullOrEmpty(result.FileId))
+                {
+                    fileUrl = providerName.Equals("OneDrive", StringComparison.OrdinalIgnoreCase)
+                        ? $"https://onedrive.live.com/?id={Uri.EscapeDataString(result.FileId)}"
+                        : $"https://drive.google.com/file/d/{Uri.EscapeDataString(result.FileId)}/view";
+                }
+
+                _dialogService.ShowMessage(
+                    "Đồng Bộ Thành Công",
+                    $"Đã tải snapshot của game '{detail.GameName}' lên {provider.DisplayName} thành công!",
+                    "Success",
+                    null,
+                    fileUrl,
+                    $"Mở Xem Trên {provider.DisplayName} ↗");
+
+                LoggingService.LogAction("Cloud_Upload_Success", new { Game = detail.GameName, Provider = providerName, Url = fileUrl });
                 _eventBus.Publish(new HistoryChangedEvent());
             }
             else
@@ -377,11 +437,23 @@ public class CloudSubViewModel : INotifyPropertyChanged
         {
             var syncInfo = detail.CloudSyncList.FirstOrDefault();
             url = syncInfo?.WebViewUrl;
-            if (string.IsNullOrEmpty(url) && !string.IsNullOrEmpty(detail.CloudFileId))
+            var fileId = !string.IsNullOrEmpty(detail.CloudFileId) ? detail.CloudFileId : syncInfo?.FileId;
+            var provider = !string.IsNullOrEmpty(detail.CloudProvider) ? detail.CloudProvider : syncInfo?.Provider;
+
+            if (string.IsNullOrEmpty(url))
             {
-                url = detail.CloudProvider.Equals("OneDrive", StringComparison.OrdinalIgnoreCase)
-                    ? $"https://onedrive.live.com/?id={Uri.EscapeDataString(detail.CloudFileId)}"
-                    : $"https://drive.google.com/file/d/{Uri.EscapeDataString(detail.CloudFileId)}/view";
+                if (!string.IsNullOrEmpty(fileId))
+                {
+                    url = provider != null && provider.Equals("OneDrive", StringComparison.OrdinalIgnoreCase)
+                        ? $"https://onedrive.live.com/?id={Uri.EscapeDataString(fileId)}"
+                        : $"https://drive.google.com/file/d/{Uri.EscapeDataString(fileId)}/view";
+                }
+                else if (!string.IsNullOrEmpty(provider))
+                {
+                    url = provider.Equals("OneDrive", StringComparison.OrdinalIgnoreCase)
+                        ? "https://onedrive.live.com/"
+                        : "https://drive.google.com/drive/my-drive";
+                }
             }
         }
         else if (param is string urlStr && (urlStr.StartsWith("http://") || urlStr.StartsWith("https://")))

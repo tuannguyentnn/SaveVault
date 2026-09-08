@@ -77,7 +77,23 @@ public class BackupRecord
 {
     public long Id { get; set; }
     public string GameName { get; set; } = string.Empty;
-    public string BackupPath { get; set; } = string.Empty;
+    private string _backupPath = string.Empty;
+    public string BackupPath
+    {
+        get => _backupPath;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value) && value.TrimStart().StartsWith("{"))
+            {
+                var loc = BackupPathLocations.FromJson(value);
+                _backupPath = loc.LocalPath ?? string.Empty;
+            }
+            else
+            {
+                _backupPath = value ?? string.Empty;
+            }
+        }
+    }
     public string SourcePath { get; set; } = string.Empty;
     public int FileCount { get; set; }
     public long TotalSizeBytes { get; set; }
@@ -315,6 +331,28 @@ public class GameBackupSummary : INotifyPropertyChanged
     public string SavePaths => LatestRecord?.SavePaths ?? string.Empty;
     public List<string> SavePathsList => LatestRecord?.SavePathsList ?? new List<string>();
 
+    public List<string> BackupFolderPaths
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(LatestBackupPath))
+            {
+                try
+                {
+                    if (LatestBackupPath.TrimStart().StartsWith("["))
+                    {
+                        var list = JsonSerializer.Deserialize<List<string>>(LatestBackupPath);
+                        if (list != null && list.Count > 0) return list;
+                    }
+                }
+                catch { }
+
+                return new List<string> { LatestBackupPath.Trim() };
+            }
+            return new List<string>();
+        }
+    }
+
     private static string FormatBytes(long bytes)
     {
         if (bytes < 1024) return $"{bytes} B";
@@ -419,6 +457,13 @@ public class GameHistoryEntry : INotifyPropertyChanged
         set => SetField(ref _note, value);
     }
 
+    private bool _hasCloudBackup;
+    public bool HasCloudBackup
+    {
+        get => _hasCloudBackup;
+        set => SetField(ref _hasCloudBackup, value);
+    }
+
     public string FormattedTotalSize => FormatBytes(TotalSizeBytes);
     public string FormattedLatestSize => FormatBytes(LatestSizeBytes);
     public string FormattedLatestDate => LatestBackupDate != DateTime.MinValue ? LatestBackupDate.ToString("dd/MM/yyyy HH:mm") : "-";
@@ -450,6 +495,28 @@ public class GameHistoryEntry : INotifyPropertyChanged
         }
     }
 
+    public List<string> BackupFolderPaths
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(LatestBackupPath))
+            {
+                try
+                {
+                    if (LatestBackupPath.TrimStart().StartsWith("["))
+                    {
+                        var list = JsonSerializer.Deserialize<List<string>>(LatestBackupPath);
+                        if (list != null && list.Count > 0) return list;
+                    }
+                }
+                catch { }
+
+                return new List<string> { LatestBackupPath.Trim() };
+            }
+            return new List<string>();
+        }
+    }
+
     private static string FormatBytes(long bytes)
     {
         if (bytes < 1024) return $"{bytes} B";
@@ -472,6 +539,38 @@ public class GameHistoryEntry : INotifyPropertyChanged
 }
 
 /// <summary>
+/// Cấu trúc lưu vết đường dẫn sao lưu của 1 snapshot: vị trí file cục bộ (LocalPath) và danh sách URL xem online trên các Cloud (CloudUrls)
+/// </summary>
+public class BackupPathLocations
+{
+    public string? LocalPath { get; set; }
+    public Dictionary<string, string> CloudUrls { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public static BackupPathLocations FromJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new BackupPathLocations();
+        try
+        {
+            if (json.TrimStart().StartsWith("{"))
+            {
+                var loc = JsonSerializer.Deserialize<BackupPathLocations>(json);
+                if (loc != null) return loc;
+            }
+            return new BackupPathLocations { LocalPath = json.Trim() };
+        }
+        catch
+        {
+            return new BackupPathLocations { LocalPath = json?.Trim() };
+        }
+    }
+
+    public string ToJson()
+    {
+        return JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = false });
+    }
+}
+
+/// <summary>
 /// Đại diện cho 1 dòng trong bảng backup_history_details (Detail table - từng bản snapshot sao lưu)
 /// </summary>
 public class BackupHistoryDetail : INotifyPropertyChanged
@@ -480,6 +579,7 @@ public class BackupHistoryDetail : INotifyPropertyChanged
     private long _gameHistoryId;
     private string _gameName = string.Empty;
     private string _backupPath = string.Empty;
+    private BackupPathLocations? _locations;
     private string _sourcePath = string.Empty;
     private string _savePaths = string.Empty;
     private string _manifestJson = string.Empty;
@@ -516,7 +616,66 @@ public class BackupHistoryDetail : INotifyPropertyChanged
     public string BackupPath
     {
         get => _backupPath;
-        set => SetField(ref _backupPath, value);
+        set
+        {
+            if (SetField(ref _backupPath, value))
+            {
+                _locations = null;
+                OnPropertyChanged(nameof(LocalBackupPath));
+                OnPropertyChanged(nameof(HasLocalBackup));
+                OnPropertyChanged(nameof(HasCloudBackup));
+                OnPropertyChanged(nameof(HasAnyBackup));
+                OnPropertyChanged(nameof(CloudUrls));
+            }
+        }
+    }
+
+    public BackupPathLocations Locations
+    {
+        get
+        {
+            _locations ??= BackupPathLocations.FromJson(_backupPath);
+            return _locations;
+        }
+    }
+
+    public void SyncLocationsToBackupPath()
+    {
+        _backupPath = Locations.ToJson();
+        OnPropertyChanged(nameof(BackupPath));
+        OnPropertyChanged(nameof(LocalBackupPath));
+        OnPropertyChanged(nameof(HasLocalBackup));
+        OnPropertyChanged(nameof(HasCloudBackup));
+        OnPropertyChanged(nameof(HasAnyBackup));
+        OnPropertyChanged(nameof(CloudUrls));
+    }
+
+    public string LocalBackupPath => Locations.LocalPath ?? string.Empty;
+
+    public bool HasLocalBackup => !string.IsNullOrEmpty(LocalBackupPath) && (File.Exists(LocalBackupPath) || Directory.Exists(LocalBackupPath));
+
+    public bool HasCloudBackup => Locations.CloudUrls.Count > 0 || IsCloudSynced;
+
+    public bool HasAnyBackup => HasLocalBackup || HasCloudBackup;
+
+    public Dictionary<string, string> CloudUrls => Locations.CloudUrls;
+
+    public void SetLocalPath(string? localPath)
+    {
+        Locations.LocalPath = localPath;
+        SyncLocationsToBackupPath();
+    }
+
+    public void SetCloudUrl(string provider, string url)
+    {
+        Locations.CloudUrls[provider] = url;
+        SyncLocationsToBackupPath();
+    }
+
+    public void RemoveCloudUrl(string provider)
+    {
+        Locations.CloudUrls.Remove(provider);
+        SyncLocationsToBackupPath();
     }
 
     public string SourcePath

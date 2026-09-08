@@ -473,6 +473,33 @@ public class OneDriveApiService : ICloudStorageService
         return true;
     }
 
+    public async Task<bool> DeleteFolderAsync(string remoteFolderName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(remoteFolderName)) return true;
+        try
+        {
+            await EnsureAccessTokenAsync(cancellationToken);
+            var deleteUrl = $"{GraphApiDriveEndpoint}/root:/SaveVault_Backups/{Uri.EscapeDataString(remoteFolderName)}";
+            using var req = new HttpRequestMessage(HttpMethod.Delete, deleteUrl);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+
+            var response = await _httpClient.SendAsync(req, cancellationToken);
+            if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.NotFound)
+            {
+                var errContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                var errMessage = ExtractApiErrorMessage(errContent);
+                LoggingService.Warn("OneDrive: Xóa thư mục '{Folder}' thất bại ({StatusCode}): {Error}", remoteFolderName, response.StatusCode, errMessage);
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("OneDrive: Lỗi xóa thư mục game '{Folder}': {Message}", remoteFolderName, ex.Message);
+            return false;
+        }
+    }
+
     public async Task<List<CloudFileInfo>> ListBackupsAsync(
         string? remoteGameFolderName = null,
         CancellationToken cancellationToken = default)

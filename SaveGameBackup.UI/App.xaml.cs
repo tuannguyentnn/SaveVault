@@ -1,93 +1,51 @@
-using System;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Threading;
-using SaveGameBackup.Core.Services;
+namespace SaveGameBackup.UI;
 
-namespace SaveGameBackup.UI
+public partial class App : Application
 {
-    /// <summary>
-    /// Interaction logic for App.xaml
-    /// </summary>
-    public partial class App : Application
+    public const int WindowWidth = 1400;
+    public const int WindowHeight = 950;
+
+    public App()
     {
-        protected override void OnStartup(StartupEventArgs e)
+        InitializeComponent();
+    }
+
+    protected override Window CreateWindow(IActivationState? activationState)
+    {
+        var window = new Window(new MainPage())
         {
-            base.OnStartup(e);
+            Title = "SaveVault - Game Save Backup Tool (.NET 10 & SQLite & Cloud Sync)",
+            Width = WindowWidth,
+            Height = WindowHeight,
+            MinimumWidth = WindowWidth,
+            MinimumHeight = WindowHeight
+        };
 
-            // 1. Khởi tạo Serilog ghi log JSON tại Root/Logs/
-            LoggingService.Initialize();
-
-            // 2. Ghi nhận sự kiện khởi động ứng dụng và cấu hình hệ thống
-            LoggingService.LogAction("App_Startup", new
-            {
-                OS = RuntimeInformation.OSDescription,
-                Architecture = RuntimeInformation.OSArchitecture.ToString(),
-                Framework = RuntimeInformation.FrameworkDescription,
-                ProcessId = Environment.ProcessId,
-                CommandLineArgs = e.Args
-            });
-
-            // 3. Đăng ký Global Unhandled Exception Handlers
-            DispatcherUnhandledException += OnDispatcherUnhandledException;
-            AppDomain.CurrentDomain.UnhandledException += OnCurrentDomainUnhandledException;
-            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
-        }
-
-        private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        window.Created += (s, e) =>
         {
-            LoggingService.Error(e.Exception, "[UnhandledException:Dispatcher] Đã xảy ra lỗi không xử lý được trên giao diện chính: {Message}", e.Exception.Message);
-            LoggingService.LogAction("Unhandled_Exception_UI", new
+#if WINDOWS
+            var nativeWindow = window.Handler?.PlatformView as Microsoft.UI.Xaml.Window;
+            if (nativeWindow != null)
             {
-                ExceptionType = e.Exception.GetType().FullName,
-                Message = e.Exception.Message,
-                StackTrace = e.Exception.StackTrace
-            }, level: "Error", ex: e.Exception);
-
-            // Cho phép người dùng tiếp tục nếu có thể, tránh crash đột ngột
-            e.Handled = true;
-
-            MessageBox.Show(
-                $"Đã xảy ra lỗi hệ thống:\n\n{e.Exception.Message}\n\nThông tin chi tiết đã được ghi vào file log JSON trong thư mục Logs.",
-                "SaveVault - Lỗi Hệ Thống",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-        }
-
-        private void OnCurrentDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
-        {
-            if (e.ExceptionObject is Exception ex)
-            {
-                LoggingService.Error(ex, "[UnhandledException:AppDomain] Lỗi nghiêm trọng AppDomain (IsTerminating: {IsTerminating}): {Message}", e.IsTerminating, ex.Message);
-                LoggingService.LogAction("Fatal_Exception_AppDomain", new
+                var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(nativeWindow);
+                var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(windowHandle);
+                var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
+                if (appWindow != null)
                 {
-                    IsTerminating = e.IsTerminating,
-                    ExceptionType = ex.GetType().FullName,
-                    Message = ex.Message,
-                    StackTrace = ex.StackTrace
-                }, level: "Error", ex: ex);
+                    var displayArea = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(windowId, Microsoft.UI.Windowing.DisplayAreaFallback.Primary);
+                    if (displayArea != null)
+                    {
+                        var centeredPosition = appWindow.Position;
+                        centeredPosition.X = Math.Max(0, (displayArea.WorkArea.Width - WindowWidth) / 2);
+                        centeredPosition.Y = Math.Max(0, (displayArea.WorkArea.Height - WindowHeight) / 2);
+                        appWindow.Move(centeredPosition);
+                        appWindow.Resize(new Windows.Graphics.SizeInt32(WindowWidth, WindowHeight));
+                    }
+                }
             }
-        }
+#endif
+        };
 
-        private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
-        {
-            LoggingService.Error(e.Exception, "[UnhandledException:TaskScheduler] Lỗi bất đồng bộ UnobservedTaskException: {Message}", e.Exception.Message);
-            LoggingService.LogAction("Unhandled_Exception_Task", new
-            {
-                Message = e.Exception.Message,
-                InnerExceptions = e.Exception.InnerExceptions.Count
-            }, level: "Error", ex: e.Exception);
-
-            e.SetObserved();
-        }
-
-        protected override void OnExit(ExitEventArgs e)
-        {
-            LoggingService.LogAction("App_Exit", new { ExitCode = e.ApplicationExitCode });
-            LoggingService.CloseAndFlush();
-            base.OnExit(e);
-        }
+        return window;
     }
 }

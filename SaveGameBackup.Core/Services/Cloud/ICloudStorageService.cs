@@ -49,6 +49,10 @@ public interface ICloudStorageService
         string remoteFileId,
         CancellationToken cancellationToken = default);
 
+    Task<bool> DeleteFolderAsync(
+        string remoteFolderName,
+        CancellationToken cancellationToken = default);
+
     Task<List<CloudFileInfo>> ListBackupsAsync(
         string? remoteGameFolderName = null,
         CancellationToken cancellationToken = default);

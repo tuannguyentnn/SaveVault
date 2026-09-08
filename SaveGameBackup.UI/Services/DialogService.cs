@@ -7,6 +7,14 @@ using SaveGameBackup.Core.Services;
 
 namespace SaveGameBackup.UI.Services;
 
+public enum ConfirmDeleteType
+{
+    None,
+    Snapshot,
+    Game,
+    General
+}
+
 public interface IDialogService : INotifyPropertyChanged
 {
     // Universal Message Popup
@@ -18,7 +26,9 @@ public interface IDialogService : INotifyPropertyChanged
     bool HasMessageModalDetails { get; }
     ICommand CloseMessageModalCommand { get; }
 
-    void ShowMessage(string title, string content, string type = "Info", string? details = null);
+    string? MessageActionUrl { get; }
+    string? MessageActionText { get; }
+    void ShowMessage(string title, string content, string type = "Info", string? details = null, string? actionUrl = null, string? actionText = null);
     void CloseMessage();
 
     // Confirm Modal
@@ -34,9 +44,21 @@ public interface IDialogService : INotifyPropertyChanged
     ICommand ConfirmModalExecuteCommand { get; }
     ICommand CancelConfirmModalCommand { get; }
 
+    // Specialized Delete Confirmations
+    ConfirmDeleteType DeleteType { get; }
+    SaveGameBackup.Core.Models.BackupHistoryDetail? TargetDetail { get; }
+    SaveGameBackup.Core.Models.GameHistoryEntry? TargetGameHistory { get; }
+    bool DeleteLocalChecked { get; set; }
+    Dictionary<string, bool> CloudDeleteSelections { get; }
+    string SecurityInputText { get; set; }
+
+    void ShowConfirmDeleteSnapshot(SaveGameBackup.Core.Models.BackupHistoryDetail detail, Func<bool, List<string>, Task> onConfirm);
+    void ShowConfirmDeleteGame(SaveGameBackup.Core.Models.GameHistoryEntry gameHistory, Func<bool, bool, Task> onConfirm);
+
     void ShowConfirm(string title, string message, string targetPath, Func<Task> onConfirm, bool showCloudOption = false);
     void CancelConfirm();
     void SetConfirmDeletingState(bool isDeleting, int percent = 0, string text = "");
+    Task ExecuteConfirmActionAsync();
 
     // Progress Modal
     bool IsProgressModalOpen { get; }
@@ -44,8 +66,11 @@ public interface IDialogService : INotifyPropertyChanged
     string ActiveProgressMessage { get; }
     int ActiveProgressPercent { get; }
     string ActiveProgressSubText { get; }
+    bool CanCancelProgress { get; }
+    Action? OnCancelProgressAction { get; }
+    void CancelActiveProgress();
 
-    void ShowProgress(string title, string message = "", int percent = 0, string subText = "");
+    void ShowProgress(string title, string message = "", int percent = 0, string subText = "", Action? onCancel = null);
     void UpdateProgress(int percent, string? message = null, string? subText = null);
     void CloseProgress();
 }
@@ -70,6 +95,15 @@ public class DialogService : IDialogService
     private bool _isConfirmModalDeleting;
     private int _confirmModalProgressPercent;
     private string _confirmModalProgressText = string.Empty;
+
+    private ConfirmDeleteType _deleteType = ConfirmDeleteType.None;
+    private SaveGameBackup.Core.Models.BackupHistoryDetail? _targetDetail;
+    private SaveGameBackup.Core.Models.GameHistoryEntry? _targetGameHistory;
+    private bool _deleteLocalChecked = true;
+    private readonly Dictionary<string, bool> _cloudDeleteSelections = new(StringComparer.OrdinalIgnoreCase);
+    private string _securityInputText = string.Empty;
+    private Func<bool, List<string>, Task>? _pendingSnapshotConfirmAction;
+    private Func<bool, bool, Task>? _pendingGameConfirmAction;
 
     // Progress Modal States
     private bool _isProgressModalOpen;
@@ -128,12 +162,29 @@ public class DialogService : IDialogService
 
     public ICommand CloseMessageModalCommand { get; }
 
-    public void ShowMessage(string title, string content, string type = "Info", string? details = null)
+    private string? _messageActionUrl;
+    private string? _messageActionText;
+
+    public string? MessageActionUrl
+    {
+        get => _messageActionUrl;
+        private set => SetField(ref _messageActionUrl, value);
+    }
+
+    public string? MessageActionText
+    {
+        get => _messageActionText;
+        private set => SetField(ref _messageActionText, value);
+    }
+
+    public void ShowMessage(string title, string content, string type = "Info", string? details = null, string? actionUrl = null, string? actionText = null)
     {
         MessageModalTitle = title;
         MessageModalContent = content;
         MessageModalType = type;
         MessageModalDetails = details;
+        MessageActionUrl = actionUrl;
+        MessageActionText = actionText;
         IsMessageModalOpen = true;
 
         LoggingService.LogAction("Dialog_ShowMessage", new { Title = title, Type = type, HasDetails = !string.IsNullOrEmpty(details) });
@@ -143,6 +194,8 @@ public class DialogService : IDialogService
     {
         IsMessageModalOpen = false;
         MessageModalDetails = null;
+        MessageActionUrl = null;
+        MessageActionText = null;
         LoggingService.LogAction("Dialog_CloseMessage");
     }
 
@@ -201,22 +254,138 @@ public class DialogService : IDialogService
         private set => SetField(ref _confirmModalProgressText, value);
     }
 
+    public ConfirmDeleteType DeleteType
+    {
+        get => _deleteType;
+        private set => SetField(ref _deleteType, value);
+    }
+
+    public SaveGameBackup.Core.Models.BackupHistoryDetail? TargetDetail
+    {
+        get => _targetDetail;
+        private set => SetField(ref _targetDetail, value);
+    }
+
+    public SaveGameBackup.Core.Models.GameHistoryEntry? TargetGameHistory
+    {
+        get => _targetGameHistory;
+        private set => SetField(ref _targetGameHistory, value);
+    }
+
+    public bool DeleteLocalChecked
+    {
+        get => _deleteLocalChecked;
+        set => SetField(ref _deleteLocalChecked, value);
+    }
+
+    public Dictionary<string, bool> CloudDeleteSelections => _cloudDeleteSelections;
+
+    public string SecurityInputText
+    {
+        get => _securityInputText;
+        set => SetField(ref _securityInputText, value);
+    }
+
     public ICommand ConfirmModalExecuteCommand { get; }
     public ICommand CancelConfirmModalCommand { get; }
 
-    public void ShowConfirm(string title, string message, string targetPath, Func<Task> onConfirm, bool showCloudOption = false)
+    public void ShowConfirmDeleteSnapshot(SaveGameBackup.Core.Models.BackupHistoryDetail detail, Func<bool, List<string>, Task> onConfirm)
     {
-        ConfirmModalTitle = title;
-        ConfirmModalMessage = message;
-        ConfirmModalTargetPath = targetPath;
-        _pendingConfirmAction = onConfirm;
-        ShowDeleteCloudOption = showCloudOption;
+        DeleteType = ConfirmDeleteType.Snapshot;
+        TargetDetail = detail;
+        TargetGameHistory = null;
+        ConfirmModalTitle = "XÁC NHẬN XÓA BẢN SAO LƯU";
+        ConfirmModalMessage = $"Bạn đang chuẩn bị xóa bản sao lưu ngày {detail.BackupDate:dd/MM/yyyy HH:mm} của game '{detail.GameName}'.\nVui lòng chọn các vị trí lưu trữ muốn xóa:";
+        ConfirmModalTargetPath = detail.LocalBackupPath;
+
+        DeleteLocalChecked = false;
+        CloudDeleteSelections.Clear();
+        foreach (var provider in detail.CloudUrls.Keys)
+        {
+            CloudDeleteSelections[provider] = false;
+        }
+        foreach (var cs in detail.CloudSyncList)
+        {
+            if (!string.IsNullOrEmpty(cs.Provider) && !CloudDeleteSelections.ContainsKey(cs.Provider))
+            {
+                CloudDeleteSelections[cs.Provider] = false;
+            }
+        }
+
+        SecurityInputText = string.Empty;
+        ShowDeleteCloudOption = false;
         DeleteAlsoFromCloud = false;
+
+        _pendingSnapshotConfirmAction = onConfirm;
+        _pendingGameConfirmAction = null;
+        _pendingConfirmAction = null;
+
         IsConfirmModalDeleting = false;
         ConfirmModalProgressPercent = 0;
         ConfirmModalProgressText = string.Empty;
         IsConfirmModalOpen = true;
 
+        OnPropertyChanged(nameof(CloudDeleteSelections));
+        OnPropertyChanged(nameof(DeleteLocalChecked));
+        OnPropertyChanged(nameof(DeleteAlsoFromCloud));
+        OnPropertyChanged(nameof(SecurityInputText));
+        LoggingService.LogAction("Dialog_ShowConfirmDeleteSnapshot", new { Game = detail.GameName, DetailId = detail.Id });
+    }
+
+    public void ShowConfirmDeleteGame(SaveGameBackup.Core.Models.GameHistoryEntry gameHistory, Func<bool, bool, Task> onConfirm)
+    {
+        DeleteType = ConfirmDeleteType.Game;
+        TargetDetail = null;
+        TargetGameHistory = gameHistory;
+        ConfirmModalTitle = "CẢNH BÁO NGUY HIỂM: XÓA TOÀN BỘ GAME";
+        ConfirmModalMessage = $"Bạn đang yêu cầu xóa TOÀN BỘ lịch sử và tất cả {gameHistory.BackupCount} bản sao lưu của game '{gameHistory.GameName}'.\nĐể tiếp tục, vui lòng nhập chính xác 'Delete All' vào ô bên dưới:";
+        ConfirmModalTargetPath = gameHistory.LatestBackupPath;
+
+        DeleteLocalChecked = true;
+        ShowDeleteCloudOption = true;
+        DeleteAlsoFromCloud = false;
+        SecurityInputText = string.Empty;
+        CloudDeleteSelections.Clear();
+
+        _pendingSnapshotConfirmAction = null;
+        _pendingGameConfirmAction = onConfirm;
+        _pendingConfirmAction = null;
+
+        IsConfirmModalDeleting = false;
+        ConfirmModalProgressPercent = 0;
+        ConfirmModalProgressText = string.Empty;
+        IsConfirmModalOpen = true;
+
+        OnPropertyChanged(nameof(DeleteAlsoFromCloud));
+        OnPropertyChanged(nameof(DeleteLocalChecked));
+        OnPropertyChanged(nameof(SecurityInputText));
+        LoggingService.LogAction("Dialog_ShowConfirmDeleteGame", new { Game = gameHistory.GameName });
+    }
+
+    public void ShowConfirm(string title, string message, string targetPath, Func<Task> onConfirm, bool showCloudOption = false)
+    {
+        DeleteType = ConfirmDeleteType.General;
+        TargetDetail = null;
+        TargetGameHistory = null;
+        ConfirmModalTitle = title;
+        ConfirmModalMessage = message;
+        ConfirmModalTargetPath = targetPath;
+        _pendingConfirmAction = onConfirm;
+        _pendingSnapshotConfirmAction = null;
+        _pendingGameConfirmAction = null;
+        ShowDeleteCloudOption = showCloudOption;
+        DeleteAlsoFromCloud = false;
+        DeleteLocalChecked = false;
+        SecurityInputText = string.Empty;
+        CloudDeleteSelections.Clear();
+        IsConfirmModalDeleting = false;
+        ConfirmModalProgressPercent = 0;
+        ConfirmModalProgressText = string.Empty;
+        IsConfirmModalOpen = true;
+
+        OnPropertyChanged(nameof(DeleteAlsoFromCloud));
+        OnPropertyChanged(nameof(DeleteLocalChecked));
+        OnPropertyChanged(nameof(SecurityInputText));
         LoggingService.LogAction("Dialog_ShowConfirm", new { Title = title, TargetPath = targetPath, ShowCloudOption = showCloudOption });
     }
 
@@ -225,6 +394,22 @@ public class DialogService : IDialogService
         if (IsConfirmModalDeleting) return;
         IsConfirmModalOpen = false;
         _pendingConfirmAction = null;
+        _pendingSnapshotConfirmAction = null;
+        _pendingGameConfirmAction = null;
+        DeleteType = ConfirmDeleteType.None;
+        TargetDetail = null;
+        TargetGameHistory = null;
+        SecurityInputText = string.Empty;
+        ConfirmModalTitle = string.Empty;
+        ConfirmModalMessage = string.Empty;
+        ConfirmModalTargetPath = string.Empty;
+        ShowDeleteCloudOption = false;
+        DeleteAlsoFromCloud = false;
+        DeleteLocalChecked = false;
+        CloudDeleteSelections.Clear();
+        IsConfirmModalDeleting = false;
+        ConfirmModalProgressPercent = 0;
+        ConfirmModalProgressText = string.Empty;
         LoggingService.LogAction("Dialog_CancelConfirm");
     }
 
@@ -235,26 +420,64 @@ public class DialogService : IDialogService
         ConfirmModalProgressText = text;
     }
 
-    private async Task ExecuteConfirmActionAsync()
+    public async Task ExecuteConfirmActionAsync()
     {
-        if (_pendingConfirmAction != null)
+        try
         {
-            try
+            // Close the confirm dialog BEFORE running the action so ProgressModal displays immediately!
+            IsConfirmModalOpen = false;
+
+            if (DeleteType == ConfirmDeleteType.Snapshot && _pendingSnapshotConfirmAction != null)
             {
-                LoggingService.LogAction("Dialog_ConfirmExecuted", new { Title = ConfirmModalTitle, DeleteAlsoFromCloud });
-                await _pendingConfirmAction.Invoke();
+                var action = _pendingSnapshotConfirmAction;
+                var delLocal = TargetDetail?.HasLocalBackup == true && DeleteLocalChecked;
+                var clouds = CloudDeleteSelections.Where(kv => kv.Value).Select(kv => kv.Key).ToList();
+                _pendingSnapshotConfirmAction = null;
+                LoggingService.LogAction("Dialog_ConfirmDeleteSnapshotExecuted", new { delLocal, cloudsCount = clouds.Count });
+                await action.Invoke(delLocal, clouds);
             }
-            catch (Exception ex)
+            else if (DeleteType == ConfirmDeleteType.Game && _pendingGameConfirmAction != null)
             {
-                LoggingService.Error(ex, "Lỗi khi thực thi hành động xác nhận: {Message}", ex.Message);
-                ShowMessage("Lỗi thực hiện", ex.Message, "Error", ex.StackTrace);
+                var action = _pendingGameConfirmAction;
+                var delLocal = DeleteLocalChecked;
+                var delCloud = DeleteAlsoFromCloud;
+                _pendingGameConfirmAction = null;
+                LoggingService.LogAction("Dialog_ConfirmDeleteGameExecuted", new { delLocal, delCloud });
+                await action.Invoke(delLocal, delCloud);
             }
-            finally
+            else if (_pendingConfirmAction != null)
             {
-                IsConfirmModalOpen = false;
+                var action = _pendingConfirmAction;
                 _pendingConfirmAction = null;
-                IsConfirmModalDeleting = false;
+                LoggingService.LogAction("Dialog_ConfirmExecuted", new { Title = ConfirmModalTitle, DeleteAlsoFromCloud });
+                await action.Invoke();
             }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(ex, "Lỗi khi thực thi hành động xác nhận: {Message}", ex.Message);
+            ShowMessage("Lỗi thực hiện", ex.Message, "Error", ex.StackTrace);
+        }
+        finally
+        {
+            IsConfirmModalOpen = false;
+            _pendingConfirmAction = null;
+            _pendingSnapshotConfirmAction = null;
+            _pendingGameConfirmAction = null;
+            DeleteType = ConfirmDeleteType.None;
+            TargetDetail = null;
+            TargetGameHistory = null;
+            SecurityInputText = string.Empty;
+            ConfirmModalTitle = string.Empty;
+            ConfirmModalMessage = string.Empty;
+            ConfirmModalTargetPath = string.Empty;
+            ShowDeleteCloudOption = false;
+            DeleteAlsoFromCloud = false;
+            DeleteLocalChecked = false;
+            CloudDeleteSelections.Clear();
+            IsConfirmModalDeleting = false;
+            ConfirmModalProgressPercent = 0;
+            ConfirmModalProgressText = string.Empty;
         }
     }
 
@@ -289,12 +512,35 @@ public class DialogService : IDialogService
         private set => SetField(ref _activeProgressSubText, value);
     }
 
-    public void ShowProgress(string title, string message = "", int percent = 0, string subText = "")
+    private Action? _onCancelProgressAction;
+
+    public Action? OnCancelProgressAction
+    {
+        get => _onCancelProgressAction;
+        private set
+        {
+            if (SetField(ref _onCancelProgressAction, value))
+            {
+                OnPropertyChanged(nameof(CanCancelProgress));
+            }
+        }
+    }
+
+    public bool CanCancelProgress => _onCancelProgressAction != null;
+
+    public void CancelActiveProgress()
+    {
+        var act = _onCancelProgressAction;
+        act?.Invoke();
+    }
+
+    public void ShowProgress(string title, string message = "", int percent = 0, string subText = "", Action? onCancel = null)
     {
         ActiveProgressTitle = title;
         ActiveProgressMessage = message;
         ActiveProgressPercent = percent;
         ActiveProgressSubText = subText;
+        OnCancelProgressAction = onCancel;
         IsProgressModalOpen = true;
 
         LoggingService.LogAction("Dialog_ShowProgress", new { Title = title, Message = message });
@@ -310,6 +556,7 @@ public class DialogService : IDialogService
     public void CloseProgress()
     {
         IsProgressModalOpen = false;
+        OnCancelProgressAction = null;
         LoggingService.LogAction("Dialog_CloseProgress");
     }
 

@@ -4,7 +4,6 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using Microsoft.Win32;
 using SaveGameBackup.Core.Services;
 using SaveGameBackup.UI.Services;
 
@@ -15,22 +14,26 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     private readonly DatabaseService _databaseService;
     private readonly IDialogService _dialogService;
     private readonly IAppEventBus _eventBus;
+    private readonly INativeDialogService? _nativeDialog;
 
     private string _databaseLocation = string.Empty;
     private string _backupDestinationRoot = string.Empty;
     private bool _createTimestampSubfolder = true;
     private bool _autoCompressZip = true;
+    private int _pageSize = 10;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public SettingsSubViewModel(
         DatabaseService databaseService,
         IDialogService dialogService,
-        IAppEventBus eventBus)
+        IAppEventBus eventBus,
+        INativeDialogService? nativeDialog = null)
     {
         _databaseService = databaseService;
         _dialogService = dialogService;
         _eventBus = eventBus;
+        _nativeDialog = nativeDialog;
 
         var config = AppConfigService.GetConfig();
         _databaseLocation = !string.IsNullOrWhiteSpace(config.DatabasePath)
@@ -43,11 +46,12 @@ public class SettingsSubViewModel : INotifyPropertyChanged
 
         _createTimestampSubfolder = config.CreateTimestampSubfolder;
         _autoCompressZip = config.AutoCompressZip;
+        _pageSize = config.PageSize > 0 ? config.PageSize : 10;
 
-        BrowseDatabaseFileCommand = new RelayCommand(_ => ExecuteBrowseDatabaseFile());
+        BrowseDatabaseFileCommand = new RelayCommand(async _ => await ExecuteBrowseDatabaseFileAsync());
         ApplyDatabaseLocationCommand = new RelayCommand(async _ => await ExecuteApplyDatabaseLocationAsync());
         ResetDatabaseLocationCommand = new RelayCommand(_ => ExecuteResetDatabaseLocation());
-        BrowseBackupDirectoryCommand = new RelayCommand(_ => ExecuteBrowseBackupDirectory());
+        BrowseBackupDirectoryCommand = new RelayCommand(async _ => await ExecuteBrowseBackupDirectoryAsync());
         SaveSettingsCommand = new RelayCommand(async _ => await ExecuteSaveSettingsAsync());
     }
 
@@ -75,25 +79,28 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         set => SetField(ref _autoCompressZip, value);
     }
 
+    public int PageSize
+    {
+        get => _pageSize;
+        set => SetField(ref _pageSize, value);
+    }
+
     public ICommand BrowseDatabaseFileCommand { get; }
     public ICommand ApplyDatabaseLocationCommand { get; }
     public ICommand ResetDatabaseLocationCommand { get; }
     public ICommand BrowseBackupDirectoryCommand { get; }
     public ICommand SaveSettingsCommand { get; }
 
-    private void ExecuteBrowseDatabaseFile()
+    private async Task ExecuteBrowseDatabaseFileAsync()
     {
-        var dialog = new OpenFileDialog
-        {
-            Title = "Chọn file SQLite Database (.db)",
-            Filter = "SQLite Database (*.db)|*.db|All Files (*.*)|*.*",
-            CheckFileExists = false
-        };
+        var file = _nativeDialog != null
+            ? await _nativeDialog.PickDatabaseFileAsync("Chọn file SQLite Database (.db)")
+            : null;
 
-        if (dialog.ShowDialog() == true)
+        if (!string.IsNullOrEmpty(file))
         {
-            DatabaseLocation = dialog.FileName;
-            LoggingService.LogAction("Browse_Database_Location", new { Path = dialog.FileName });
+            DatabaseLocation = file;
+            LoggingService.LogAction("Browse_Database_Location", new { Path = file });
         }
     }
 
@@ -148,18 +155,17 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _eventBus.Publish(new HistoryChangedEvent());
     }
 
-    private void ExecuteBrowseBackupDirectory()
+    private async Task ExecuteBrowseBackupDirectoryAsync()
     {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "Chọn thư mục gốc lưu trữ các bản sao lưu"
-        };
+        var folder = _nativeDialog != null
+            ? await _nativeDialog.PickFolderAsync("Chọn thư mục gốc lưu trữ các bản sao lưu")
+            : null;
 
-        if (dialog.ShowDialog() == true)
+        if (!string.IsNullOrEmpty(folder))
         {
-            BackupDestinationRoot = dialog.FolderName;
-            AppConfigService.UpdateConfig(cfg => cfg.BackupRootDirectory = dialog.FolderName);
-            LoggingService.LogAction("Settings_Change_Backup_Dir", new { Directory = dialog.FolderName });
+            BackupDestinationRoot = folder;
+            AppConfigService.UpdateConfig(cfg => cfg.BackupRootDirectory = folder);
+            LoggingService.LogAction("Settings_Change_Backup_Dir", new { Directory = folder });
         }
     }
 
@@ -170,6 +176,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             cfg.BackupRootDirectory = BackupDestinationRoot;
             cfg.CreateTimestampSubfolder = CreateTimestampSubfolder;
             cfg.AutoCompressZip = AutoCompressZip;
+            cfg.PageSize = PageSize;
             cfg.DatabasePath = DatabaseLocation;
         });
 
@@ -179,6 +186,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             BackupRoot = BackupDestinationRoot,
             CreateTimestampSubfolder,
             AutoCompressZip,
+            PageSize,
             DatabaseLocation
         });
 

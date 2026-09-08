@@ -37,23 +37,32 @@ public class MainViewModel : INotifyPropertyChanged
     public CloudSubViewModel CloudVM { get; }
     public SettingsSubViewModel SettingsVM { get; }
     public IDialogService DialogService { get; }
+    public INativeDialogService NativeDialog { get; }
 
-    public MainViewModel()
+    public MainViewModel(
+        DatabaseService? databaseService = null,
+        GameSearchCoordinator? searchCoordinator = null,
+        BackupService? backupService = null,
+        CloudManagerService? cloudManager = null,
+        IAppEventBus? eventBus = null,
+        IDialogService? dialogService = null,
+        INativeDialogService? nativeDialog = null)
     {
-        _databaseService = new DatabaseService();
-        _searchCoordinator = new GameSearchCoordinator(_databaseService);
-        _backupService = new BackupService(_databaseService);
-        _cloudManager = new CloudManagerService(_databaseService);
-        _eventBus = new AppEventBus();
-        DialogService = new DialogService();
+        _databaseService = databaseService ?? new DatabaseService();
+        _searchCoordinator = searchCoordinator ?? new GameSearchCoordinator(_databaseService);
+        _backupService = backupService ?? new BackupService(_databaseService);
+        _cloudManager = cloudManager ?? new CloudManagerService(_databaseService);
+        _eventBus = eventBus ?? new AppEventBus();
+        DialogService = dialogService ?? new DialogService();
+        NativeDialog = nativeDialog ?? new NativeDialogService();
 
         // Khởi tạo các Sub-ViewModels độc lập
-        SearchVM = new SearchSubViewModel(_databaseService, _searchCoordinator, DialogService, _eventBus);
-        BackupVM = new BackupSubViewModel(_backupService, SearchVM, DialogService, _eventBus);
+        SearchVM = new SearchSubViewModel(_databaseService, _searchCoordinator, DialogService, _eventBus, NativeDialog);
+        BackupVM = new BackupSubViewModel(_backupService, SearchVM, DialogService, _eventBus, NativeDialog);
         HistoryVM = new HistorySubViewModel(_databaseService, _backupService, _cloudManager, DialogService, _eventBus);
-        RestoreVM = new RestoreSubViewModel(_backupService, _cloudManager, _databaseService, DialogService, _eventBus);
+        RestoreVM = new RestoreSubViewModel(_backupService, _cloudManager, _databaseService, DialogService, _eventBus, NativeDialog);
         CloudVM = new CloudSubViewModel(_cloudManager, _backupService, _databaseService, DialogService, _eventBus);
-        SettingsVM = new SettingsSubViewModel(_databaseService, DialogService, _eventBus);
+        SettingsVM = new SettingsSubViewModel(_databaseService, DialogService, _eventBus, NativeDialog);
 
         // Lắng nghe sự kiện chuyển tab từ Mediator
         _eventBus.Subscribe<RequestNavigateTabEvent>(e => SelectedTabIndex = e.TabIndex);

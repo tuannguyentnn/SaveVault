@@ -6,7 +6,6 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
-using Microsoft.Win32;
 using SaveGameBackup.Core.Models;
 using SaveGameBackup.Core.Services;
 using SaveGameBackup.UI.Services;
@@ -19,6 +18,7 @@ public class BackupSubViewModel : INotifyPropertyChanged
     private readonly SearchSubViewModel _searchVM;
     private readonly IDialogService _dialogService;
     private readonly IAppEventBus _eventBus;
+    private readonly INativeDialogService? _nativeDialog;
 
     private string _backupDestinationRoot = string.Empty;
     private bool _createTimestampSubfolder = true;
@@ -34,12 +34,14 @@ public class BackupSubViewModel : INotifyPropertyChanged
         BackupService backupService,
         SearchSubViewModel searchVM,
         IDialogService dialogService,
-        IAppEventBus eventBus)
+        IAppEventBus eventBus,
+        INativeDialogService? nativeDialog = null)
     {
         _backupService = backupService;
         _searchVM = searchVM;
         _dialogService = dialogService;
         _eventBus = eventBus;
+        _nativeDialog = nativeDialog;
 
         var config = AppConfigService.GetConfig();
         var defaultFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
@@ -52,7 +54,7 @@ public class BackupSubViewModel : INotifyPropertyChanged
 
         BackupCommand = new RelayCommand(async _ => await ExecuteBackupAsync(), _ => CanExecuteBackup());
         OpenBackupFolderCommand = new RelayCommand(_ => ExecuteOpenBackupFolder(), _ => !string.IsNullOrEmpty(LastBackupPath));
-        BrowseBackupDirectoryCommand = new RelayCommand(_ => ExecuteBrowseBackupDirectory());
+        BrowseBackupDirectoryCommand = new RelayCommand(async _ => await ExecuteBrowseBackupDirectoryAsync());
 
         _searchVM.PropertyChanged += (s, e) =>
         {
@@ -246,18 +248,17 @@ public class BackupSubViewModel : INotifyPropertyChanged
         }
     }
 
-    private void ExecuteBrowseBackupDirectory()
+    private async Task ExecuteBrowseBackupDirectoryAsync()
     {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "Chọn thư mục gốc lưu trữ các bản sao lưu"
-        };
+        var folder = _nativeDialog != null
+            ? await _nativeDialog.PickFolderAsync("Chọn thư mục gốc lưu trữ các bản sao lưu")
+            : null;
 
-        if (dialog.ShowDialog() == true)
+        if (!string.IsNullOrEmpty(folder))
         {
-            BackupDestinationRoot = dialog.FolderName;
-            AppConfigService.UpdateConfig(cfg => cfg.BackupRootDirectory = dialog.FolderName);
-            LoggingService.LogAction("Change_Backup_Directory", new { NewDir = dialog.FolderName });
+            BackupDestinationRoot = folder;
+            AppConfigService.UpdateConfig(cfg => cfg.BackupRootDirectory = folder);
+            LoggingService.LogAction("Change_Backup_Directory", new { NewDir = folder });
         }
     }
 
