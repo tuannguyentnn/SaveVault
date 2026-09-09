@@ -16,6 +16,8 @@ public interface IBackupHistoryRepository
     Task DeleteGameHistoryAsync(long gameHistoryId);
     Task<List<BackupRecord>> GetBackupHistoryAsync();
     Task DeleteBackupRecordAsync(long id);
+    Task UpdateCoverUrlAsync(string gameName, string coverUrl);
+    Task UpdateCoverPathAsync(string gameName, string coverPath);
 }
 
 public class BackupHistoryRepository : IBackupHistoryRepository
@@ -41,6 +43,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         public string Status { get; set; } = "Success";
         public string? Note { get; set; }
         public int HasCloudBackup { get; set; }
+        public string? CoverUrl { get; set; }
+        public string? CoverPath { get; set; }
     }
 
     private class DetailHistoryRow
@@ -64,6 +68,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         public string? CloudFileName { get; set; }
         public string? CloudSyncDate { get; set; }
         public string? CloudSyncJson { get; set; }
+        public string? CoverUrl { get; set; }
+        public string? CoverPath { get; set; }
     }
 
     public async Task<long> InsertOrUpdateBackupHistoryAsync(BackupHistoryDetail detail)
@@ -81,6 +87,11 @@ public class BackupHistoryRepository : IBackupHistoryRepository
             var folderPath = !string.IsNullOrEmpty(localPath)
                 ? (Directory.Exists(localPath) ? localPath : Path.GetDirectoryName(localPath) ?? localPath)
                 : string.Empty;
+
+            if (string.IsNullOrEmpty(detail.CoverPath) && SaveGameBackup.Core.Services.GameCoverService.HasLocalCover(detail.GameName))
+            {
+                detail.CoverPath = SaveGameBackup.Core.Services.GameCoverService.GetCoverFilePath(detail.GameName);
+            }
 
             const string checkSql = "SELECT Id, BackupCount, TotalSizeBytes, LatestBackupPath FROM backup_history WHERE LOWER(GameName) = LOWER(@Name) LIMIT 1;";
             var existing = await connection.QueryFirstOrDefaultAsync<MasterHistoryRow>(checkSql, new { Name = detail.GameName.Trim() }, transaction);
@@ -122,7 +133,9 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                         LatestFileCount = @LatestFileCount,
                         SavePaths = @SavePaths,
                         Status = @Status,
-                        Note = @Note
+                        Note = @Note,
+                        CoverUrl = COALESCE(@CoverUrl, CoverUrl),
+                        CoverPath = COALESCE(@CoverPath, CoverPath)
                     WHERE Id = @Id;
                 ";
                 await connection.ExecuteAsync(updateMasterSql, new
@@ -136,6 +149,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                     SavePaths = detail.SavePaths,
                     Status = detail.Status,
                     Note = detail.Note,
+                    CoverUrl = detail.CoverUrl,
+                    CoverPath = detail.CoverPath,
                     Id = gameHistoryId
                 }, transaction);
             }
@@ -145,8 +160,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 var latestBackupPathJson = JsonSerializer.Serialize(folderList);
 
                 const string insertMasterSql = @"
-                    INSERT INTO backup_history (GameName, BackupCount, LatestBackupPath, LatestBackupDate, TotalSizeBytes, LatestSizeBytes, LatestFileCount, SavePaths, Status, Note)
-                    VALUES (@GameName, 1, @LatestBackupPath, @LatestBackupDate, @TotalSizeBytes, @LatestSizeBytes, @LatestFileCount, @SavePaths, @Status, @Note);
+                    INSERT INTO backup_history (GameName, BackupCount, LatestBackupPath, LatestBackupDate, TotalSizeBytes, LatestSizeBytes, LatestFileCount, SavePaths, Status, Note, CoverUrl, CoverPath)
+                    VALUES (@GameName, 1, @LatestBackupPath, @LatestBackupDate, @TotalSizeBytes, @LatestSizeBytes, @LatestFileCount, @SavePaths, @Status, @Note, @CoverUrl, @CoverPath);
                     SELECT last_insert_rowid();
                 ";
                 gameHistoryId = await connection.ExecuteScalarAsync<long>(insertMasterSql, new
@@ -159,7 +174,9 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                     LatestFileCount = detail.FileCount,
                     SavePaths = detail.SavePaths,
                     Status = detail.Status,
-                    Note = detail.Note
+                    Note = detail.Note,
+                    CoverUrl = detail.CoverUrl,
+                    CoverPath = detail.CoverPath
                 }, transaction);
             }
 
@@ -172,9 +189,9 @@ public class BackupHistoryRepository : IBackupHistoryRepository
 
             const string insertDetailSql = @"
                 INSERT INTO backup_history_details 
-                (GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson)
+                (GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson, CoverUrl, CoverPath)
                 VALUES 
-                (@GameHistoryId, @GameName, @BackupPath, @SourcePath, @SavePaths, @ManifestJson, @FileCount, @TotalSizeBytes, @BackupDate, @IsCompressed, @Status, @Note, @IsCloudSynced, @CloudProvider, @CloudFileId, @CloudFileName, @CloudSyncDate, @CloudSyncJson);
+                (@GameHistoryId, @GameName, @BackupPath, @SourcePath, @SavePaths, @ManifestJson, @FileCount, @TotalSizeBytes, @BackupDate, @IsCompressed, @Status, @Note, @IsCloudSynced, @CloudProvider, @CloudFileId, @CloudFileName, @CloudSyncDate, @CloudSyncJson, @CoverUrl, @CoverPath);
                 SELECT last_insert_rowid();
             ";
 
@@ -197,7 +214,9 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 CloudFileId = detail.CloudFileId,
                 CloudFileName = detail.CloudFileName,
                 CloudSyncDate = detail.CloudSyncDate?.ToString("o"),
-                CloudSyncJson = detail.CloudSyncJson
+                CloudSyncJson = detail.CloudSyncJson,
+                CoverUrl = detail.CoverUrl,
+                CoverPath = detail.CoverPath
             }, transaction);
 
             detail.Id = detailId;
@@ -215,7 +234,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
         const string sql = @"
-            SELECT h.Id, h.GameName, h.BackupCount, h.LatestBackupPath, h.LatestBackupDate, h.TotalSizeBytes, h.LatestSizeBytes, h.LatestFileCount, h.SavePaths, h.Status, h.Note,
+            SELECT h.Id, h.GameName, h.BackupCount, h.LatestBackupPath, h.LatestBackupDate, h.TotalSizeBytes, h.LatestSizeBytes, h.LatestFileCount, h.SavePaths, h.Status, h.Note, h.CoverUrl, h.CoverPath,
                    CASE WHEN EXISTS (
                        SELECT 1 FROM backup_history_details d 
                        WHERE d.GameHistoryId = h.Id 
@@ -226,20 +245,36 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         ";
 
         var rows = await connection.QueryAsync<MasterHistoryRow>(sql);
-        return rows.Select(r => new GameHistoryEntry
+        return rows.Select(r =>
         {
-            Id = r.Id,
-            GameName = r.GameName,
-            BackupCount = r.BackupCount,
-            LatestBackupPath = r.LatestBackupPath,
-            LatestBackupDate = DateTime.TryParse(r.LatestBackupDate, out var dt) ? dt : DateTime.MinValue,
-            TotalSizeBytes = r.TotalSizeBytes,
-            LatestSizeBytes = r.LatestSizeBytes,
-            LatestFileCount = r.LatestFileCount,
-            SavePaths = r.SavePaths ?? string.Empty,
-            Status = r.Status,
-            Note = r.Note,
-            HasCloudBackup = r.HasCloudBackup == 1
+            var cover = r.CoverUrl;
+            var coverPath = r.CoverPath;
+            if (string.IsNullOrEmpty(coverPath) && SaveGameBackup.Core.Services.GameCoverService.HasLocalCover(r.GameName))
+            {
+                coverPath = SaveGameBackup.Core.Services.GameCoverService.GetCoverFilePath(r.GameName);
+            }
+            if (string.IsNullOrEmpty(cover))
+            {
+                cover = coverPath;
+            }
+
+            return new GameHistoryEntry
+            {
+                Id = r.Id,
+                GameName = r.GameName,
+                BackupCount = r.BackupCount,
+                LatestBackupPath = r.LatestBackupPath,
+                LatestBackupDate = DateTime.TryParse(r.LatestBackupDate, out var dt) ? dt : DateTime.MinValue,
+                TotalSizeBytes = r.TotalSizeBytes,
+                LatestSizeBytes = r.LatestSizeBytes,
+                LatestFileCount = r.LatestFileCount,
+                SavePaths = r.SavePaths ?? string.Empty,
+                Status = r.Status,
+                Note = r.Note,
+                HasCloudBackup = r.HasCloudBackup == 1,
+                CoverUrl = cover,
+                CoverPath = coverPath
+            };
         }).ToList();
     }
 
@@ -247,7 +282,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
         const string sql = @"
-            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson
+            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson, CoverUrl, CoverPath
             FROM backup_history_details
             WHERE GameHistoryId = @GameId
             ORDER BY Id DESC;
@@ -292,6 +327,12 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 });
             }
 
+            var coverPath = r.CoverPath;
+            if (string.IsNullOrEmpty(coverPath) && SaveGameBackup.Core.Services.GameCoverService.HasLocalCover(r.GameName))
+            {
+                coverPath = SaveGameBackup.Core.Services.GameCoverService.GetCoverFilePath(r.GameName);
+            }
+
             list.Add(new BackupHistoryDetail
             {
                 Id = r.Id,
@@ -313,7 +354,9 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 CloudFileName = cloudFileName,
                 CloudSyncDate = cloudSyncDate,
                 CloudSyncJson = cloudSyncJson,
-                CloudSyncList = syncList
+                CloudSyncList = syncList,
+                CoverUrl = r.CoverUrl ?? coverPath,
+                CoverPath = coverPath
             });
         }
 
@@ -540,5 +583,35 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         {
             await connection.ExecuteAsync("DELETE FROM backup_history WHERE Id = @Id;", new { Id = id });
         }
+    }
+
+    public async Task UpdateCoverUrlAsync(string gameName, string coverUrl)
+    {
+        if (string.IsNullOrWhiteSpace(gameName) || string.IsNullOrWhiteSpace(coverUrl)) return;
+        try
+        {
+            using var connection = await _connectionFactory.CreateOpenConnectionAsync();
+            const string sql = @"
+                UPDATE backup_history SET CoverUrl = @CoverUrl WHERE LOWER(GameName) = LOWER(@GameName);
+                UPDATE backup_history_details SET CoverUrl = @CoverUrl WHERE LOWER(GameName) = LOWER(@GameName);
+            ";
+            await connection.ExecuteAsync(sql, new { GameName = gameName.Trim(), CoverUrl = coverUrl });
+        }
+        catch { /* Best effort */ }
+    }
+
+    public async Task UpdateCoverPathAsync(string gameName, string coverPath)
+    {
+        if (string.IsNullOrWhiteSpace(gameName) || string.IsNullOrWhiteSpace(coverPath)) return;
+        try
+        {
+            using var connection = await _connectionFactory.CreateOpenConnectionAsync();
+            const string sql = @"
+                UPDATE backup_history SET CoverPath = @CoverPath, CoverUrl = COALESCE(@CoverPath, CoverUrl) WHERE LOWER(GameName) = LOWER(@GameName);
+                UPDATE backup_history_details SET CoverPath = @CoverPath, CoverUrl = COALESCE(@CoverPath, CoverUrl) WHERE LOWER(GameName) = LOWER(@GameName);
+            ";
+            await connection.ExecuteAsync(sql, new { GameName = gameName.Trim(), CoverPath = coverPath });
+        }
+        catch { /* Best effort */ }
     }
 }

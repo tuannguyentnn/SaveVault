@@ -944,8 +944,105 @@ try
     }
     Console.WriteLine("  ✓ AppEventBus mediator successfully decoupled communication across components!");
 
+    // Test 20: GameCoverService (Local Cover Persistence & In-Memory Data URL)
+    Console.WriteLine("\n[20] Testing GameCoverService (Local Cover Persistence & In-Memory Data URL)");
+    var coversDir = GameCoverService.GetCoverDirectory();
+    if (string.IsNullOrEmpty(coversDir) || !Directory.Exists(coversDir))
+    {
+        throw new Exception("FAIL: GameCoverService cover directory was not created!");
+    }
+    Console.WriteLine($"  ✓ Covers directory verified at: {coversDir}");
+
+    var testGameCoverPath = GameCoverService.GetCoverFilePath("Test Game 2026");
+    if (!testGameCoverPath.EndsWith("test_game_2026.jpg", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new Exception($"FAIL: GameCoverService sanitized file path invalid: {testGameCoverPath}");
+    }
+
+    // Tạo file ảnh giả lập để kiểm tra nạp base64
+    File.WriteAllBytes(testGameCoverPath, new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46 });
+    if (!GameCoverService.HasLocalCover("Test Game 2026"))
+    {
+        throw new Exception("FAIL: HasLocalCover should return true for existing file!");
+    }
+
+    var dataUrl = GameCoverService.GetCoverDataUrl(testGameCoverPath);
+    if (string.IsNullOrEmpty(dataUrl) || !dataUrl.StartsWith("data:image/jpeg;base64,"))
+    {
+        throw new Exception("FAIL: GetCoverDataUrl should return valid base64 data URL!");
+    }
+    Console.WriteLine("  ✓ Local Cover base64 Data URL verified OK!");
+
+    var realCover = await GameCoverService.EnsureCoverForGameAsync("Cyberpunk 2077");
+    Console.WriteLine($"  ✓ Real cover for Cyberpunk 2077: {realCover}");
+    if (string.IsNullOrEmpty(realCover) || !File.Exists(realCover))
+    {
+        throw new Exception("FAIL: Real cover for Cyberpunk 2077 was not downloaded!");
+    }
+
+    // Test 21: CoverPath Persistence, Resize width 450px & WebView2 Virtual Host URI
+    Console.WriteLine("\n[21] Testing CoverPath Persistence, Resize width 450px & WebView2 Virtual Host URI");
+    var uri = GameCoverService.GetCoverImageUri(testGameCoverPath);
+    if (string.IsNullOrEmpty(uri) || !uri.StartsWith("https://covers.local/"))
+    {
+        throw new Exception($"FAIL: GetCoverImageUri should return virtual host URI https://covers.local/..., got: {uri}");
+    }
+    Console.WriteLine($"  ✓ GetCoverImageUri returned direct URI without Base64: {uri}");
+
+    // Test ResizeCoverImage to 450px
+    var resizeTestPath = Path.Combine(coversDir, "resize_test.jpg");
+    using (var bmp = new System.Drawing.Bitmap(800, 600))
+    {
+        bmp.Save(resizeTestPath, System.Drawing.Imaging.ImageFormat.Jpeg);
+    }
+    GameCoverService.ResizeCoverImage(resizeTestPath, 450);
+    using (var resizedBmp = System.Drawing.Image.FromFile(resizeTestPath))
+    {
+        if (resizedBmp.Width != 450)
+        {
+            throw new Exception($"FAIL: ResizeCoverImage expected width 450, got: {resizedBmp.Width}");
+        }
+        Console.WriteLine($"  ✓ ResizeCoverImage verified: width is exactly {resizedBmp.Width}px (proportional height: {resizedBmp.Height}px)");
+    }
+    try { File.Delete(resizeTestPath); } catch { }
+
+    // Test SQLite CoverPath column persistence
+    var testCoverDetail = new BackupHistoryDetail
+    {
+        GameName = "CoverPath Test Game",
+        BackupPath = Path.Combine(tempTestDir, "test.zip"),
+        SourcePath = "C:\\Test",
+        FileCount = 1,
+        TotalSizeBytes = 1024,
+        BackupDate = DateTime.Now,
+        CoverPath = testGameCoverPath
+    };
+    var testCoverDetailId = await db.InsertOrUpdateBackupHistoryAsync(testCoverDetail);
+    var savedHistories = await db.GetGameHistoriesAsync();
+    var savedEntry = savedHistories.FirstOrDefault(g => g.GameName == "CoverPath Test Game");
+    if (savedEntry == null || savedEntry.CoverPath != testGameCoverPath)
+    {
+        throw new Exception($"FAIL: CoverPath was not persisted to backup_history table! Expected: {testGameCoverPath}, Got: {savedEntry?.CoverPath}");
+    }
+    if (savedEntry.CoverImageSrc != uri)
+    {
+        throw new Exception($"FAIL: CoverImageSrc mismatch! Expected: {uri}, Got: {savedEntry.CoverImageSrc}");
+    }
+    Console.WriteLine($"  ✓ SQLite CoverPath column verified OK: {savedEntry.CoverPath}");
+
+    // Test UpdateCoverPathAsync
+    var updatedCoverPath = Path.Combine(coversDir, "updated_cover.jpg");
+    await db.UpdateCoverPathAsync("CoverPath Test Game", updatedCoverPath);
+    savedHistories = await db.GetGameHistoriesAsync();
+    savedEntry = savedHistories.FirstOrDefault(g => g.GameName == "CoverPath Test Game");
+    if (savedEntry?.CoverPath != updatedCoverPath)
+    {
+        throw new Exception($"FAIL: UpdateCoverPathAsync failed to update CoverPath! Expected: {updatedCoverPath}, Got: {savedEntry?.CoverPath}");
+    }
+    Console.WriteLine($"  ✓ UpdateCoverPathAsync updated and persisted CoverPath OK!");
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 19 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 21 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally

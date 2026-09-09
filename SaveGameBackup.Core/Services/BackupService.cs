@@ -49,7 +49,8 @@ public class BackupService
         AppSettings settings,
         List<string>? selectedPaths,
         IProgress<BackupProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? onlineCoverUrl = null)
     {
         var pathsToBackup = selectedPaths != null && selectedPaths.Count > 0
             ? selectedPaths
@@ -219,7 +220,7 @@ public class BackupService
             zipFilePath, 
             progress, 
             startPercent: 50, 
-            endPercent: 95, 
+            endPercent: 92, 
             cancellationToken);
 
         // Clean up staging/temp uncompressed folder
@@ -239,6 +240,35 @@ public class BackupService
             ? pathsToBackup[0]
             : string.Join(" | ", pathsToBackup);
 
+        // Báo tiến trình tải và chuẩn hóa ảnh bìa game (width = 450px)
+        progress?.Report(new BackupProgress 
+        { 
+            Percent = 94, 
+            TotalBytes = totalCopiedBytes,
+            TotalItems = totalCopiedFiles,
+            Message = "Đang tải và tối ưu ảnh bìa game..." 
+        });
+
+        string? coverPath = null;
+        try
+        {
+            var effectiveOnlineCoverUrl = onlineCoverUrl ?? gameInfo.OnlineCoverUrl;
+            coverPath = await GameCoverService.DownloadAndProcessCoverAsync(
+                gameInfo.GameName, 
+                effectiveOnlineCoverUrl, 
+                gameInfo.SteamAppId, 
+                cancellationToken);
+        }
+        catch { /* Bỏ qua nếu lỗi mạng để không chặn quá trình sao lưu */ }
+
+        progress?.Report(new BackupProgress 
+        { 
+            Percent = 98, 
+            TotalBytes = totalCopiedBytes,
+            TotalItems = totalCopiedFiles,
+            Message = "Đang lưu thông tin lịch sử sao lưu..." 
+        });
+
         // Lưu vào bảng backup_history (Master) và backup_history_details (Detail) với ManifestJson
         var detail = new BackupHistoryDetail
         {
@@ -252,7 +282,9 @@ public class BackupService
             BackupDate = backupDateTime,
             IsCompressed = true,
             Status = "Success",
-            Note = $"Đã backup {totalCopiedFiles} file từ {pathsToBackup.Count} vị trí lưu."
+            Note = $"Đã backup {totalCopiedFiles} file từ {pathsToBackup.Count} vị trí lưu.",
+            CoverUrl = coverPath,
+            CoverPath = coverPath
         };
 
         var detailId = await _databaseService.InsertOrUpdateBackupHistoryAsync(detail);
@@ -271,10 +303,11 @@ public class BackupService
             BackupDate = backupDateTime,
             IsCompressed = true,
             Status = "Success",
-            Note = detail.Note
+            Note = detail.Note,
+            CoverPath = coverPath
         };
 
-        progress?.Report(new BackupProgress { Percent = 100, Message = "Sao lưu hoàn tất!" });
+        progress?.Report(new BackupProgress { Percent = 100, Message = "Sao lưu hoàn tất thành công!" });
         return record;
     }
 

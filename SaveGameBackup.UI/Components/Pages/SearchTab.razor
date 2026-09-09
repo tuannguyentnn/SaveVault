@@ -69,6 +69,17 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center space-x-3">
                         <span style="font-size: 22px; color: #38BDF8;">📁</span>
+                        @if (!string.IsNullOrEmpty(SearchVM.OnlineCoverUrl))
+                        {
+                            <div class="w-[200px] h-[75px] rounded-lg overflow-hidden border border-[#1E2D42] bg-[#070B14] flex items-center justify-center flex-shrink-0 shadow-md">
+                                <img src="@SearchVM.OnlineCoverUrl"
+                                     alt="Game Cover Preview"
+                                     referrerpolicy="no-referrer"
+                                     class="w-full h-full object-cover object-top"
+                                     loading="lazy"
+                                     onerror="this.parentElement.style.display='none';" />
+                            </div>
+                        }
                         <div>
                             @if (IsEditingGameName)
                             {

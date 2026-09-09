@@ -56,6 +56,7 @@ public class GameSaveInfo
     public bool IsFoundOnDisk => DetectedPathsOnDisk.Count > 0 || DetectedPathItems.Count > 0;
     public string Source { get; set; } = "Unknown";
     public DateTime? LastScanned { get; set; }
+    public string? OnlineCoverUrl { get; set; }
 }
 
 public class BackupManifestItem
@@ -101,6 +102,7 @@ public class BackupRecord
     public bool IsCompressed { get; set; }
     public string Status { get; set; } = "Success";
     public string? Note { get; set; }
+    public string? CoverPath { get; set; }
 
     public bool IsCloudSynced { get; set; }
     public string CloudProvider { get; set; } = string.Empty;
@@ -464,6 +466,57 @@ public class GameHistoryEntry : INotifyPropertyChanged
         set => SetField(ref _hasCloudBackup, value);
     }
 
+    private string? _coverUrl;
+    public string? CoverUrl
+    {
+        get => _coverUrl;
+        set
+        {
+            if (SetField(ref _coverUrl, value))
+            {
+                OnPropertyChanged(nameof(CoverDataSrc));
+                OnPropertyChanged(nameof(CoverImageSrc));
+            }
+        }
+    }
+
+    private string? _coverPath;
+    public string? CoverPath
+    {
+        get => _coverPath;
+        set
+        {
+            if (SetField(ref _coverPath, value))
+            {
+                OnPropertyChanged(nameof(CoverImageSrc));
+                OnPropertyChanged(nameof(CoverDataSrc));
+            }
+        }
+    }
+
+    public string? CoverImageSrc
+    {
+        get
+        {
+            if (!string.IsNullOrEmpty(CoverPath) && File.Exists(CoverPath))
+            {
+                return SaveGameBackup.Core.Services.GameCoverService.GetCoverImageUri(CoverPath);
+            }
+            var defaultPath = SaveGameBackup.Core.Services.GameCoverService.GetCoverFilePath(GameName);
+            if (File.Exists(defaultPath))
+            {
+                return SaveGameBackup.Core.Services.GameCoverService.GetCoverImageUri(defaultPath);
+            }
+            if (!string.IsNullOrEmpty(CoverUrl))
+            {
+                return SaveGameBackup.Core.Services.GameCoverService.GetCoverImageUri(CoverUrl);
+            }
+            return null;
+        }
+    }
+
+    public string? CoverDataSrc => SaveGameBackup.Core.Services.GameCoverService.GetCoverDataUrl(CoverPath ?? CoverUrl);
+
     public string FormattedTotalSize => FormatBytes(TotalSizeBytes);
     public string FormattedLatestSize => FormatBytes(LatestSizeBytes);
     public string FormattedLatestDate => LatestBackupDate != DateTime.MinValue ? LatestBackupDate.ToString("dd/MM/yyyy HH:mm") : "-";
@@ -594,6 +647,36 @@ public class BackupHistoryDetail : INotifyPropertyChanged
     private string _cloudFileId = string.Empty;
     private string _cloudFileName = string.Empty;
     private DateTime? _cloudSyncDate;
+    private string? _coverUrl;
+    public string? CoverUrl
+    {
+        get => _coverUrl;
+        set
+        {
+            if (SetField(ref _coverUrl, value))
+            {
+                OnPropertyChanged(nameof(CoverDataSrc));
+                OnPropertyChanged(nameof(CoverImageSrc));
+            }
+        }
+    }
+
+    private string? _coverPath;
+    public string? CoverPath
+    {
+        get => _coverPath;
+        set
+        {
+            if (SetField(ref _coverPath, value))
+            {
+                OnPropertyChanged(nameof(CoverImageSrc));
+                OnPropertyChanged(nameof(CoverDataSrc));
+            }
+        }
+    }
+
+    public string? CoverImageSrc => SaveGameBackup.Core.Services.GameCoverService.GetCoverImageUri(CoverPath ?? CoverUrl);
+    public string? CoverDataSrc => SaveGameBackup.Core.Services.GameCoverService.GetCoverDataUrl(CoverPath ?? CoverUrl);
 
     public long Id
     {

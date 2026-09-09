@@ -43,6 +43,13 @@ public class SearchSubViewModel : INotifyPropertyChanged
     private int _selectedFileCount;
     private string _selectedSizeFormatted = "0 B";
     private bool _hasSelectedPaths;
+    private string? _onlineCoverUrl;
+
+    public string? OnlineCoverUrl
+    {
+        get => _onlineCoverUrl;
+        set => SetField(ref _onlineCoverUrl, value);
+    }
 
     public ObservableCollection<string> PopularGameSuggestions { get; } = new();
     public ObservableCollection<DetectedPathItem> DetectedPathItems { get; } = new();
@@ -241,6 +248,21 @@ public class SearchSubViewModel : INotifyPropertyChanged
             });
 
             _eventBus.Publish(new GameSelectedForBackupEvent(gameInfo.GameName));
+
+            // Tra cứu URL ảnh bìa online để hiển thị tạm thời ở placeholder
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var coverUrl = await GameCoverService.FindOnlineCoverUrlAsync(gameInfo.GameName, gameInfo.SteamAppId);
+                    if (CurrentGame == gameInfo)
+                    {
+                        OnlineCoverUrl = coverUrl;
+                        gameInfo.OnlineCoverUrl = coverUrl;
+                    }
+                }
+                catch { }
+            });
         }
         catch (Exception ex)
         {
@@ -402,6 +424,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
     {
         ClearPreviousDetectedPaths();
         CurrentGame = null;
+        OnlineCoverUrl = null;
         HasGame = false;
         DetectedSizeFormatted = "0 B";
         DetectedFileCount = 0;
@@ -417,6 +440,20 @@ public class SearchSubViewModel : INotifyPropertyChanged
             CurrentGame.GameName = newName.Trim();
             OnPropertyChanged(nameof(CurrentGame));
             _eventBus.Publish(new GameSelectedForBackupEvent(CurrentGame.GameName));
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var coverUrl = await GameCoverService.FindOnlineCoverUrlAsync(CurrentGame.GameName);
+                    if (CurrentGame != null && CurrentGame.GameName == newName.Trim())
+                    {
+                        OnlineCoverUrl = coverUrl;
+                        CurrentGame.OnlineCoverUrl = coverUrl;
+                    }
+                }
+                catch { }
+            });
         }
     }
 

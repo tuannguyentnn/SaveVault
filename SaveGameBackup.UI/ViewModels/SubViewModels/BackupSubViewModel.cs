@@ -184,7 +184,9 @@ public class BackupSubViewModel : INotifyPropertyChanged
                 _searchVM.CurrentGame,
                 appSettings,
                 pathsToBackup,
-                progress);
+                progress,
+                cancellationToken: default,
+                onlineCoverUrl: _searchVM.OnlineCoverUrl);
 
             LastBackupPath = result.BackupPath;
 

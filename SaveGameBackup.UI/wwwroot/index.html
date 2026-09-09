@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
     <title>SaveVault - Game Save Backup Tool</title>
     <base href="/" />
     <link href="css/app.css" rel="stylesheet" />
@@ -23,5 +24,46 @@
     </div>
 
     <script src="_framework/blazor.webview.js"></script>
+    <script>
+        window.galleryHelper = {
+            observer: null,
+            init: function (elementId, dotNetHelper) {
+                var el = document.getElementById(elementId);
+                if (!el) return;
+                if (this.observer) {
+                    this.observer.disconnect();
+                    this.observer = null;
+                }
+
+                var lastCols = 0;
+                var update = function () {
+                    if (!el) el = document.getElementById(elementId);
+                    if (!el) return;
+                    var width = el.clientWidth || window.innerWidth;
+                    var cardMin = 210;
+                    var gap = 16;
+                    var cols = Math.max(2, Math.floor((width + gap) / (cardMin + gap)));
+                    if (cols !== lastCols) {
+                        lastCols = cols;
+                        dotNetHelper.invokeMethodAsync('OnGalleryColumnsChanged', cols);
+                    }
+                };
+
+                if (window.ResizeObserver) {
+                    this.observer = new ResizeObserver(function () {
+                        update();
+                    });
+                    this.observer.observe(el);
+                }
+                update();
+            },
+            dispose: function () {
+                if (this.observer) {
+                    this.observer.disconnect();
+                    this.observer = null;
+                }
+            }
+        };
+    </script>
 </body>
 </html>

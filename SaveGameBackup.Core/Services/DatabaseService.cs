@@ -104,7 +104,9 @@ public class DatabaseService
                 LatestFileCount INTEGER NOT NULL DEFAULT 0,
                 SavePaths TEXT,
                 Status TEXT NOT NULL DEFAULT 'Success',
-                Note TEXT
+                Note TEXT,
+                CoverUrl TEXT,
+                CoverPath TEXT
             );
 
             CREATE TABLE IF NOT EXISTS backup_history_details (
@@ -126,7 +128,9 @@ public class DatabaseService
                 CloudFileId TEXT,
                 CloudFileName TEXT,
                 CloudSyncDate TEXT,
-                CloudSyncJson TEXT
+                CloudSyncJson TEXT,
+                CoverUrl TEXT,
+                CoverPath TEXT
             );
 
             CREATE TABLE IF NOT EXISTS settings (
@@ -137,6 +141,10 @@ public class DatabaseService
 
         connection.Execute(schemaSql);
 
+        EnsureColumnExists(connection, "backup_history", "CoverUrl", "TEXT");
+        EnsureColumnExists(connection, "backup_history", "CoverPath", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "CoverUrl", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "CoverPath", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "IsCloudSynced", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumnExists(connection, "backup_history_details", "CloudProvider", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CloudFileId", "TEXT");
@@ -201,6 +209,16 @@ public class DatabaseService
     public Task UpdateSnapshotLocationsAsync(long detailId, BackupHistoryDetail detail)
     {
         return _historyRepository.UpdateSnapshotLocationsAsync(detailId, detail);
+    }
+
+    public Task UpdateCoverUrlAsync(string gameName, string coverUrl)
+    {
+        return _historyRepository.UpdateCoverUrlAsync(gameName, coverUrl);
+    }
+
+    public Task UpdateCoverPathAsync(string gameName, string coverPath)
+    {
+        return _historyRepository.UpdateCoverPathAsync(gameName, coverPath);
     }
 
     public Task DeleteHistoryDetailAsync(long detailId, long gameHistoryId)

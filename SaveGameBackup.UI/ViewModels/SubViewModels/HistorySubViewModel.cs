@@ -160,6 +160,28 @@ public class HistorySubViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(GroupedBackupHistory));
             OnPropertyChanged(nameof(BackupHistory));
 
+            // Tự động tìm và tải ảnh bìa thật (Real Cover) cho các game trong lịch sử nếu máy chưa có
+            _ = Task.Run(async () =>
+            {
+                foreach (var entry in entries)
+                {
+                    if (string.IsNullOrEmpty(entry.CoverPath) || !File.Exists(entry.CoverPath))
+                    {
+                        var cover = await GameCoverService.EnsureCoverForGameAsync(entry.GameName);
+                        if (!string.IsNullOrEmpty(cover))
+                        {
+                            entry.CoverPath = cover;
+                            entry.CoverUrl = cover;
+                            try
+                            {
+                                await _databaseService.UpdateCoverPathAsync(entry.GameName, cover);
+                            }
+                            catch { /* Ignore */ }
+                        }
+                    }
+                }
+            });
+
             LoggingService.LogAction("History_Refreshed", new { TotalGames = entries.Count, TotalRecords = rawRecords.Count });
         }
         catch (Exception ex)
