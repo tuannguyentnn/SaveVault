@@ -354,22 +354,34 @@
                 <span class="text-slate-400 font-bold">📋</span>
                 <h3 class="text-[14px] font-bold text-white uppercase tracking-wide">NHẬT KÝ HOẠT ĐỘNG (ACTION LOGS)</h3>
             </div>
-            <button class="btn-secondary text-[11px] py-1 px-2.5"
-                    @onclick="OpenLogsFolder">
-                📂 Mở Thư Mục Logs
-            </button>
+            <div class="flex items-center space-x-2">
+                <button class="btn-secondary text-[11px] py-1 px-2.5 flex items-center space-x-1"
+                        @onclick="LoadRecentLogs">
+                    <span>🔄</span>
+                    <span>Làm Mới</span>
+                </button>
+                <button class="btn-secondary text-[11px] py-1 px-2.5 flex items-center space-x-1"
+                        @onclick="OpenLogsFolder">
+                    <span>📂</span>
+                    <span>Mở Thư Mục Logs</span>
+                </button>
+            </div>
         </div>
 
-        <div class="bg-[#0F172A] border border-[#2D3748] rounded-lg p-3 font-mono text-[11px] text-slate-300 max-h-[140px] overflow-y-auto space-y-1">
+        <div class="bg-[#0F172A] border border-[#2D3748] rounded-lg p-3 font-mono text-[11px] text-slate-300 max-h-[160px] overflow-y-auto space-y-1.5">
             @if (RecentLogs.Count == 0)
             {
-                <div class="text-slate-500 italic">Chưa có bản ghi hoạt động nào. Các thao tác sao lưu, khôi phục, xóa sẽ được ghi nhận tại đây.</div>
+                <div class="text-slate-500 italic py-2 text-center">Chưa có bản ghi hoạt động nào hoặc thư mục nhật ký trống.</div>
             }
             else
             {
                 @foreach (var log in RecentLogs)
                 {
-                    <div class="break-all">@log</div>
+                    <div class="flex items-start space-x-2 py-0.5 border-b border-[#1E293B]/40 last:border-0">
+                        <span class="text-slate-500 shrink-0 select-none">[@log.Timestamp.ToString("HH:mm:ss")]</span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 @log.BadgeClass">@log.ShortLevel</span>
+                        <span class="text-slate-200 break-all leading-relaxed">@log.Message</span>
+                    </div>
                 }
             }
         </div>
@@ -381,7 +393,7 @@
     private CloudSubViewModel CloudVM => VM.CloudVM;
 
     private bool ShowGSecret { get; set; }
-    private List<string> RecentLogs { get; set; } = new();
+    private List<LogEntryItem> RecentLogs { get; set; } = new();
 
     protected override void OnInitialized()
     {
@@ -417,9 +429,20 @@
             await CloudVM.DisconnectOneDriveAsync();
     }
 
+    private string GetResolvedLogsDirectory()
+    {
+        return !string.IsNullOrWhiteSpace(LoggingService.LogDirectory) && Directory.Exists(LoggingService.LogDirectory)
+            ? LoggingService.LogDirectory
+            : Path.Combine(DatabaseService.GetDefaultProjectRoot(), "Logs");
+    }
+
     private void OpenLogsFolder()
     {
-        var logsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
+        var logsDir = GetResolvedLogsDirectory();
+        if (!Directory.Exists(logsDir))
+        {
+            try { Directory.CreateDirectory(logsDir); } catch { }
+        }
         NativeDialog.OpenFolderInExplorer(logsDir);
     }
 
@@ -427,23 +450,99 @@
     {
         try
         {
-            var logsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
-            if (Directory.Exists(logsDir))
+            var logsDir = GetResolvedLogsDirectory();
+            if (!Directory.Exists(logsDir))
             {
-                var files = Directory.GetFiles(logsDir, "actions-*.json").OrderByDescending(f => f).ToList();
-                if (files.Count > 0)
+                RecentLogs = new();
+                return;
+            }
+
+            var files = Directory.GetFiles(logsDir, "*.json").OrderByDescending(f => f).ToList();
+            if (files.Count == 0)
+            {
+                RecentLogs = new();
+                return;
+            }
+
+            var targetFile = files[0];
+            var parsed = new List<LogEntryItem>();
+
+            using (var fs = new FileStream(targetFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var reader = new StreamReader(fs))
+            {
+                var lines = new List<string>();
+                string? line;
+                while ((line = reader.ReadLine()) != null)
                 {
-                    var lines = File.ReadLines(files[0]).Reverse().Take(15).Reverse().ToList();
-                    RecentLogs = lines;
+                    if (!string.IsNullOrWhiteSpace(line))
+                        lines.Add(line);
+                }
+
+                var latestLines = lines.TakeLast(30).Reverse();
+
+                foreach (var rawLine in latestLines)
+                {
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(rawLine);
+                        var root = doc.RootElement;
+
+                        DateTime ts = DateTime.Now;
+                        if (root.TryGetProperty("Timestamp", out var tsEl) && tsEl.TryGetDateTime(out var dt))
+                            ts = dt;
+
+                        string lvl = "Info";
+                        if (root.TryGetProperty("Level", out var lvlEl))
+                            lvl = lvlEl.GetString() ?? "Info";
+
+                        string msg = "";
+                        if (root.TryGetProperty("RenderedMessage", out var rmEl))
+                            msg = rmEl.GetString() ?? "";
+                        else if (root.TryGetProperty("MessageTemplate", out var mtEl))
+                            msg = mtEl.GetString() ?? "";
+
+                        if (string.IsNullOrWhiteSpace(msg) && root.TryGetProperty("Properties", out var propEl))
+                            msg = propEl.ToString();
+
+                        parsed.Add(new LogEntryItem(ts, lvl, msg));
+                    }
+                    catch
+                    {
+                        parsed.Add(new LogEntryItem(DateTime.Now, "Info", rawLine));
+                    }
                 }
             }
+
+            RecentLogs = parsed;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SettingsTab] LoadRecentLogs error: {ex.Message}");
+        }
     }
 
     public void Dispose()
     {
         SettingsVM.PropertyChanged -= OnStateChanged;
         CloudVM.PropertyChanged -= OnStateChanged;
+    }
+
+    private record LogEntryItem(DateTime Timestamp, string Level, string Message)
+    {
+        public string ShortLevel => Level.ToUpperInvariant() switch
+        {
+            "WARNING" or "WARN" => "WARN",
+            "ERROR" or "FATAL" => "ERR",
+            "DEBUG" => "DBG",
+            _ => "INFO"
+        };
+
+        public string BadgeClass => Level.ToUpperInvariant() switch
+        {
+            "WARNING" or "WARN" => "text-amber-300 bg-amber-950/80 border border-amber-700/60",
+            "ERROR" or "FATAL" => "text-red-300 bg-red-950/80 border border-red-700/60",
+            "DEBUG" => "text-slate-400 bg-slate-800 border border-slate-700",
+            _ => "text-emerald-300 bg-emerald-950/80 border border-emerald-700/60"
+        };
     }
 }

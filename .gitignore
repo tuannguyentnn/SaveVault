@@ -599,3 +599,6 @@ FodyWeavers.xsd
 
 # Node & Tailwind
 **/node_modules/
+/image old app
+/guide_images
+/img guid
