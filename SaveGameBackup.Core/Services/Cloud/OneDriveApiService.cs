@@ -9,7 +9,8 @@ namespace SaveGameBackup.Core.Services.Cloud;
 
 public class OneDriveApiService : ICloudStorageService
 {
-    private const string DefaultClientId = "d3590ed6-52b3-4102-aeff-aad2292ab01c"; // Microsoft public desktop app id
+    public const string DefaultClientId = "b15665d9-eda6-4092-8539-0eec376afd59";
+    public const string DefaultClientSecret = "qtyfaBBYA403=unZUP40~_#";
     private const string AuthEndpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
     private const string TokenEndpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
     private const string GraphApiMeEndpoint = "https://graph.microsoft.com/v1.0/me";
@@ -65,20 +66,25 @@ public class OneDriveApiService : ICloudStorageService
     public async Task<bool> AuthenticateAsync(CancellationToken cancellationToken = default)
     {
         var clientId = await GetClientIdAsync();
-        if (string.IsNullOrWhiteSpace(clientId))
+        var clientSecret = await GetClientSecretAsync();
+
+        bool isDefault = string.IsNullOrWhiteSpace(clientId) || clientId.Equals(DefaultClientId, StringComparison.OrdinalIgnoreCase);
+        if (isDefault)
         {
-            throw new InvalidOperationException(
-                "Bạn chưa cấu hình OneDrive Application (Client) ID!\n\n" +
-                "Do Microsoft bảo vệ tài khoản người dùng, bạn cần đăng ký 1 Client ID (hoàn toàn miễn phí) trên Microsoft Entra / Azure Portal với Redirect URI là 'http://localhost'.\n\n" +
-                "Vui lòng vào tab 'Cài đặt' > mục 'Cấu hình Cloud API Credentials' để nhập Client ID của bạn.");
+            clientId = DefaultClientId;
+            clientSecret = DefaultClientSecret;
         }
 
         // PKCE Flow
         var codeVerifier = GenerateCodeVerifier();
         var codeChallenge = GenerateCodeChallenge(codeVerifier);
 
-        // Microsoft Entra ID expects http://localhost:{port} (RFC 8252 loopback)
-        using var receiver = new OAuthLoopbackReceiver(preferredPort: 0, path: null, includeTrailingSlashInRedirectUri: false);
+        // Microsoft Entra ID with DefaultClientId expects http://localhost:53682/
+        // Custom Azure public client with redirect URI 'http://localhost' can use dynamic port
+        int preferredPort = isDefault ? 53682 : 0;
+        bool includeSlash = isDefault;
+
+        using var receiver = new OAuthLoopbackReceiver(preferredPort: preferredPort, path: null, includeTrailingSlashInRedirectUri: includeSlash);
         var state = Guid.NewGuid().ToString("N");
 
         var authUrl = $"{AuthEndpoint}?client_id={Uri.EscapeDataString(clientId)}" +
@@ -112,6 +118,11 @@ public class OneDriveApiService : ICloudStorageService
             ["code_verifier"] = codeVerifier,
             ["scope"] = Scopes
         };
+
+        if (!string.IsNullOrWhiteSpace(clientSecret))
+        {
+            tokenParams["client_secret"] = clientSecret;
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint)
         {
@@ -558,6 +569,7 @@ public class OneDriveApiService : ICloudStorageService
         }
 
         var clientId = await GetClientIdAsync() ?? throw new InvalidOperationException("Chưa cấu hình OneDrive Application (Client) ID!");
+        var clientSecret = await GetClientSecretAsync();
 
         var refreshParams = new Dictionary<string, string>
         {
@@ -566,6 +578,11 @@ public class OneDriveApiService : ICloudStorageService
             ["refresh_token"] = _refreshToken,
             ["scope"] = Scopes
         };
+
+        if (!string.IsNullOrWhiteSpace(clientSecret))
+        {
+            refreshParams["client_secret"] = clientSecret;
+        }
 
         using var req = new HttpRequestMessage(HttpMethod.Post, TokenEndpoint)
         {
@@ -689,10 +706,24 @@ public class OneDriveApiService : ICloudStorageService
         throw new InvalidOperationException($"Không thể tạo thư mục '{folderName}' trên OneDrive.");
     }
 
-    private Task<string?> GetClientIdAsync()
+    private Task<string> GetClientIdAsync()
     {
-        var configured = AppConfigService.GetConfig().OneDriveClientId;
-        return Task.FromResult(!string.IsNullOrWhiteSpace(configured) ? configured.Trim() : null);
+        var config = AppConfigService.GetConfig();
+        if (config.UseCustomOneDriveApi && !string.IsNullOrWhiteSpace(config.OneDriveClientId))
+        {
+            return Task.FromResult(config.OneDriveClientId.Trim());
+        }
+        return Task.FromResult(DefaultClientId);
+    }
+
+    private Task<string?> GetClientSecretAsync()
+    {
+        var config = AppConfigService.GetConfig();
+        if (config.UseCustomOneDriveApi && !string.IsNullOrWhiteSpace(config.OneDriveClientId))
+        {
+            return Task.FromResult<string?>(null);
+        }
+        return Task.FromResult<string?>(DefaultClientSecret);
     }
 
     private static string GenerateCodeVerifier()

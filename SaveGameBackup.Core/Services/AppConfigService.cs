@@ -36,6 +36,10 @@ public class AppConfigFile
     public DateTime GoogleDriveAccessTokenExpiry { get; set; } = DateTime.MinValue;
     public string? GoogleDriveAccountEmail { get; set; }
 
+    // Tùy chọn sử dụng API riêng thay vì cấu hình tự động mặc định (1-Click)
+    public bool UseCustomOneDriveApi { get; set; } = false;
+    public bool UseCustomGoogleDriveApi { get; set; } = false;
+
     // Các thuộc tính tiện ích (JsonIgnore) tự động mã hóa / giải mã trong suốt
     [JsonIgnore]
     public string OneDriveClientId

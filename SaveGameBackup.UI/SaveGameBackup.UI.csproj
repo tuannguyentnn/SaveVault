@@ -48,6 +48,10 @@
     <ProjectReference Include="..\SaveGameBackup.Core\SaveGameBackup.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\GoogleDrive_Setup_Guide.html" Link="GoogleDrive_Setup_Guide.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Auto compile Tailwind CSS on build if npm is present -->
   <Target Name="TailwindBuild" BeforeTargets="Build" Condition="Exists('$(ProjectDir)node_modules')">
     <Exec Command="npm run build:css" WorkingDirectory="$(ProjectDir)" ContinueOnError="true" />

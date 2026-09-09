@@ -70,8 +70,45 @@
                     <div class="flex items-center space-x-3">
                         <span style="font-size: 22px; color: #38BDF8;">📁</span>
                         <div>
-                            <div style="color: #FFFFFF; font-weight: 700; font-size: 14px;">@SearchVM.CurrentGame.GameName
-                            </div>
+                            @if (IsEditingGameName)
+                            {
+                                <div class="flex items-center space-x-2 my-0.5">
+                                    <input type="text"
+                                           class="sv-input font-bold text-[13px] py-1 px-2.5 h-[32px] w-64 text-white bg-[#0A0F1D] border-cyan-500 focus:border-cyan-400"
+                                           @bind="EditedGameName"
+                                           @bind:event="oninput"
+                                           @onkeydown="HandleEditGameNameKeyDown"
+                                           placeholder="Nhập tên game..."
+                                           autofocus />
+                                    <button type="button"
+                                            class="btn-success h-[32px] px-2.5 py-0 text-[12px] font-semibold text-white rounded bg-emerald-600 hover:bg-emerald-500 border border-emerald-400 transition-all cursor-pointer inline-flex items-center space-x-1"
+                                            title="Lưu tên game mới"
+                                            @onclick="SaveEditedGameName">
+                                        <span>✓</span>
+                                        <span>Lưu</span>
+                                    </button>
+                                    <button type="button"
+                                            class="btn-secondary h-[32px] px-2 py-0 text-[12px] text-slate-400 hover:text-white rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 transition-all cursor-pointer"
+                                            title="Hủy bỏ"
+                                            @onclick="CancelEditGameName">
+                                        ✕
+                                    </button>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="flex items-center space-x-2">
+                                    <div style="color: #FFFFFF; font-weight: 700; font-size: 14px;">
+                                        @SearchVM.CurrentGame.GameName
+                                    </div>
+                                    <button type="button"
+                                            class="text-slate-400 hover:text-cyan-400 p-1 rounded hover:bg-slate-800 transition-colors cursor-pointer text-[13px] leading-none"
+                                            title="Chỉnh sửa tên game"
+                                            @onclick="StartEditGameName">
+                                        ✏️
+                                    </button>
+                                </div>
+                            }
                             <div style="font-size: 11.5px; color: #8D9CB0; margin-top: 2px;">
                                 Tìm thấy @SearchVM.DetectedPathItems.Count vị trí lưu game trên máy
                                 (@SearchVM.DetectedFileCount tệp, @SearchVM.DetectedSizeFormatted).
@@ -233,21 +270,6 @@
                             </label>
                         </div>
 
-                        <!-- Thanh tiến trình nếu đang backup -->
-                        @if (BackupVM.IsBackingUp)
-                        {
-                            <div class="mb-3 sv-box-inner" style="border-color: #059669;">
-                                <div class="flex items-center justify-between text-[12px] mb-1.5">
-                                    <span class="font-medium text-emerald-400">@BackupVM.BackupProgressText</span>
-                                    <span class="font-bold text-white font-mono">@BackupVM.BackupProgressPercent%</span>
-                                </div>
-                                <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                                    <div class="bg-gradient-to-r from-emerald-500 to-green-400 h-2 transition-all duration-200"
-                                         style="width: @(BackupVM.BackupProgressPercent)%"></div>
-                                </div>
-                            </div>
-                        }
-
                         <!-- Nút thực hiện sao lưu và mở thư mục (Image 2 / 0.JPG & 1.JPG) -->
                         <div class="flex items-center space-x-3">
                             <button type="button" class="sv-btn-backup @(CanBackup ? "ready" : "")" disabled="@(!CanBackup)"
@@ -270,6 +292,8 @@
     private BackupSubViewModel BackupVM => VM.BackupVM;
 
     private bool ShowOnlinePatterns { get; set; } = false;
+    private bool IsEditingGameName { get; set; } = false;
+    private string EditedGameName { get; set; } = string.Empty;
 
     private bool CanBackup => !BackupVM.IsBackingUp && SearchVM.HasGame && SearchVM.HasSelectedPaths;
 
@@ -281,7 +305,46 @@
 
     private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (!SearchVM.HasGame)
+        {
+            IsEditingGameName = false;
+        }
         InvokeAsync(StateHasChanged);
+    }
+
+    private void StartEditGameName()
+    {
+        if (SearchVM.CurrentGame != null)
+        {
+            EditedGameName = SearchVM.CurrentGame.GameName;
+            IsEditingGameName = true;
+        }
+    }
+
+    private void SaveEditedGameName()
+    {
+        if (!string.IsNullOrWhiteSpace(EditedGameName))
+        {
+            SearchVM.UpdateGameName(EditedGameName);
+        }
+        IsEditingGameName = false;
+    }
+
+    private void CancelEditGameName()
+    {
+        IsEditingGameName = false;
+    }
+
+    private void HandleEditGameNameKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            SaveEditedGameName();
+        }
+        else if (e.Key == "Escape")
+        {
+            CancelEditGameName();
+        }
     }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)

@@ -8,8 +8,8 @@ namespace SaveGameBackup.Core.Services.Cloud;
 
 public class GoogleDriveApiService : ICloudStorageService
 {
-    private const string DefaultClientId = "948839073105-mockclientid.apps.googleusercontent.com";
-    private const string DefaultClientSecret = "GOCSPX-mockclientsecret";
+    public const string DefaultClientId = "948839073105-mockclientid.apps.googleusercontent.com";
+    public const string DefaultClientSecret = "GOCSPX-mockclientsecret";
     private const string TokenEndpoint = "https://oauth2.googleapis.com/token";
     private const string AuthEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
     private const string UserInfoEndpoint = "https://www.googleapis.com/oauth2/v2/userinfo";
@@ -67,6 +67,13 @@ public class GoogleDriveApiService : ICloudStorageService
     {
         var clientId = await GetClientIdAsync();
         var clientSecret = await GetClientSecretAsync();
+
+        if (clientId.Contains("mockclientid"))
+        {
+            throw new InvalidOperationException(
+                "Chưa thiết lập Google OAuth Client ID chính thức cho ứng dụng!\n\n" +
+                "Vui lòng vào tab 'Cài đặt' > bật 'Tùy chỉnh Google Cloud API riêng' để nhập Client ID và Client Secret từ Google Cloud Console.");
+        }
 
         // Google OAuth Desktop App flow uses http://127.0.0.1:{port}/ or http://localhost:{port}/ (RFC 8252 loopback)
         using var receiver = new OAuthLoopbackReceiver(preferredPort: 0, path: null, includeTrailingSlashInRedirectUri: true);
@@ -613,19 +620,28 @@ public class GoogleDriveApiService : ICloudStorageService
 
     private Task<string> GetClientIdAsync()
     {
-        var configured = AppConfigService.GetConfig().GoogleDriveClientId;
-        return Task.FromResult(!string.IsNullOrWhiteSpace(configured) ? configured.Trim() : DefaultClientId);
+        var config = AppConfigService.GetConfig();
+        if (config.UseCustomGoogleDriveApi && !string.IsNullOrWhiteSpace(config.GoogleDriveClientId))
+        {
+            return Task.FromResult(config.GoogleDriveClientId.Trim());
+        }
+        return Task.FromResult(DefaultClientId);
     }
 
     private Task<string> GetClientSecretAsync()
     {
-        var configured = AppConfigService.GetConfig().GoogleDriveClientSecret;
-        return Task.FromResult(!string.IsNullOrWhiteSpace(configured) ? configured.Trim() : DefaultClientSecret);
+        var config = AppConfigService.GetConfig();
+        if (config.UseCustomGoogleDriveApi && !string.IsNullOrWhiteSpace(config.GoogleDriveClientSecret))
+        {
+            return Task.FromResult(config.GoogleDriveClientSecret.Trim());
+        }
+        return Task.FromResult(DefaultClientSecret);
     }
 
     private static string ExtractApiErrorMessage(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return "Lỗi không xác định từ máy chủ Google Drive.";
+        string msg = raw;
         try
         {
             using var doc = JsonDocument.Parse(raw);
@@ -636,27 +652,38 @@ public class GoogleDriveApiService : ICloudStorageService
                 {
                     var str = errorProp.GetString();
                     if (root.TryGetProperty("error_description", out var descProp))
-                        return $"{str}: {descProp.GetString()}";
-                    return str ?? raw;
+                        msg = $"{str}: {descProp.GetString()}";
+                    else
+                        msg = str ?? raw;
                 }
-                if (errorProp.ValueKind == JsonValueKind.Object && errorProp.TryGetProperty("message", out var msgProp))
+                else if (errorProp.ValueKind == JsonValueKind.Object && errorProp.TryGetProperty("message", out var msgProp))
                 {
-                    return msgProp.GetString() ?? raw;
+                    msg = msgProp.GetString() ?? raw;
                 }
             }
-            if (root.TryGetProperty("error_description", out var edProp))
+            else if (root.TryGetProperty("error_description", out var edProp))
             {
-                return edProp.GetString() ?? raw;
+                msg = edProp.GetString() ?? raw;
             }
-            if (root.TryGetProperty("message", out var mProp))
+            else if (root.TryGetProperty("message", out var mProp))
             {
-                return mProp.GetString() ?? raw;
+                msg = mProp.GetString() ?? raw;
             }
         }
         catch
         {
             // fallback if not valid JSON
         }
-        return raw.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ").Trim();
+
+        // Detect Google Drive API not enabled in Google Cloud project
+        if (msg.Contains("has not been used in project", StringComparison.OrdinalIgnoreCase) ||
+            msg.Contains("it is disabled", StringComparison.OrdinalIgnoreCase))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(msg, @"https?://[^\s<>""']+");
+            var url = match.Success ? match.Value : "https://console.cloud.google.com/apis/library/drive.googleapis.com";
+            return $"Dự án Google Cloud của bạn CHƯA BẬT 'Google Drive API'!\n\nVui lòng mở liên kết sau và nhấn nút 'Enable' (Bật) để kích hoạt:\n{url}\n\n(Lưu ý: Sau khi bấm Bật, hãy đợi 1-2 phút cho Google cập nhật rồi thực hiện lại).";
+        }
+
+        return msg.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ").Trim();
     }
 }

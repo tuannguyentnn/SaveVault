@@ -32,6 +32,8 @@ public class CloudSubViewModel : INotifyPropertyChanged
     private string _oneDriveClientId = string.Empty;
     private string _googleDriveClientId = string.Empty;
     private string _googleDriveClientSecret = string.Empty;
+    private bool _useCustomOneDriveApi;
+    private bool _useCustomGoogleDriveApi;
 
     // Cloud Sync Provider Selection Modal
     private bool _isSyncCloudSelectModalOpen;
@@ -54,6 +56,8 @@ public class CloudSubViewModel : INotifyPropertyChanged
         _eventBus = eventBus;
 
         var config = AppConfigService.GetConfig();
+        _useCustomOneDriveApi = config.UseCustomOneDriveApi;
+        _useCustomGoogleDriveApi = config.UseCustomGoogleDriveApi;
         _oneDriveClientId = config.OneDriveClientId ?? string.Empty;
         _googleDriveClientId = config.GoogleDriveClientId ?? string.Empty;
         _googleDriveClientSecret = config.GoogleDriveClientSecret ?? string.Empty;
@@ -141,6 +145,32 @@ public class CloudSubViewModel : INotifyPropertyChanged
     {
         get => _cloudSyncProgressText;
         set => SetField(ref _cloudSyncProgressText, value);
+    }
+
+    public bool UseCustomOneDriveApi
+    {
+        get => _useCustomOneDriveApi;
+        set
+        {
+            if (SetField(ref _useCustomOneDriveApi, value))
+            {
+                AppConfigService.UpdateConfig(cfg => cfg.UseCustomOneDriveApi = value);
+                LoggingService.LogAction("Cloud_Toggle_Custom_OneDrive_Api", new { Enabled = value });
+            }
+        }
+    }
+
+    public bool UseCustomGoogleDriveApi
+    {
+        get => _useCustomGoogleDriveApi;
+        set
+        {
+            if (SetField(ref _useCustomGoogleDriveApi, value))
+            {
+                AppConfigService.UpdateConfig(cfg => cfg.UseCustomGoogleDriveApi = value);
+                LoggingService.LogAction("Cloud_Toggle_Custom_GoogleDrive_Api", new { Enabled = value });
+            }
+        }
     }
 
     public string OneDriveClientId
@@ -292,6 +322,8 @@ public class CloudSubViewModel : INotifyPropertyChanged
     {
         AppConfigService.UpdateConfig(cfg =>
         {
+            cfg.UseCustomOneDriveApi = UseCustomOneDriveApi;
+            cfg.UseCustomGoogleDriveApi = UseCustomGoogleDriveApi;
             cfg.OneDriveClientId = OneDriveClientId?.Trim() ?? string.Empty;
             cfg.GoogleDriveClientId = GoogleDriveClientId?.Trim() ?? string.Empty;
             cfg.GoogleDriveClientSecret = GoogleDriveClientSecret?.Trim() ?? string.Empty;
@@ -300,11 +332,26 @@ public class CloudSubViewModel : INotifyPropertyChanged
         _dialogService.ShowMessage("Lưu Cấu Hình", "Đã lưu cài đặt Cloud API Credentials vào app_config.json thành công!", "Success");
         LoggingService.LogAction("Save_Cloud_Credentials", new
         {
+            UseCustomOneDriveApi,
+            UseCustomGoogleDriveApi,
             HasOneDriveId = !string.IsNullOrEmpty(OneDriveClientId),
             HasGDriveId = !string.IsNullOrEmpty(GoogleDriveClientId)
         });
 
         await Task.CompletedTask;
+    }
+
+
+    public void ResetOneDriveApiToDefault()
+    {
+        UseCustomOneDriveApi = false;
+        OneDriveClientId = string.Empty;
+        AppConfigService.UpdateConfig(cfg =>
+        {
+            cfg.UseCustomOneDriveApi = false;
+            cfg.OneDriveClientId = string.Empty;
+        });
+        _dialogService.ShowMessage("Khôi Phục Mặc Định", "Đã chuyển Microsoft OneDrive về Chế Độ Tự Động (1-Click).", "Info");
     }
 
     public void OpenSyncCloudSelectModal(BackupHistoryDetail? detail)
@@ -488,7 +535,23 @@ public class CloudSubViewModel : INotifyPropertyChanged
     {
         try
         {
-            Process.Start(new ProcessStartInfo { FileName = "https://console.cloud.google.com/apis/credentials", UseShellExecute = true });
+            string[] candidatePaths = new[]
+            {
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GoogleDrive_Setup_Guide.html"),
+                Path.Combine(Directory.GetCurrentDirectory(), "GoogleDrive_Setup_Guide.html"),
+                Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "GoogleDrive_Setup_Guide.html")),
+                Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", "GoogleDrive_Setup_Guide.html"))
+            };
+
+            var existingPath = candidatePaths.FirstOrDefault(File.Exists);
+            if (!string.IsNullOrEmpty(existingPath))
+            {
+                Process.Start(new ProcessStartInfo { FileName = existingPath, UseShellExecute = true });
+                return;
+            }
+
+            // Fallback nếu chưa copy file
+            Process.Start(new ProcessStartInfo { FileName = "https://console.cloud.google.com/auth/overview", UseShellExecute = true });
         }
         catch { }
     }

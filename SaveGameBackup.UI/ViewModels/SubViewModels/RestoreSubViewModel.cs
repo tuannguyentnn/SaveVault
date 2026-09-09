@@ -173,6 +173,18 @@ public class RestoreSubViewModel : INotifyPropertyChanged
         set => SetField(ref _isPendingDetailSyncedToOneDrive, value);
     }
 
+    public bool ActiveRestoreFromCloud
+    {
+        get => _activeRestoreFromCloud;
+        set => SetField(ref _activeRestoreFromCloud, value);
+    }
+
+    public string ActiveCloudProvider
+    {
+        get => _activeCloudProvider;
+        set => SetField(ref _activeCloudProvider, value);
+    }
+
     public ICommand OpenRestoreModalCommand { get; }
     public ICommand CloseRestoreModalCommand { get; }
     public ICommand ModalRestoreConfirmCommand { get; }
@@ -266,6 +278,8 @@ public class RestoreSubViewModel : INotifyPropertyChanged
     {
         ActiveRestoreDetail = detail;
         ActiveRestoreRecord = null;
+        ActiveRestoreFromCloud = isCloud;
+        ActiveCloudProvider = isCloud ? (cloudProvider ?? "GoogleDrive") : "Local";
         ActiveRestoreItems.Clear();
 
         var items = _backupService.GetRestoreItemsFromBackup(detail);
@@ -285,6 +299,8 @@ public class RestoreSubViewModel : INotifyPropertyChanged
     {
         ActiveRestoreRecord = record;
         ActiveRestoreDetail = null;
+        ActiveRestoreFromCloud = false;
+        ActiveCloudProvider = "Local";
         ActiveRestoreItems.Clear();
 
         var items = _backupService.GetRestoreItemsFromBackup(record);

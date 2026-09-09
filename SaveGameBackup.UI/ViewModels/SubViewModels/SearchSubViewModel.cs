@@ -85,6 +85,10 @@ public class SearchSubViewModel : INotifyPropertyChanged
             if (SetField(ref _searchQuery, value))
             {
                 (SearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    ResetGameInfo();
+                }
             }
         }
     }
@@ -394,6 +398,28 @@ public class SearchSubViewModel : INotifyPropertyChanged
         HasSelectedPaths = false;
     }
 
+    public void ResetGameInfo()
+    {
+        ClearPreviousDetectedPaths();
+        CurrentGame = null;
+        HasGame = false;
+        DetectedSizeFormatted = "0 B";
+        DetectedFileCount = 0;
+        IsGameFoundOnDisk = false;
+        StatusMessage = string.Empty;
+        _eventBus.Publish(new GameSelectedForBackupEvent(string.Empty));
+    }
+
+    public void UpdateGameName(string newName)
+    {
+        if (CurrentGame != null && !string.IsNullOrWhiteSpace(newName))
+        {
+            CurrentGame.GameName = newName.Trim();
+            OnPropertyChanged(nameof(CurrentGame));
+            _eventBus.Publish(new GameSelectedForBackupEvent(CurrentGame.GameName));
+        }
+    }
+
     private static string FormatBytes(long bytes)
     {
         if (bytes <= 0) return "0 B";
@@ -406,6 +432,11 @@ public class SearchSubViewModel : INotifyPropertyChanged
             counter++;
         }
         return $"{number:n1} {suffixes[counter]}";
+    }
+
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

@@ -4,17 +4,29 @@
 @implements IDisposable
 
 @{
-    var isOpen = VM.DialogService.IsMessageModalOpen || DialogService.IsMessageModalOpen;
-    var title = !string.IsNullOrEmpty(DialogService.MessageTitle) ? DialogService.MessageTitle : VM.DialogService.MessageModalTitle;
-    var content = !string.IsNullOrEmpty(DialogService.MessageContent) ? DialogService.MessageContent : VM.DialogService.MessageModalContent;
-    var type = !string.IsNullOrEmpty(DialogService.MessageType) ? DialogService.MessageType : VM.DialogService.MessageModalType;
-    var actionUrl = !string.IsNullOrEmpty(DialogService.MessageActionUrl) ? DialogService.MessageActionUrl : VM.DialogService.MessageActionUrl;
-    var actionText = !string.IsNullOrEmpty(DialogService.MessageActionText) ? DialogService.MessageActionText : VM.DialogService.MessageActionText;
+    var isBlazorActive = DialogService.IsMessageModalOpen;
+    var isOpen = isBlazorActive || VM.DialogService.IsMessageModalOpen;
+    var title = isBlazorActive ? DialogService.MessageTitle : VM.DialogService.MessageModalTitle;
+    var content = isBlazorActive ? DialogService.MessageContent : VM.DialogService.MessageModalContent;
+    var type = isBlazorActive ? DialogService.MessageType : VM.DialogService.MessageModalType;
+    var actionUrl = isBlazorActive ? DialogService.MessageActionUrl : VM.DialogService.MessageActionUrl;
+    var actionText = isBlazorActive ? DialogService.MessageActionText : VM.DialogService.MessageActionText;
+
+    string? targetUrl = actionUrl;
+    if (string.IsNullOrEmpty(targetUrl) && !string.IsNullOrEmpty(content))
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(content, @"https?://[^\s<>""']+");
+        if (match.Success)
+        {
+            targetUrl = match.Value;
+        }
+    }
 }
 
 @if (isOpen)
 {
-    var (borderColor, iconBg, iconColor, iconSymbol) = type.ToLowerInvariant() switch
+    var currentType = string.IsNullOrWhiteSpace(type) ? "info" : type.ToLowerInvariant();
+    var (borderColor, iconBg, iconColor, iconSymbol) = currentType switch
     {
         "success" => ("border-[#10B981]", "bg-emerald-600/20 border-emerald-500/40", "text-emerald-400", "✓"),
         "error" => ("border-[#EF4444]", "bg-red-600/20 border-red-500/40", "text-red-400", "✕"),
@@ -23,9 +35,9 @@
     };
 
     <div class="modal-backdrop">
-        <div class="modal-content w-full max-w-md border-2 @borderColor flex flex-col items-center text-center p-6 shadow-2xl">
+        <div class="modal-content w-full max-w-lg border-2 @borderColor flex flex-col items-center text-center p-6 shadow-2xl mx-4">
             <!-- Icon Circle (Image 6.JPG) -->
-            <div class="w-16 h-16 rounded-full border-2 @iconBg flex items-center justify-center mb-4">
+            <div class="w-16 h-16 rounded-full border-2 @iconBg flex items-center justify-center mb-4 flex-shrink-0">
                 <span class="@iconColor font-bold text-3xl">@iconSymbol</span>
             </div>
 
@@ -35,26 +47,29 @@
             </h3>
 
             <!-- Message Body -->
-            <p class="text-[13px] text-slate-300 leading-relaxed mb-4 whitespace-pre-line select-text">
-                @content
-            </p>
+            <div class="w-full max-h-[50vh] overflow-y-auto px-2 mb-4">
+                <p class="text-[13px] text-slate-300 leading-relaxed whitespace-pre-line select-text text-center break-words"
+                   style="word-break: break-word; overflow-wrap: anywhere;">
+                    @content
+                </p>
+            </div>
 
-            @if (!string.IsNullOrEmpty(actionUrl))
+            @if (!string.IsNullOrEmpty(targetUrl))
             {
-                <div class="w-full bg-[#0A0F1D] border border-cyan-500/40 rounded-lg p-3 mb-5 text-left">
+                <div class="w-full bg-[#0A0F1D] border border-cyan-500/40 rounded-lg p-3 mb-4 text-left">
                     <div class="text-[11px] text-slate-400 mb-1 flex items-center justify-between">
-                        <span>🔗 Đường dẫn file vừa đồng bộ:</span>
-                        <span class="text-[10px] text-cyan-400">Có thể copy hoặc mở</span>
+                        <span>🔗 Đường dẫn liên kết:</span>
+                        <span class="text-[10px] text-cyan-400">Bấm mở trực tiếp</span>
                     </div>
                     <div class="font-mono text-[11px] text-cyan-300 truncate select-text mb-2 bg-[#131C2E] p-1.5 rounded border border-cyan-500/20"
-                         title="@actionUrl">
-                        @actionUrl
+                         title="@targetUrl">
+                        @targetUrl
                     </div>
                     <button type="button"
                             class="w-full py-2 px-3 bg-cyan-600/30 hover:bg-cyan-600 border border-cyan-500 text-cyan-200 hover:text-white rounded-md text-[12px] font-semibold transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
-                            @onclick="() => OpenActionUrl(actionUrl)">
+                            @onclick="() => OpenActionUrl(targetUrl)">
                         <span>🌐</span>
-                        <span>@(string.IsNullOrEmpty(actionText) ? "Mở Xem File Trên Cloud ↗" : actionText)</span>
+                        <span>@(string.IsNullOrEmpty(actionText) ? "Mở Liên Kết Trong Trình Duyệt ↗" : actionText)</span>
                     </button>
                 </div>
             }

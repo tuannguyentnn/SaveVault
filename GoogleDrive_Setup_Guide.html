@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hướng Dẫn Cấu Hình Google Drive Cho SaveVault (A - Z)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #0B0F19;
+            --bg-card: #111827;
+            --bg-inner: #1F2937;
+            --border: #374151;
+            --primary: #2563EB;
+            --primary-hover: #1D4ED8;
+            --accent-green: #10B981;
+            --accent-amber: #F59E0B;
+            --accent-red: #EF4444;
+            --text-main: #F3F4F6;
+            --text-muted: #9CA3AF;
+            --google-blue: #1A73E8;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            line-height: 1.6;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 30px;
+            border-bottom: 1px solid var(--border);
+        }
+        .header h1 {
+            font-size: 32px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #60A5FA, #34D399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 12px;
+        }
+        .header p {
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        .quick-box {
+            background: linear-gradient(135deg, #1E1B4B 0%, #172554 100%);
+            border: 1px solid #3B82F6;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.2);
+        }
+        .quick-box h3 {
+            color: #93C5FD;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .quick-box code {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0,0,0,0.5);
+            padding: 3px 8px;
+            border-radius: 6px;
+            color: #FDE047;
+            font-size: 13px;
+        }
+
+        .step-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            margin-bottom: 35px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+        }
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+        .step-num {
+            background: var(--primary);
+            color: white;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-weight: 800;
+            font-size: 18px;
+            flex-shrink: 0;
+            box-shadow: 0 0 15px rgba(37, 99, 235, 0.5);
+        }
+        .step-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #FFFFFF;
+        }
+
+        .instructions {
+            color: #D1D5DB;
+            font-size: 15px;
+            margin-bottom: 20px;
+        }
+        .instructions ol, .instructions ul {
+            padding-left: 24px;
+            margin-top: 8px;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        .kbd-badge {
+            background: #374151;
+            color: #F9FAFB;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 4px;
+            border: 1px solid #4B5563;
+        }
+
+        /* UI Mockup Screenshot Frame */
+        .mockup-window {
+            background: #FFFFFF;
+            color: #202124;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+            margin: 20px 0;
+            border: 1px solid #DADCE0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+        }
+        .mockup-bar {
+            background: #F1F3F4;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid #DADCE0;
+        }
+        .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .dot-red { background: #ED6A5E; }
+        .dot-yellow { background: #F4BF4F; }
+        .dot-green { background: #61C554; }
+        .mockup-url {
+            background: #FFFFFF;
+            border-radius: 20px;
+            padding: 4px 14px;
+            font-size: 12px;
+            color: #5F6368;
+            flex-grow: 1;
+            margin-left: 10px;
+            border: 1px solid #DADCE0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .mockup-body {
+            padding: 20px;
+            background: #F8F9FA;
+        }
+
+        .gconsole-header {
+            background: #1A73E8;
+            color: white;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 14px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+        .gconsole-search {
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px;
+            padding: 6px 12px;
+            width: 320px;
+            color: white;
+            font-size: 13px;
+        }
+
+        .ui-row {
+            display: flex;
+            gap: 20px;
+        }
+        .ui-sidebar {
+            width: 220px;
+            background: white;
+            border: 1px solid #DADCE0;
+            border-radius: 8px;
+            padding: 12px 0;
+            font-size: 13px;
+        }
+        .ui-sidebar-item {
+            padding: 8px 16px;
+            color: #3C4043;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 500;
+        }
+        .ui-sidebar-item.active {
+            background: #E8F0FE;
+            color: #1A73E8;
+            font-weight: 600;
+            border-left: 3px solid #1A73E8;
+        }
+
+        .ui-content {
+            flex-grow: 1;
+            background: white;
+            border: 1px solid #DADCE0;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .highlight-box {
+            border: 2px dashed #EA4335;
+            background: rgba(234, 67, 53, 0.05);
+            padding: 12px 16px;
+            border-radius: 8px;
+            position: relative;
+            margin: 12px 0;
+        }
+        .highlight-badge {
+            position: absolute;
+            top: -12px;
+            right: 12px;
+            background: #EA4335;
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 2px 8px;
+            border-radius: 12px;
+            text-transform: uppercase;
+        }
+
+        .g-btn-blue {
+            background: #1A73E8;
+            color: white;
+            border: none;
+            padding: 8px 18px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .g-btn-outline {
+            background: white;
+            color: #1A73E8;
+            border: 1px solid #DADCE0;
+            padding: 7px 16px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .alert-box {
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-top: 14px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            font-size: 14px;
+        }
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #FBBF24;
+        }
+        .alert-danger {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #F87171;
+        }
+        .alert-info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #93C5FD;
+        }
+
+        .input-group {
+            margin-bottom: 14px;
+        }
+        .input-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #3C4043;
+            margin-bottom: 6px;
+        }
+        .mock-input {
+            width: 100%;
+            padding: 9px 12px;
+            border: 1px solid #DADCE0;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #202124;
+            background: #FAFAFA;
+        }
+
+        .app-mockup {
+            background: #0F172A;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            padding: 20px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Hướng Dẫn Cấu Hình Google Drive Cho SaveVault</h1>
+            <p>Từng bước lấy OAuth Client ID & Client Secret chuẩn Desktop App (Cập nhật giao diện Google Cloud mới nhất)</p>
+        </div>
+
+        <!-- Quick Info Box for Generated Credentials -->
+        <div class="quick-box">
+            <h3>🔑 Mã Xác Thực Google Cloud Vừa Tạo Thành Công!</h3>
+            <p style="font-size: 14px; color: #E0E7FF; margin-bottom: 12px;">
+                Dưới đây là thông số Client ID & Secret bạn vừa tạo trong Google Auth Platform:
+            </p>
+            <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; font-size: 13px; font-family: 'JetBrains Mono', monospace;">
+                <div style="color: #93C5FD; margin-bottom: 6px;"><b>Client ID:</b> <span style="color:#FFF;">358261978928-pdf09gqvgchd3la392dn15s0kkbrnl8h.apps.googleusercontent.com</span></div>
+                <div style="color: #F472B6;"><b>Client Secret:</b> <span style="color:#FFF;">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</span></div>
+            </div>
+            <p style="font-size: 13px; color: #94A3B8; margin-top: 10px;">
+                👉 Giờ bạn chỉ cần mở <b>SaveVault ➔ Tab Cài đặt</b> và làm theo <b>Bước 7</b> bên dưới để đăng nhập!
+            </p>
+        </div>
+
+        <!-- BƯỚC 1 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-num">1</div>
+                <div class="step-title">Tạo Dự Án Mới: Bấm "Select a project" ➔ NEW PROJECT ➔ Bật MFA/2FA</div>
+            </div>
+            <div class="instructions">
+                <ol>
+                    <li>
+                        <b>Mở Google Cloud Console:</b> Truy cập <a href="https://console.cloud.google.com/" target="_blank" style="color: #60A5FA;">https://console.cloud.google.com/</a> và đăng nhập tài khoản Google.
+                    </li>
+                    <li>
+                        <b>Bấm vào "Select a project":</b> Ở thanh tiêu đề trên cùng (ngay bên cạnh chữ <i>Google Cloud</i>), bạn sẽ thấy nút có khung viền: <b>Select a project</b> <i>(hoặc "Chọn một dự án")</i>. Bấm vào nút này.
+                    </li>
+                    <li>
+                        <b>Bấm "NEW PROJECT":</b> Một bảng cửa sổ (modal) chọn dự án sẽ mở ra. Ở góc trên cùng bên phải của bảng này, bấm nút <b>NEW PROJECT (DỰ ÁN MỚI)</b>.
+                    </li>
+                    <li>
+                        <b>Bật xác thực 2 bước (MFA / 2-Step Verification):</b> 
+                        <span style="color: #FCD34D;">Google Cloud hiện tại có chính sách bảo mật bắt buộc:</span> Khi bấm tạo, Google sẽ yêu cầu bạn hoàn tất cài đặt bảo mật 2 lớp (MFA qua số điện thoại hoặc app Google Authenticator) rồi mới cho phép tạo tài nguyên. Hãy làm theo hướng dẫn trên màn hình của Google.
+                    </li>
+                    <li>
+                        <b>Nhập tên dự án:</b> Sau khi hoàn tất xác thực 2FA, màn hình <i>New Project</i> sẽ mở ra ➔ Điền tên dự án là <b>SaveVault</b> vào ô <i>Project name</i> ➔ Bấm nút <b>Create (Tạo)</b> và đợi vài giây.
+                    </li>
+                </ol>
+            </div>
+
+            <!-- Screenshot Frame: Google Cloud Console Header with Select a project -->
+            <div class="mockup-window">
+                <div class="mockup-bar">
+                    <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+                    <div class="mockup-url">🔒 https://console.cloud.google.com/</div>
+                </div>
+                <div class="mockup-body" style="background: #121316; color: white;">
+                    <!-- Dark Header exactly like user screenshot -->
+                    <div style="background: #1E1F24; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; border-radius: 6px; border: 1px solid #2D3139; margin-bottom: 16px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 16px; color: #9AA0A6;">≡</span>
+                            <span style="font-weight: 700; font-size: 14px; color: #E8EAED;">Google Cloud</span>
+                            <!-- Highlighted Select a project button -->
+                            <div class="highlight-box" style="margin: 0; padding: 4px 10px; border-color: #38BDF8; background: rgba(56, 189, 248, 0.1);">
+                                <span class="highlight-badge" style="background: #0284C7; top: -10px; right: -5px;">1. BẤM VÀO ĐÂY</span>
+                                <div style="border: 1px solid #5F6368; border-radius: 20px; padding: 3px 12px; font-size: 12px; color: #E8EAED; background: #282A2F; cursor: pointer;">
+                                    Select a project ▾
+                                </div>
+                            </div>
+                        </div>
+                        <div style="background: #282A2F; border: 1px solid #3C4043; border-radius: 6px; padding: 5px 14px; width: 340px; font-size: 12px; color: #9AA0A6;">
+                            Search (/ ) for resources, docs, products...
+                        </div>
+                    </div>
+
+                    <!-- Modal Popup: Select a project with NEW PROJECT button -->
+                    <div style="background: #1E1F24; border: 1px solid #3C4043; border-radius: 8px; max-width: 580px; margin: 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.8); overflow: hidden;">
+                        <div style="padding: 12px 18px; border-bottom: 1px solid #2D3139; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 600; font-size: 14px; color: #E8EAED;">Select a project</span>
+                            <!-- Highlighted NEW PROJECT Button -->
+                            <div class="highlight-box" style="margin: 0; padding: 4px 10px; border-color: #EA4335;">
+                                <span class="highlight-badge" style="top: -10px; right: -5px;">2. BẤM NEW PROJECT</span>
+                                <button style="background: #1A73E8; color: white; border: none; border-radius: 4px; padding: 5px 14px; font-size: 12px; font-weight: 700; cursor: pointer;">
+                                    + NEW PROJECT
+                                </button>
+                            </div>
+                        </div>
+                        <div style="padding: 16px; font-size: 12px; color: #9AA0A6;">
+                            <i>Danh sách dự án của bạn (nếu chưa có dự án nào sẽ để trống)...</i>
+                        </div>
+                    </div>
+
+                    <!-- MFA & New Project Form -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px;">
+                        <!-- MFA Notice box -->
+                        <div style="background: #231C10; border: 1px solid #B45309; border-radius: 8px; padding: 14px;">
+                            <div style="display: flex; align-items: center; gap: 6px; color: #FCD34D; font-weight: 700; font-size: 13px; margin-bottom: 6px;">
+                                <span>🛡️</span>
+                                <span>3. Yêu Cầu Bật MFA / 2FA</span>
+                            </div>
+                            <p style="font-size: 12px; color: #FDE68A; line-height: 1.5;">
+                                Google Cloud bắt buộc bảo mật 2 lớp trước khi tạo dự án. Hãy bấm vào đường dẫn để bật xác thực 2 bước (2-Step Verification) trên tài khoản Google của bạn.
+                            </p>
+                        </div>
+
+                        <!-- Project Name Form -->
+                        <div style="background: #1E1F24; border: 1px solid #3C4043; border-radius: 8px; padding: 14px;">
+                            <div style="color: #E8EAED; font-weight: 700; font-size: 13px; margin-bottom: 8px;">
+                                4. Đặt Tên & Bấm Create
+                            </div>
+                            <div class="input-group" style="margin-bottom: 10px;">
+                                <label style="font-size: 11px; color: #9AA0A6; margin-bottom: 2px;">Project name *</label>
+                                <input style="width: 100%; background: #121316; border: 1px solid #5F6368; color: #E8EAED; padding: 6px 10px; border-radius: 4px; font-size: 12px;" value="SaveVault" readonly>
+                            </div>
+                            <button style="background: #1A73E8; color: white; border: none; border-radius: 4px; padding: 6px 14px; font-size: 12px; font-weight: 600;">
+                                Create (Tạo)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BƯỚC 2 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-num">2</div>
+                <div class="step-title">Bật Thư Viện "Google Drive API"</div>
+            </div>
+            <div class="instructions">
+                <ol>
+                    <li>Trên thanh tìm kiếm trên cùng của Google Cloud, gõ chữ <b>Google Drive API</b> và nhấn Enter.</li>
+                    <li>Hoặc vào menu bên trái: <b>APIs & Services ➔ Library (Thư viện)</b>.</li>
+                    <li>Bấm chọn <b>Google Drive API</b> trong danh sách kết quả ➔ Bấm nút <b>ENABLE (BẬT)</b> màu xanh dương.</li>
+                </ol>
+            </div>
+
+            <div class="mockup-window">
+                <div class="mockup-bar">
+                    <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+                    <div class="mockup-url">🔒 https://console.cloud.google.com/apis/library/drive.googleapis.com</div>
+                </div>
+                <div class="mockup-body">
+                    <div class="ui-content" style="display: flex; gap: 20px; align-items: center;">
+                        <div style="font-size: 52px;">📁</div>
+                        <div>
+                            <h2 style="font-size: 20px; color: #202124; margin-bottom: 6px;">Google Drive API</h2>
+                            <p style="color: #5F6368; font-size: 13px; margin-bottom: 14px;">Cho phép ứng dụng tải lên, tải xuống và sao lưu tệp game lên Google Drive.</p>
+                            <div class="highlight-box" style="display: inline-block; padding: 6px 10px;">
+                                <span class="highlight-badge">BẮT BUỘC BẬT</span>
+                                <button class="g-btn-blue" style="font-size: 14px; padding: 10px 24px;">✓ ENABLE (BẬT)</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BƯỚC 3 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-num">3</div>
+                <div class="step-title">Cấu Hình "Google Auth Platform" (Giao Diện Mới Nhất)</div>
+            </div>
+            <div class="instructions">
+                <p style="margin-bottom: 12px; color: #93C5FD; font-size: 14px;">
+                    💡 <b>Google Cloud đã đổi tên mục này thành "Google Auth Platform"</b>. Khi bạn vào menu này lần đầu, hãy thực hiện theo đúng 5 bước dưới đây:
+                </p>
+                <ol>
+                    <li>
+                        <b>Bấm "Get started":</b> Tại trang <i>OAuth Overview</i> (thấy thông báo <i>"Google Auth Platform not configured yet"</i>), bấm vào nút màu xanh: <b>Get started</b>.
+                    </li>
+                    <li>
+                        <b>Mục 1 - App Information:</b>
+                        <ul>
+                            <li><b>App name *:</b> Nhập <code>SaveVault</code>.</li>
+                            <li><b>User support email *:</b> Nhấp vào ô chọn email Google của bạn.</li>
+                            <li>Bấm nút <b>Next</b>.</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <b>Mục 2 - Audience (QUAN TRỌNG):</b>
+                        <ul>
+                            <li>Tích chọn vào: <b>● External</b> <i>(Available to any test user with a Google Account)</i>.</li>
+                            <li>Bấm nút <b>Next</b>.</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <b>Mục 3 - Contact Information:</b>
+                        <ul>
+                            <li><b>Email addresses *:</b> Nhập lại email Gmail của bạn để Google gửi thông báo.</li>
+                            <li>Bấm nút <b>Next</b>.</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <b>Mục 4 - Finish & Tạo:</b>
+                        <ul>
+                            <li>Tích chọn ô: <b>☑ I agree to the Google API Services: User Data Policy.</b></li>
+                            <li>Bấm nút <b>Continue</b> ➔ Sau đó bấm nút màu xanh <b>Create</b> ở góc dưới bên trái để hoàn tất.</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+
+            <!-- UI Mockup: Google Auth Platform Wizard -->
+            <div class="mockup-window">
+                <div class="mockup-bar">
+                    <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+                    <div class="mockup-url">🔒 https://console.cloud.google.com/auth/overview</div>
+                </div>
+                <div class="mockup-body" style="background: #121316; color: white;">
+                    <div class="ui-row">
+                        <!-- Sidebar Google Auth Platform -->
+                        <div class="ui-sidebar" style="background: #18191E; border-color: #2D3139; color: #E8EAED;">
+                            <div style="padding: 10px 14px; font-weight: 700; font-size: 13px; border-bottom: 1px solid #2D3139; color: #9AA0A6;">
+                                🛡️ Google Auth Platf...
+                            </div>
+                            <div class="ui-sidebar-item active" style="background: #252D3D; color: #8AB4F8; border-left: 3px solid #8AB4F8;">📊 Overview</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">🎨 Branding</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">👥 Audience</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">🪪 Clients</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">📂 Data Access</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">📋 Verification Center</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">⚙️ Settings</div>
+                        </div>
+
+                        <!-- Main content: 5-step wizard visualization -->
+                        <div class="ui-content" style="background: #18191E; border-color: #2D3139; color: #E8EAED;">
+                            <div style="font-size: 15px; font-weight: 700; margin-bottom: 16px; border-bottom: 1px solid #2D3139; padding-bottom: 8px;">
+                                Project configuration
+                            </div>
+
+                            <!-- 1. App Info -->
+                            <div style="margin-bottom: 14px; border-left: 2px solid #8AB4F8; padding-left: 12px;">
+                                <div style="font-weight: 600; font-size: 13px; color: #8AB4F8;">1. App Information</div>
+                                <div style="display: flex; gap: 10px; margin-top: 6px;">
+                                    <input style="background: #121316; border: 1px solid #5F6368; color: #FFF; padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 160px;" value="SaveVault" readonly>
+                                    <input style="background: #121316; border: 1px solid #5F6368; color: #9AA0A6; padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 190px;" value="email_cua_ban@gmail.com" readonly>
+                                </div>
+                            </div>
+
+                            <!-- 2. Audience -->
+                            <div style="margin-bottom: 14px; border-left: 2px solid #8AB4F8; padding-left: 12px;">
+                                <div style="font-weight: 600; font-size: 13px; color: #8AB4F8;">2. Audience</div>
+                                <div class="highlight-box" style="margin: 6px 0; padding: 6px 10px; border-color: #34D399; background: rgba(52, 211, 153, 0.1);">
+                                    <span class="highlight-badge" style="background: #059669; top: -10px;">BẮT BUỘC CHỌN</span>
+                                    <label style="font-size: 12px; color: #FFF; font-weight: 600; cursor: pointer;">
+                                        ● <b>External</b> (Khả dụng cho tài khoản cá nhân & test users)
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- 3. Contact Info -->
+                            <div style="margin-bottom: 14px; border-left: 2px solid #8AB4F8; padding-left: 12px;">
+                                <div style="font-weight: 600; font-size: 13px; color: #8AB4F8;">3. Contact Information</div>
+                                <input style="background: #121316; border: 1px solid #5F6368; color: #FFF; padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 260px; margin-top: 4px;" value="email_cua_ban@gmail.com" readonly>
+                            </div>
+
+                            <!-- 4. Finish -->
+                            <div style="border-left: 2px solid #8AB4F8; padding-left: 12px; margin-bottom: 16px;">
+                                <div style="font-weight: 600; font-size: 13px; color: #8AB4F8;">4. Finish</div>
+                                <div style="margin-top: 6px; font-size: 12px; color: #E8EAED;">
+                                    ☑ <b>I agree to the Google API Services: User Data Policy.</b>
+                                </div>
+                            </div>
+
+                            <!-- Action button -->
+                            <div class="highlight-box" style="margin: 0; padding: 6px 12px; display: inline-block;">
+                                <span class="highlight-badge" style="top: -10px;">BẤM NÚT NÀY</span>
+                                <button style="background: #1A73E8; color: white; border: none; padding: 6px 20px; border-radius: 4px; font-weight: 700; font-size: 12px; cursor: pointer;">
+                                    Create (Tạo)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BƯỚC 4 - BƯỚC SỐNG CÒN -->
+        <div class="step-card" style="border-color: #EF4444; box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);">
+            <div class="step-header">
+                <div class="step-num" style="background: #EF4444;">4</div>
+                <div class="step-title" style="color: #FCA5A5;">BƯỚC SỐNG CÒN: Thêm Email Vào "Test Users" Tại Tab "Audience"</div>
+            </div>
+            <div class="instructions">
+                <div class="alert-box alert-danger">
+                    <span>🚨</span>
+                    <div>
+                        <b>Tại sao đây là bước quan trọng nhất?</b><br>
+                        Vì app cá nhân đang ở trạng thái <b>"Testing"</b>. Google chỉ cho phép tối đa 100 email được thêm vào danh sách Test Users đăng nhập. Nếu <b>KHÔNG</b> thêm email của bạn, khi login app sẽ bị Google từ chối ngay với lỗi: <br>
+                        <code>Error 403: access_denied - SaveVault has not completed the Google verification process.</code>
+                    </div>
+                </div>
+                <ol style="margin-top: 16px;">
+                    <li>Ở menu bên trái của <b>Google Auth Platform</b> ➔ Bấm vào mục <b>👥 Audience</b>.</li>
+                    <li>Ở trang Audience, kéo xuống mục <b>Test users</b> ➔ Bấm nút <b>+ Add users</b>.</li>
+                    <li>Một thanh trượt (slide-out panel) <b>"Add users"</b> sẽ mở ra ở cạnh phải màn hình:
+                        <ul>
+                            <li>Nhập chính xác địa chỉ Gmail mà bạn sẽ dùng để backup save game vào ô nhập liệu.</li>
+                            <li>Bấm nút <b>Save (Lưu)</b> màu xanh dương ở ngay dưới ô nhập.</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+
+            <!-- UI Mockup: Audience Page & Add Users Slide-out Panel -->
+            <div class="mockup-window">
+                <div class="mockup-bar">
+                    <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+                    <div class="mockup-url">🔒 https://console.cloud.google.com/auth/audience</div>
+                </div>
+                <div class="mockup-body" style="background: #121316; color: white; padding: 12px;">
+                    <div style="display: grid; grid-template-columns: 200px 1fr 280px; gap: 12px; min-height: 280px;">
+                        <!-- Col 1: Sidebar -->
+                        <div style="background: #18191E; border: 1px solid #2D3139; border-radius: 6px; padding: 10px 0; font-size: 12px;">
+                            <div style="padding: 6px 12px; font-weight: 700; color: #9AA0A6; border-bottom: 1px solid #2D3139;">
+                                🛡️ Google Auth Platf...
+                            </div>
+                            <div style="padding: 7px 14px; color: #BDC1C6;">📊 Overview</div>
+                            <div style="padding: 7px 14px; color: #BDC1C6;">🎨 Branding</div>
+                            <div style="padding: 7px 14px; background: #252D3D; color: #8AB4F8; font-weight: 600; border-left: 3px solid #8AB4F8;">
+                                👥 Audience
+                            </div>
+                            <div style="padding: 7px 14px; color: #BDC1C6;">🪪 Clients</div>
+                            <div style="padding: 7px 14px; color: #BDC1C6;">📂 Data Access</div>
+                            <div style="padding: 7px 14px; color: #BDC1C6;">📋 Verification Center</div>
+                        </div>
+
+                        <!-- Col 2: Audience Main Page -->
+                        <div style="background: #18191E; border: 1px solid #2D3139; border-radius: 6px; padding: 14px; font-size: 12px;">
+                            <div style="font-size: 15px; font-weight: 700; color: #E8EAED; margin-bottom: 12px;">Audience</div>
+                            
+                            <div style="margin-bottom: 10px;">
+                                <span style="color: #9AA0A6; font-size: 11px; display: block;">User type</span>
+                                <span style="color: #FFF; font-weight: 600;">External</span>
+                            </div>
+
+                            <div style="border-top: 1px solid #2D3139; padding-top: 12px; margin-top: 12px;">
+                                <div style="color: #FFF; font-weight: 600; margin-bottom: 8px;">Test users</div>
+                                
+                                <div class="highlight-box" style="margin: 0 0 10px 0; padding: 4px 8px; display: inline-block;">
+                                    <span class="highlight-badge" style="top: -10px;">1. BẤM TẠI ĐÂY</span>
+                                    <button style="background: #282A2F; border: 1px solid #5F6368; color: #8AB4F8; padding: 4px 12px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">
+                                        + Add users
+                                    </button>
+                                </div>
+
+                                <div style="background: #121316; border: 1px solid #2D3139; border-radius: 4px; padding: 8px; color: #9AA0A6; font-size: 11px;">
+                                    User information: <i>(Sẽ hiển thị email sau khi lưu)</i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Col 3: Slide-out Panel "Add users" -->
+                        <div style="background: #18191E; border: 1px solid #3B82F6; border-radius: 6px; padding: 14px; font-size: 12px; box-shadow: -4px 0 15px rgba(0,0,0,0.5);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2D3139; padding-bottom: 8px; margin-bottom: 10px;">
+                                <span style="font-weight: 700; color: #FFF; font-size: 13px;">✕ Add users</span>
+                            </div>
+
+                            <div style="background: #2D2411; border: 1px solid #B45309; border-radius: 4px; padding: 8px; font-size: 11px; color: #FDE68A; margin-bottom: 12px; line-height: 1.4;">
+                                ⚠️ While publishing status is set to "Testing", only test users are able to access the app...
+                            </div>
+
+                            <div class="highlight-box" style="margin: 0 0 8px 0; padding: 6px 8px;">
+                                <span class="highlight-badge" style="top: -10px;">2. NHẬP GMAIL</span>
+                                <input style="width: 100%; background: #121316; border: 1px solid #8AB4F8; color: #FFF; padding: 6px 8px; border-radius: 4px; font-size: 11px; font-family: 'JetBrains Mono', monospace;" 
+                                       value="email_cua_ban@gmail.com" readonly>
+                                <div style="text-align: right; color: #9AA0A6; font-size: 10px; margin-top: 3px;">1 / 100</div>
+                            </div>
+
+                            <div class="highlight-box" style="margin: 0; padding: 4px 8px; display: inline-block;">
+                                <span class="highlight-badge" style="top: -10px;">3. BẤM SAVE</span>
+                                <button style="background: #1A73E8; color: white; border: none; padding: 6px 18px; border-radius: 4px; font-size: 11px; font-weight: 700; cursor: pointer;">
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BƯỚC 5 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-num">5</div>
+                <div class="step-title">Tạo OAuth Client ID: Tab "Clients" ➔ "+ Create client" (Chọn Desktop app)</div>
+            </div>
+            <div class="instructions">
+                <ol>
+                    <li>
+                        <b>Vào tab Clients:</b> Ở menu bên trái của <b>Google Auth Platform</b>, bấm vào mục <b>🪪 Clients</b>.
+                    </li>
+                    <li>
+                        <b>Bấm tạo Client:</b> Ở thanh trên cùng cạnh chữ <i>Clients</i>, bấm vào nút màu xanh dương: <b>+ Create client</b>.
+                    </li>
+                    <li>
+                        <b>Cấu hình thông tin Client (BẮT BUỘC CHỌN ĐÚNG):</b>
+                        <ul>
+                            <li>
+                                <b>Application type *:</b> Nhấp vào menu thả xuống và chọn đúng: <b>Desktop app</b> (Ứng dụng máy tính để bàn).<br>
+                                <span style="color: #F87171;">⚠️ TUYỆT ĐỐI KHÔNG CHỌN Web application (sẽ bị lỗi cổng Redirect URI).</span>
+                            </li>
+                            <li>
+                                <b>Name *:</b> Nhập tên định danh là <code>SaveVault Desktop</code>.
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <b>Hoàn tất:</b> Bấm nút màu xanh dương <b>Create (Tạo)</b> ở góc dưới bên trái và đợi vài giây.
+                    </li>
+                </ol>
+            </div>
+
+            <!-- UI Mockup: Google Auth Platform Clients & Create OAuth Client ID -->
+            <div class="mockup-window">
+                <div class="mockup-bar">
+                    <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+                    <div class="mockup-url">🔒 https://console.cloud.google.com/auth/clients/create</div>
+                </div>
+                <div class="mockup-body" style="background: #121316; color: white; padding: 14px;">
+                    <div class="ui-row">
+                        <!-- Sidebar -->
+                        <div class="ui-sidebar" style="background: #18191E; border-color: #2D3139; color: #E8EAED;">
+                            <div style="padding: 10px 14px; font-weight: 700; font-size: 13px; border-bottom: 1px solid #2D3139; color: #9AA0A6;">
+                                🛡️ Google Auth Platf...
+                            </div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">📊 Overview</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">🎨 Branding</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">👥 Audience</div>
+                            <div class="ui-sidebar-item active" style="background: #252D3D; color: #8AB4F8; border-left: 3px solid #8AB4F8;">🪪 Clients</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">📂 Data Access</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">📋 Verification Center</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">⚙️ Settings</div>
+                        </div>
+
+                        <!-- Main Form -->
+                        <div class="ui-content" style="background: #18191E; border-color: #2D3139; color: #E8EAED;">
+                            <!-- Top bar in Clients tab -->
+                            <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #2D3139; padding-bottom: 10px; margin-bottom: 16px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 14px; font-weight: 700; color: #FFF;">Clients</span>
+                                    <div class="highlight-box" style="margin: 0; padding: 2px 8px; border-color: #38BDF8;">
+                                        <span class="highlight-badge" style="top: -10px; right: -5px; font-size: 10px;">1. BẤM TẠO</span>
+                                        <span style="color: #8AB4F8; font-weight: 600; font-size: 12px; cursor: pointer;">+ Create client</span>
+                                    </div>
+                                </div>
+                                <span style="font-size: 11px; color: #9AA0A6;">← Create OAuth client ID</span>
+                            </div>
+
+                            <!-- Create Form -->
+                            <div style="font-size: 12px; color: #9AA0A6; margin-bottom: 14px; line-height: 1.5;">
+                                A client ID is used to identify a single app to Google's OAuth servers...
+                            </div>
+
+                            <!-- Application type Dropdown -->
+                            <div class="highlight-box" style="margin: 0 0 14px 0; padding: 8px 12px; border-color: #34D399; background: rgba(52, 211, 153, 0.08);">
+                                <span class="highlight-badge" style="background: #059669; top: -10px;">2. CHỌN CHUẨN LOẠI NÀY</span>
+                                <label style="display: block; font-size: 11px; font-weight: 600; color: #E8EAED; margin-bottom: 4px;">
+                                    Application type *
+                                </label>
+                                <div style="background: #121316; border: 1px solid #5F6368; border-radius: 4px; padding: 6px 12px; color: #FFF; font-weight: 600; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+                                    <span>🖥️ Desktop app</span>
+                                    <span style="color: #9AA0A6;">▾</span>
+                                </div>
+                            </div>
+
+                            <!-- Name input -->
+                            <div style="margin-bottom: 14px;">
+                                <label style="display: block; font-size: 11px; font-weight: 600; color: #E8EAED; margin-bottom: 4px;">
+                                    Name *
+                                </label>
+                                <input style="width: 100%; background: #121316; border: 1px solid #5F6368; color: #FFF; padding: 7px 10px; border-radius: 4px; font-size: 12px;" 
+                                       value="SaveVault Desktop" readonly>
+                                <div style="color: #9AA0A6; font-size: 10px; margin-top: 3px;">
+                                    Tên định danh client trong console, không hiển thị cho người dùng cuối.
+                                </div>
+                            </div>
+
+                            <!-- Create Button -->
+                            <div class="highlight-box" style="margin: 0; padding: 4px 10px; display: inline-block;">
+                                <span class="highlight-badge" style="top: -10px;">3. BẤM CREATE</span>
+                                <button style="background: #1A73E8; color: white; border: none; padding: 7px 22px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer;">
+                                    Create
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BƯỚC 6 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-num">6</div>
+                <div class="step-title">Lấy Client ID & Client Secret (Lưu Ý Quan Trọng Về Client Secret)</div>
+            </div>
+            <div class="instructions">
+                <div class="alert-box alert-warning">
+                    <span>⚠️</span>
+                    <div>
+                        <b>CẢNH BÁO QUAN TRỌNG:</b><br>
+                        Google <b>CHỈ HIỂN THỊ CLIENT SECRET 1 LẦN DUY NHẤT</b> trong bảng thông báo này. Một khi bạn bấm <code>OK</code> để đóng popup, bạn sẽ <b>không thể xem lại Client Secret được nữa</b> mà phải xóa đi tạo lại!
+                    </div>
+                </div>
+                <ol style="margin-top: 14px;">
+                    <li>Bấm vào biểu tượng <b>Sao chép (❐)</b> bên cạnh <b>Client ID</b> và lưu lại.</li>
+                    <li>Bấm vào biểu tượng <b>Sao chép (❐)</b> bên cạnh <b>Client secret</b> và lưu lại.</li>
+                    <li>Bấm nút <b>⬇ Download JSON</b> để tải file dự phòng về máy tính.</li>
+                    <li>Sau khi đã chắc chắn lưu lại đầy đủ Client ID và Secret ➔ Bấm nút <b>OK</b> để đóng hộp thoại.</li>
+                </ol>
+            </div>
+
+            <!-- UI Mockup: Exact Dark Popup OAuth client created -->
+            <div class="mockup-window">
+                <div class="mockup-bar">
+                    <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+                    <div class="mockup-url">🔒 OAuth client created</div>
+                </div>
+                <div class="mockup-body" style="background: #121316; color: white; padding: 20px;">
+                    <!-- Dialog Frame -->
+                    <div style="background: #1E1F24; border: 1px solid #3C4043; border-radius: 8px; max-width: 520px; margin: 0 auto; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.8);">
+                        <h3 style="font-size: 16px; font-weight: 700; color: #FFF; margin-bottom: 6px;">OAuth client created</h3>
+                        <p style="font-size: 11px; color: #9AA0A6; margin-bottom: 12px; line-height: 1.4;">
+                            The client ID can always be accessed from Clients tab under Google Auth Platform.
+                        </p>
+
+                        <!-- Info box -->
+                        <div style="background: #252D3D; border-radius: 4px; padding: 8px 12px; font-size: 11px; color: #8AB4F8; display: flex; align-items: center; gap: 8px; margin-bottom: 14px;">
+                            <span>ℹ</span>
+                            <span>OAuth access is restricted to the test users listed on your OAuth consent screen</span>
+                        </div>
+
+                        <!-- Client ID Row -->
+                        <div class="highlight-box" style="margin: 0 0 12px 0; padding: 8px 10px;">
+                            <span class="highlight-badge" style="top: -10px;">COPY CLIENT ID</span>
+                            <div style="font-size: 10px; color: #9AA0A6; font-weight: bold; margin-bottom: 3px;">Client ID</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8AB4F8; word-break: break-all;">
+                                    358261978928-pdf09gqvgchd3la392dn15s0kkbrnl8h.apps.googleusercontent.com
+                                </div>
+                                <button style="background: #282A2F; border: 1px solid #5F6368; color: #FFF; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 11px;">❐</button>
+                            </div>
+                        </div>
+
+                        <!-- Warning banner -->
+                        <div style="background: #2E2310; border: 1px solid #B45309; border-radius: 4px; padding: 10px; font-size: 11px; color: #FDE68A; margin-bottom: 12px; line-height: 1.4;">
+                            ⚠️ You will no longer be able to view or download the client secret once you close this dialog. Make sure you have copied or downloaded the information below and securely stored it.
+                        </div>
+
+                        <!-- Client Secret Row -->
+                        <div class="highlight-box" style="margin: 0 0 14px 0; padding: 8px 10px; border-color: #F59E0B;">
+                            <span class="highlight-badge" style="background: #D97706; top: -10px;">COPY CLIENT SECRET (CHỈ HIỆN 1 LẦN)</span>
+                            <div style="font-size: 10px; color: #9AA0A6; font-weight: bold; margin-bottom: 3px;">Client secret</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                                <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #FCD34D; word-break: break-all;">
+                                    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
+                                </div>
+                                <button style="background: #282A2F; border: 1px solid #5F6368; color: #FFF; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 11px;">❐</button>
+                            </div>
+                        </div>
+
+                        <!-- Creation date & status -->
+                        <div style="font-size: 11px; color: #9AA0A6; display: flex; justify-content: space-between; margin-bottom: 14px; border-top: 1px solid #2D3139; padding-top: 8px;">
+                            <span>Status: <b style="color:#34D399;">✓ Enabled</b></span>
+                        </div>
+
+                        <!-- Buttons -->
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #8AB4F8; font-size: 12px; font-weight: 600; cursor: pointer;">
+                                ⬇ Download JSON
+                            </span>
+                            <button style="background: transparent; color: #8AB4F8; border: none; font-weight: 700; font-size: 12px; cursor: pointer; padding: 6px 14px;">
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MẸO: CÁCH LẤY LẠI CLIENT ID & TẠO MỚI SECRET NẾU LỠ QUÊN LƯU -->
+        <div class="step-card" style="border-color: #38BDF8; background: #0E1626; box-shadow: 0 0 20px rgba(56, 189, 248, 0.15);">
+            <div class="step-header">
+                <div class="step-num" style="background: #0284C7;">💡</div>
+                <div class="step-title" style="color: #7DD3FC;">Mẹo: Cách Lấy Lại Client ID & Lấy Lại / Tạo Mới Secret (Nếu Quên Lưu)</div>
+            </div>
+            <div class="instructions">
+                <p style="color: #E2E8F0; margin-bottom: 12px; font-size: 14px;">
+                    Nếu bạn đã lỡ bấm <code>OK</code> đóng cửa sổ mà chưa kịp sao chép, bạn không cần phải xóa app hay làm lại từ đầu. Hãy làm theo các bước sau:
+                </p>
+                <ol>
+                    <li>
+                        <b>Mở chi tiết Client:</b> Ở menu bên trái, vào <b>Google Auth Platform ➔ 🪪 Clients</b> ➔ Bấm chuột vào dòng tên client <b>SaveVault Desktop</b>.
+                    </li>
+                    <li>
+                        <b>Lấy lại Client ID:</b> Nhìn sang khung <b>Additional information</b> bên phải ➔ Sao chép toàn bộ chuỗi tại dòng <b>Client ID</b>.
+                    </li>
+                    <li>
+                        <b>Lấy lại Client Secret (2 cách):</b>
+                        <ul>
+                            <li>
+                                <b>Cách 1 (Ưu tiên thử trước):</b> Tại dòng <b>Client secret ****Y295</b>, bấm vào biểu tượng <b>Copy ❐</b> hoặc nút <b>Tải về JSON ⬇</b> cạnh nó. Nếu Google vẫn cho copy chuỗi gốc hoặc tải được file JSON chứa mã bí mật ➔ <b>Lấy dùng lại luôn, không cần tạo mới!</b>
+                            </li>
+                            <li>
+                                <b>Cách 2 (Nếu không copy được):</b> Nếu bấm copy không ra mã bí mật, hãy bấm vào nút <b>+ Add secret</b> ở ngay phía dưới. Google sẽ lập tức cấp thêm 1 Client Secret mới toanh hiển thị đầy đủ chuỗi để bạn copy dán vào SaveVault.
+                            </li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+
+            <!-- UI Mockup: Client ID for Desktop detail page -->
+            <div class="mockup-window">
+                <div class="mockup-bar">
+                    <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+                    <div class="mockup-url">🔒 https://console.cloud.google.com/auth/clients/358261978928...</div>
+                </div>
+                <div class="mockup-body" style="background: #121316; color: white; padding: 14px;">
+                    <div class="ui-row">
+                        <!-- Sidebar -->
+                        <div class="ui-sidebar" style="background: #18191E; border-color: #2D3139; color: #E8EAED;">
+                            <div style="padding: 10px 14px; font-weight: 700; font-size: 13px; border-bottom: 1px solid #2D3139; color: #9AA0A6;">
+                                🛡️ Google Auth Platf...
+                            </div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">📊 Overview</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">🎨 Branding</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">👥 Audience</div>
+                            <div class="ui-sidebar-item active" style="background: #252D3D; color: #8AB4F8; border-left: 3px solid #8AB4F8;">🪪 Clients</div>
+                            <div class="ui-sidebar-item" style="color: #BDC1C6;">📂 Data Access</div>
+                        </div>
+
+                        <!-- Main detail panel -->
+                        <div class="ui-content" style="background: #18191E; border-color: #2D3139; color: #E8EAED;">
+                            <!-- Top Header -->
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2D3139; padding-bottom: 10px; margin-bottom: 16px;">
+                                <div style="font-weight: 700; font-size: 14px; color: #FFF;">
+                                    ← Client ID for Desktop
+                                </div>
+                                <span style="color: #8AB4F8; font-size: 12px; cursor: pointer;">🗑 Delete</span>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 180px 1fr; gap: 20px;">
+                                <!-- Left side: Name -->
+                                <div>
+                                    <label style="font-size: 11px; color: #9AA0A6; display: block; margin-bottom: 4px;">Name *</label>
+                                    <input style="width: 100%; background: #121316; border: 1px solid #5F6368; color: #FFF; padding: 6px 8px; border-radius: 4px; font-size: 12px;" value="SaveVault Desktop" readonly>
+                                </div>
+
+                                <!-- Right side: Additional info & Secrets -->
+                                <div>
+                                    <!-- Additional info (Client ID) -->
+                                    <div style="border-bottom: 1px solid #2D3139; padding-bottom: 14px; margin-bottom: 14px;">
+                                        <div style="font-size: 13px; font-weight: 700; color: #FFF; margin-bottom: 8px;">Additional information</div>
+                                        <div class="highlight-box" style="margin: 0; padding: 6px 10px; border-color: #38BDF8;">
+                                            <span class="highlight-badge" style="background: #0284C7; top: -10px;">LẤY LẠI CLIENT ID TẠI ĐÂY</span>
+                                            <div style="font-size: 10px; color: #9AA0A6; font-weight: 600;">Client ID</div>
+                                            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8AB4F8; word-break: break-all; margin-top: 2px;">
+                                                358261978928-pdf09gqvgchd3la392dn15s0kkbrnl8h.apps.googleusercontent.com
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Client secrets section -->
+                                    <div>
+                                        <div style="font-size: 13px; font-weight: 700; color: #FFF; margin-bottom: 4px;">Client secrets</div>
+                                        <p style="font-size: 11px; color: #9AA0A6; margin-bottom: 10px;">
+                                            If you are in the process of changing client secrets, you can manually rotate them without downtime.
+                                        </p>
+
+                                        <!-- Highlight Row 1: Try copy/download first -->
+                                        <div class="highlight-box" style="margin: 0 0 10px 0; padding: 8px 12px; border-color: #34D399; background: rgba(52, 211, 153, 0.08);">
+                                            <span class="highlight-badge" style="background: #059669; top: -10px;">1. THỬ BẤM COPY / TẢI VỀ TRƯỚC</span>
+                                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                <div>
+                                                    <div style="font-size: 10px; color: #9AA0A6;">Client secret</div>
+                                                    <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #FCD34D;">****Y295</div>
+                                                </div>
+                                                <div style="display: flex; gap: 8px;">
+                                                    <button style="background: #1A73E8; color: #FFF; border: none; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: bold; cursor: pointer;" title="Thử copy mã secret cũ">❐ Copy</button>
+                                                    <button style="background: #282A2F; border: 1px solid #5F6368; color: #FFF; border-radius: 4px; padding: 4px 8px; font-size: 11px;" title="Tải file JSON">⬇</button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Highlight Row 2: Add secret fallback -->
+                                        <div class="highlight-box" style="margin: 0; padding: 6px 12px; border-color: #F59E0B; display: inline-block;">
+                                            <span class="highlight-badge" style="background: #D97706; top: -10px;">2. NẾU KHÔNG COPY ĐƯỢC ➔ BẤM TẠO MỚI</span>
+                                            <button style="background: #282A2F; border: 1px solid #5F6368; color: #8AB4F8; padding: 5px 16px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer;">
+                                                + Add secret
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BƯỚC 7 -->
+        <div class="step-card" style="border-color: #3B82F6;">
+            <div class="step-header">
+                <div class="step-num" style="background: #10B981;">7</div>
+                <div class="step-title" style="color: #6EE7B7;">Dán Vào Ứng Dụng SaveVault & Đăng Nhập</div>
+            </div>
+            <div class="instructions">
+                <ol>
+                    <li>Mở app <b>SaveVault</b> ➔ Chọn tab <b>Cài đặt (Settings)</b> ⚙️.</li>
+                    <li>Ở khung <b>Google Drive REST API</b>:
+                        <ul>
+                            <li>Tích chọn vào ô: <b>☑ Tùy chỉnh Google Cloud API riêng (Dành cho Developer)</b>.</li>
+                            <li>Dán <b>Google OAuth Client ID</b> vào ô Client ID.</li>
+                            <li>Dán <b>Google Client Secret</b> vào ô Client Secret.</li>
+                            <li>Bấm nút <b>💾 Lưu Cấu Hình</b>.</li>
+                        </ul>
+                    </li>
+                    <li>Bấm nút <b>🔗 Đăng Nhập OAuth</b> ➔ Trình duyệt sẽ tự động bật lên.</li>
+                    <li>Đăng nhập tài khoản Google (đã thêm ở Bước 4). Nếu thấy màn hình cảnh báo <i>"Google hasn't verified this app"</i>:
+                        ➔ Bấm <b>Advanced (Nâng cao)</b> ➔ Bấm <b>Go to SaveVault (unsafe)</b> ➔ Bấm <b>Continue (Tiếp tục)</b> để cấp quyền.
+                    </li>
+                    <li>Sau khi hoàn tất, app sẽ hiện huy hiệu xanh: <span style="color: #10B981; font-weight: bold;">✓ Đã kết nối (email của bạn)</span>!</li>
+                </ol>
+            </div>
+
+            <!-- SaveVault App Screenshot Mockup -->
+            <div class="app-mockup">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 12px; margin-bottom: 16px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 20px;">📁</span>
+                        <span style="font-weight: 700; font-size: 14px;">Google Drive REST API</span>
+                    </div>
+                    <span style="background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.4); color: #34D399; font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: 600;">
+                        Chưa kết nối ➔ Sắp hoàn tất
+                    </span>
+                </div>
+
+                <div style="background: #131C2E; border: 1px solid #334155; border-radius: 8px; padding: 14px; margin-bottom: 14px;">
+                    <div style="color: #FBBF24; font-size: 11px; font-weight: 600; margin-bottom: 10px;">⚙️ Đang dùng Google Cloud API riêng</div>
+                    
+                    <div style="margin-bottom: 10px;">
+                        <label style="font-size: 11px; color: #94A3B8; display: block; margin-bottom: 4px;">Google OAuth Client ID:</label>
+                        <input style="width: 100%; background: #0A0F1D; border: 1px solid #334155; border-radius: 4px; padding: 6px 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #E2E8F0;" 
+                               value="358261978928-pdf09gqvgchd3la392dn15s0kkbrnl8h.apps.googleusercontent.com" readonly>
+                    </div>
+
+                    <div style="margin-bottom: 12px;">
+                        <label style="font-size: 11px; color: #94A3B8; display: block; margin-bottom: 4px;">Google Client Secret:</label>
+                        <input style="width: 100%; background: #0A0F1D; border: 1px solid #334155; border-radius: 4px; padding: 6px 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #E2E8F0;" 
+                               value="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" readonly>
+                    </div>
+
+                    <div>
+                        <button style="background: #2563EB; color: white; border: none; padding: 6px 14px; border-radius: 4px; font-size: 11px; font-weight: 600;">💾 Lưu Cấu Hình</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; pt: 10px;">
+                    <label style="font-size: 11px; color: #94A3B8; display: flex; align-items: center; gap: 6px;">
+                        <input type="checkbox" checked style="accent-color: #2563EB;"> ☑ Tùy chỉnh Google Cloud API riêng (Dành cho Developer)
+                    </label>
+                    <div class="highlight-box" style="margin: 0; padding: 4px 8px; border-color: #10B981;">
+                        <span class="highlight-badge" style="background: #10B981; top: -10px;">BẤM NÚT NÀY</span>
+                        <button style="background: #2563EB; color: white; border: none; padding: 6px 16px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;">
+                            🔗 Đăng Nhập OAuth
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FAQ / TROUBLESHOOTING -->
+        <div class="step-card" style="background: #171E2E;">
+            <h3 style="color: #FDE047; font-size: 18px; margin-bottom: 14px;">❓ Các Lỗi Thường Gặp & Cách Khắc Phục</h3>
+            
+            <div style="margin-bottom: 14px;">
+                <h4 style="color: #F87171; font-size: 14px;">1. Lỗi "Error 403: access_denied" / "App is not verified"</h4>
+                <p style="color: #CBD5E1; font-size: 13px;">
+                    👉 <b>Nguyên nhân:</b> Tài khoản Gmail bạn bấm đăng nhập chưa được thêm vào danh sách <b>Test users</b> ở Bước 4.<br>
+                    👉 <b>Cách sửa:</b> Vào lại Google Cloud Console ➔ <b>APIs & Services</b> ➔ <b>OAuth consent screen</b> ➔ Kéo xuống mục <b>Test users</b> ➔ Bấm <b>+ ADD USERS</b> và nhập đúng email đó vào.
+                </p>
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <h4 style="color: #FBBF24; font-size: 14px;">2. Màn hình cảnh báo "Google hasn't verified this app" (Màu xám/đỏ)</h4>
+                <p style="color: #CBD5E1; font-size: 13px;">
+                    👉 <b>Xử lý:</b> Đây là cảnh báo tiêu chuẩn của Google cho ứng dụng cá nhân tự tạo. Bạn chỉ cần bấm vào chữ <b>Advanced (Nâng cao)</b> ở góc dưới bên trái ➔ Bấm tiếp <b>Go to SaveVault (unsafe)</b> ➔ Bấm <b>Continue (Tiếp tục)</b> là xong.
+                </p>
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <h4 style="color: #60A5FA; font-size: 14px;">3. Lỗi "redirect_uri_mismatch"</h4>
+                <p style="color: #CBD5E1; font-size: 13px;">
+                    👉 <b>Nguyên nhân:</b> Ở Bước 5 bạn lỡ chọn loại <i>Web application</i> thay vì <i>Desktop app</i>.<br>
+                    👉 <b>Cách sửa:</b> Vào Credentials ➔ Tạo một Client ID mới và chắc chắn chọn loại <b>Desktop app (Ứng dụng máy tính)</b>.
+                </p>
+            </div>
+
+            <div>
+                <h4 style="color: #EC4899; font-size: 14px;">4. Lỗi "Google Drive API has not been used in project... or it is disabled"</h4>
+                <p style="color: #CBD5E1; font-size: 13px;">
+                    👉 <b>Nguyên nhân:</b> Dự án Google Cloud của bạn chưa <b>Bật (Enable)</b> dịch vụ Google Drive API.<br>
+                    👉 <b>Cách sửa:</b> Bấm trực tiếp nút <b>🌐 Mở Liên Kết Trong Trình Duyệt ↗</b> trên bảng báo lỗi của SaveVault (hoặc truy cập đường link dẫn tới trang Enable API mà thông báo hiển thị) ➔ Nhấn nút xanh <b>ENABLE (Bật)</b>. Sau khi bật, đợi 1-2 phút cho Google cập nhật rồi thực hiện lại.
+                </p>
+            </div>
+        </div>
+
+        <div style="text-align: center; color: #64748B; font-size: 13px; margin-top: 30px;">
+            SaveVault Cloud Sync System &copy; 2026. Hướng dẫn thiết lập chuẩn OAuth 2.0 PKCE.
+        </div>
+    </div>
+</body>
+</html>

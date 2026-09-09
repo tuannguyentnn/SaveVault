@@ -309,6 +309,65 @@ input[type="checkbox"]:checked::before {
 .btn-danger:hover:not(:disabled) {
     background-color: #B91C1C;
 }
+.btn-danger:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+    filter: grayscale(0.5);
+    box-shadow: none;
+}
+
+/* Success / Emerald Action Button */
+.btn-success {
+    background-color: #059669;
+    border: 1px solid #10B981;
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-success:hover:not(:disabled) {
+    background-color: #047857;
+}
+.btn-success:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+    filter: grayscale(0.5);
+    box-shadow: none;
+}
+
+/* Purple / Violet Action Button */
+.btn-purple {
+    background-color: #7C3AED;
+    border: 1px solid #A78BFA;
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-purple:hover:not(:disabled) {
+    background-color: #6D28D9;
+}
+.btn-purple:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+    filter: grayscale(0.5);
+    box-shadow: none;
+}
 
 /* Table Styles */
 .custom-table {

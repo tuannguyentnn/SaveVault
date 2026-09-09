@@ -281,15 +281,16 @@
             <!-- Modal Footer with Action Buttons Aligned Right & Normalized Exact Sizes -->
             <div class="bg-[#0F172A] border-t border-[#1E293B] px-6 py-3.5 flex items-center justify-between flex-shrink-0">
                 <!-- Text Hướng Dẫn Kèm Bóng Đèn 💡 bên trái -->
-                <div class="text-[12px] text-slate-400 flex items-center space-x-2 w-[300px]">
-                    <span class="text-base">💡</span>
-                    <span>Nhấp chọn một bản snapshot để khôi phục hoặc đồng bộ. Nhấp badge ☁️ để mở xem online.</span>
+                <div class="text-[12px] text-slate-400 flex items-center space-x-2 flex-1 min-w-0 mr-4">
+                    <span class="text-base flex-shrink-0">💡</span>
+                    <span class="truncate">Nhấp chọn một bản snapshot để khôi phục hoặc đồng bộ. Nhấp badge ☁️ để mở xem online.</span>
                 </div>
 
-                <!-- Hàng button khôi phục, sao lưu, đồng bộ align về phía bên phải và size đồng bộ 100% -->
-                <div class="flex items-center space-x-3 ml-auto">
+                <!-- Hàng button khôi phục, sao lưu, đồng bộ với màu sắc rõ nét, nổi bật -->
+                <div class="flex items-center space-x-2.5 flex-shrink-0">
                     <button
-                        class="h-[36px] px-4 py-0 leading-[34px] text-[12px] font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-500/80 rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        class="btn-success h-[36px] px-4 py-0 leading-[34px] text-[12px] font-bold text-white rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        style="background-color: #059669; border: 1px solid #10B981; color: #FFFFFF;"
                         disabled="@(ActiveDetail == null)"
                         @onclick="() => OpenRestoreForDetail(ActiveDetail!)"
                         @onclick:stopPropagation="true"
@@ -299,7 +300,8 @@
                     </button>
 
                     <button
-                        class="h-[36px] px-4 py-0 leading-[34px] text-[12px] font-semibold text-white bg-[#0284C7] hover:bg-[#0369A1] border border-[#06B6D4] rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        class="btn-blue h-[36px] px-4 py-0 leading-[34px] text-[12px] font-bold text-white rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        style="background-color: #0284C7; border: 1px solid #38BDF8; color: #FFFFFF;"
                         disabled="@(ActiveDetail == null)"
                         @onclick="() => OpenSyncForDetail(ActiveDetail!)"
                         @onclick:stopPropagation="true"
@@ -309,7 +311,8 @@
                     </button>
 
                     <button
-                        class="h-[36px] px-4 py-0 leading-[34px] text-[12px] font-semibold text-white bg-emerald-700/70 hover:bg-emerald-600 border border-emerald-500 rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        class="btn-purple h-[36px] px-4 py-0 leading-[34px] text-[12px] font-bold text-white rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
+                        style="background-color: #7C3AED; border: 1px solid #A78BFA; color: #FFFFFF;"
                         disabled="@(ActiveDetail == null)"
                         @onclick="TriggerBackupCurrentGame"
                         @onclick:stopPropagation="true"
@@ -336,6 +339,15 @@
 
     private BackupHistoryDetail? ActiveDetail => HistoryVM.SelectedHistoryDetail ?? SelectedDetail ?? DialogService.SelectedDetail;
 
+    private IEnumerable<BackupHistoryDetail> GetAllDetails()
+    {
+        if (HistoryVM.CurrentHistoryDetails.Count > 0)
+        {
+            return HistoryVM.CurrentHistoryDetails;
+        }
+        return DialogService.CurrentGameDetails;
+    }
+
     protected override void OnInitialized()
     {
         HistoryVM.PropertyChanged += OnStateChanged;
@@ -347,21 +359,24 @@
         var isOpen = HistoryVM.IsHistoryDetailsModalOpen || DialogService.IsDetailsModalOpen;
         if (isOpen && !_lastIsOpen)
         {
-            SelectedDetail = null;
-            HistoryVM.SelectedHistoryDetail = null;
-            DialogService.SelectedDetail = null;
             CurrentDetailPage = 1;
             DetailSortColumn = "Date";
             DetailSortAscending = false;
+
+            var defaultDetail = GetAllDetails().OrderByDescending(x => x.BackupDate).FirstOrDefault();
+            SelectedDetail = defaultDetail;
+            HistoryVM.SelectedHistoryDetail = defaultDetail;
+            DialogService.SelectedDetail = defaultDetail;
         }
         else if (SelectedDetail != null)
         {
             var exists = HistoryVM.CurrentHistoryDetails.Any(d => d.Id == SelectedDetail.Id) || DialogService.CurrentGameDetails.Any(d => d.Id == SelectedDetail.Id);
             if (!exists)
             {
-                SelectedDetail = null;
-                HistoryVM.SelectedHistoryDetail = null;
-                DialogService.SelectedDetail = null;
+                var defaultDetail = GetAllDetails().OrderByDescending(x => x.BackupDate).FirstOrDefault();
+                SelectedDetail = defaultDetail;
+                HistoryVM.SelectedHistoryDetail = defaultDetail;
+                DialogService.SelectedDetail = defaultDetail;
             }
         }
         _lastIsOpen = isOpen;
