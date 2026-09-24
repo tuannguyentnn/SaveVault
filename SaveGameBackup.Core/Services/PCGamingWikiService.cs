@@ -60,12 +60,18 @@ public class PCGamingWikiService
     {
         try
         {
-            var url = $"https://www.pcgamingwiki.com/w/api.php?action=parse&page={Uri.EscapeDataString(pageTitle)}&prop=wikitext&format=json";
+            var url = $"https://www.pcgamingwiki.com/w/api.php?action=parse&page={Uri.EscapeDataString(pageTitle)}&prop=wikitext&format=json&redirects=1";
             var response = await _httpClient.GetStringAsync(url, cancellationToken);
 
             using var doc = JsonDocument.Parse(response);
             if (!doc.RootElement.TryGetProperty("parse", out var parseElement))
                 return null;
+
+            var actualTitle = pageTitle;
+            if (parseElement.TryGetProperty("title", out var titleEl) && !string.IsNullOrEmpty(titleEl.GetString()))
+            {
+                actualTitle = titleEl.GetString()!;
+            }
 
             if (!parseElement.TryGetProperty("wikitext", out var wikitextElement))
                 return null;
@@ -73,10 +79,22 @@ public class PCGamingWikiService
             var wikitext = wikitextElement.GetProperty("*").GetString();
             if (string.IsNullOrEmpty(wikitext)) return null;
 
+            // Xử lý trường hợp wikitext chứa #REDIRECT [[Tên trang khác]]
+            var redirectMatch = Regex.Match(wikitext, @"#REDIRECT\s*\[\[(.*?)\]\]", RegexOptions.IgnoreCase);
+            if (redirectMatch.Success)
+            {
+                var targetTitle = redirectMatch.Groups[1].Value.Trim();
+                return await FetchPageSaveDataAsync(targetTitle, originalQuery, cancellationToken);
+            }
+
+            var displayName = !string.IsNullOrWhiteSpace(originalQuery)
+                ? originalQuery.Trim()
+                : actualTitle.Replace('_', ' ');
+
             var gameInfo = new GameSaveInfo
             {
-                GameName = pageTitle.Replace('_', ' '),
-                WikiPageTitle = pageTitle,
+                GameName = displayName,
+                WikiPageTitle = actualTitle,
                 Source = "PCGamingWiki"
             };
 
@@ -172,6 +190,10 @@ public class PCGamingWikiService
         p = Regex.Replace(p, @"\{\{note\|[\s\S]*?\}\}", "");
         p = Regex.Replace(p, @"\[\[.*?\|(.*?)\]\]", "$1"); // [[link|text]] -> text
         p = Regex.Replace(p, @"\[\[(.*?)\]\]", "$1");
+
+        // Loại bỏ phần đuôi chỉ file mask như \*.png, \*.sav, /*.dat để lấy đúng thư mục cha chứa save
+        p = Regex.Replace(p, @"[\\/]\*(\.[a-zA-Z0-9_-]+)?$", "");
+
         return p.Trim();
     }
 }

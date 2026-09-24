@@ -42,45 +42,53 @@
 
     <!-- Card 2: Thông tin & Vị trí Save Game (LUÔN HIỆN, KHÔNG BAO GIỜ ẨN - Image 2 / 0.JPG) -->
     <div class="sv-card">
-        <!-- Header: Title + Nguồn nếu có + Nút Chọn thư mục thủ công -->
-        <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center space-x-2">
-                <h3 class="sv-card-title">Thông tin &amp; Vị trí Save Game</h3>
-                @if (SearchVM.HasGame && SearchVM.CurrentGame != null &&
-                !string.IsNullOrEmpty(SearchVM.CurrentGame.Source))
-                {
-                    <span
-                        style="font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background-color: #0A101E; border: 1px solid #1E3A8A; color: #60A5FA;">
-                        Nguồn: @SearchVM.CurrentGame.Source
-                    </span>
-                }
-            </div>
-            <button type="button" class="sv-btn-dark sv-btn-sm"
-                    @onclick="() => SearchVM.AddCustomPathCommand.Execute(null)">
-                <span>📁</span>
-                <span>Chọn thư mục thủ công</span>
-            </button>
-        </div>
-
-        <!-- Khối Thông tin game (Khi chưa chọn game vs khi đã chọn game - 0.JPG vs 1.JPG) -->
-        <div class="sv-box-inner mb-3">
-            @if (SearchVM.HasGame && SearchVM.CurrentGame != null)
+        <div class="flex gap-4 items-start">
+            @if (SearchVM.HasGame && !string.IsNullOrEmpty(SearchVM.OnlineCoverUrl))
             {
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center space-x-3">
-                        <span style="font-size: 22px; color: #38BDF8;">📁</span>
-                        @if (!string.IsNullOrEmpty(SearchVM.OnlineCoverUrl))
+                <!-- Cột trái: Cover ảnh game theo vị trí vệt xanh đánh dấu (Width 200px, Height auto) -->
+                <div class="sv-cover-col w-[200px] flex-shrink-0">
+                    <div class="w-full rounded-lg overflow-hidden border border-[#1E2D42] bg-[#070B14] shadow-lg">
+                        <img src="@SearchVM.OnlineCoverUrl"
+                             alt="Game Cover Preview"
+                             referrerpolicy="no-referrer"
+                             class="w-full h-auto object-cover rounded-lg block"
+                             style="height: auto;"
+                             loading="lazy"
+                             onerror="this.closest('.sv-cover-col').style.display='none';" />
+                    </div>
+                </div>
+            }
+
+            <!-- Cột phải: Toàn bộ nội dung Thông tin & Vị trí Save Game -->
+            <div class="flex-1 min-w-0 flex flex-col">
+                <!-- Header: Title + Nguồn nếu có + Nút Chọn thư mục thủ công -->
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center space-x-2">
+                        <h3 class="sv-card-title">Thông tin &amp; Vị trí Save Game</h3>
+                        @if (SearchVM.HasGame && SearchVM.CurrentGame != null &&
+                        !string.IsNullOrEmpty(SearchVM.CurrentGame.Source))
                         {
-                            <div class="w-[200px] h-[75px] rounded-lg overflow-hidden border border-[#1E2D42] bg-[#070B14] flex items-center justify-center flex-shrink-0 shadow-md">
-                                <img src="@SearchVM.OnlineCoverUrl"
-                                     alt="Game Cover Preview"
-                                     referrerpolicy="no-referrer"
-                                     class="w-full h-full object-cover object-top"
-                                     loading="lazy"
-                                     onerror="this.parentElement.style.display='none';" />
-                            </div>
+                            <span
+                                style="font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background-color: #0A101E; border: 1px solid #1E3A8A; color: #60A5FA;">
+                                Nguồn: @SearchVM.CurrentGame.Source
+                            </span>
                         }
-                        <div>
+                    </div>
+                    <button type="button" class="sv-btn-dark sv-btn-sm"
+                            @onclick="() => SearchVM.AddCustomPathCommand.Execute(null)">
+                        <span>📁</span>
+                        <span>Chọn thư mục thủ công</span>
+                    </button>
+                </div>
+
+                <!-- Khối Thông tin game (Khi chưa chọn game vs khi đã chọn game - 0.JPG vs 1.JPG) -->
+                <div class="sv-box-inner mb-3">
+                    @if (SearchVM.HasGame && SearchVM.CurrentGame != null)
+                    {
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-3">
+                                <span style="font-size: 22px; color: #38BDF8;">📁</span>
+                                <div>
                             @if (IsEditingGameName)
                             {
                                 <div class="flex items-center space-x-2 my-0.5">
@@ -254,6 +262,8 @@
                     }
                 </div>
             </div>
+        </div>
+    </div>
 
             <!-- Card 3: Tùy chọn & Thực hiện Sao lưu (Clone chuẩn Image 2 / 0.JPG & 1.JPG) -->
             <div class="sv-card">

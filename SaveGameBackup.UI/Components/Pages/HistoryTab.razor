@@ -77,30 +77,31 @@
                 }
                 else
                 {
-                    <div class="grid gap-4" style="grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));">
+                    <div class="grid gap-4" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));">
                         @foreach (var entry in PagedHistories)
                         {
                             var isSelected = SelectedEntry == entry;
-                            <div class="group relative bg-[#101726] border @(isSelected ? "border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-950/40" : "border-[#1E293B] hover:border-blue-500/70") rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-950/20"
+                            <div class="group relative bg-[#101726] border @(isSelected ? "border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-950/40" : "border-[#1E293B] hover:border-blue-500/70") rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-950/20 aspect-[2/3]"
+                                 style="aspect-ratio: 2/3;"
                                  @onclick="() => SelectedEntry = entry"
                                  @onclick:stopPropagation="true"
                                  @ondblclick="() => OpenGameDetails(entry)">
 
-                                <!-- Vùng Ảnh Bìa Game (Poster Cover Art) -->
-                                <div class="relative w-full h-[185px] bg-[#070B14] overflow-hidden flex items-start justify-center select-none">
+                                <!-- Vùng Ảnh Bìa Game (Tự động co giãn theo tỉ lệ 2:3 của cả Card) -->
+                                <div class="relative flex-1 min-h-0 w-full bg-[#070B14] overflow-hidden flex items-center justify-center select-none">
                                     @if (!string.IsNullOrEmpty(entry.CoverImageSrc))
                                     {
                                         <img src="@entry.CoverImageSrc"
                                              alt="@entry.GameName"
                                              referrerpolicy="no-referrer"
-                                             class="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-300"
+                                             class="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
                                              loading="lazy" />
                                     }
                                     else
                                     {
                                         <!-- Placeholder Game Cover (Khi tìm bằng tay hoặc không có ảnh) -->
-                                        <div class="w-full h-full bg-gradient-to-br from-[#1E293B] via-[#0F172A] to-[#0A0F1D] flex flex-col items-center justify-center p-3 text-center border-b border-[#1E293B]/60">
-                                            <span class="text-4xl mb-1.5 opacity-60 group-hover:scale-110 transition-transform">🎮</span>
+                                        <div class="w-full h-full bg-gradient-to-br from-[#1E293B] via-[#0F172A] to-[#0A0F1D] flex flex-col items-center justify-center p-3 text-center">
+                                            <span class="text-3xl mb-1 opacity-60 group-hover:scale-110 transition-transform">🎮</span>
                                             <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider line-clamp-2 px-1">
                                                 @entry.GameName
                                             </span>
@@ -109,8 +110,8 @@
 
                                     <!-- Badge Số bản sao lưu (Góc trên phải) -->
                                     <div class="absolute top-2 right-2 z-10">
-                                        <span class="bg-[#0A1E3F]/90 backdrop-blur-md border border-blue-500/50 text-sky-300 text-[10.5px] font-bold px-2 py-0.5 rounded-full shadow">
-                                            💾 @entry.BackupCount bản
+                                        <span class="bg-[#0A1E3F]/90 backdrop-blur-md border border-blue-500/50 text-sky-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow">
+                                            💾 @entry.BackupCount
                                         </span>
                                     </div>
 
@@ -118,7 +119,7 @@
                                     @if (entry.HasCloudBackup)
                                     {
                                         <div class="absolute top-2 left-2 z-10">
-                                            <span class="bg-[#064E3B]/90 backdrop-blur-md border border-emerald-500/50 text-emerald-300 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow flex items-center space-x-1"
+                                            <span class="bg-[#064E3B]/90 backdrop-blur-md border border-emerald-500/50 text-emerald-300 text-[9.5px] font-bold px-1.5 py-0.5 rounded-full shadow flex items-center space-x-1"
                                                   title="Đã đồng bộ lên đám mây">
                                                 <span>☁️</span>
                                                 <span>Cloud</span>
@@ -127,28 +128,15 @@
                                     }
 
                                     <!-- Gradient Shadow mờ dần ở chân ảnh bìa -->
-                                    <div class="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-[#101726] to-transparent pointer-events-none"></div>
+                                    <div class="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[#0F172A] to-transparent pointer-events-none"></div>
                                 </div>
 
-                                <!-- Thân Card Thông Tin -->
-                                <div class="p-3 bg-[#101726] flex flex-col justify-between flex-1">
-                                    <div>
-                                        <h3 class="font-bold text-white text-[13px] line-clamp-1 leading-snug group-hover:text-blue-400 transition-colors mb-2"
-                                            title="@entry.GameName">
-                                            @entry.GameName
-                                        </h3>
-                                        <div class="flex items-start justify-between text-[11px] font-mono">
-                                            <div class="flex flex-col space-y-0.5">
-                                                <span class="text-slate-400 text-[10px] uppercase font-semibold tracking-wider">Dung lượng</span>
-                                                <span class="text-white font-bold">💾 @entry.FormattedLatestSize</span>
-                                            </div>
-                                            <div class="flex flex-col items-end space-y-0.5 text-right">
-                                                <span class="text-slate-400 text-[10px] uppercase font-semibold tracking-wider">Lần gần nhất</span>
-                                                <span class="text-slate-200 font-medium">📅 @(entry.LatestBackupDate != DateTime.MinValue ? entry.LatestBackupDate.ToString("dd/MM/yyyy") : "-")</span>
-                                                <span class="text-cyan-400 font-medium">@(entry.LatestBackupDate != DateTime.MinValue ? entry.LatestBackupDate.ToString("HH:mm:ss") : "-")</span>
-                                            </div>
-                                        </div>
-                                    </div>
+                                <!-- Thân Card Thông Tin: Tên Game tinh gọn chuẩn phong cách Steam/GOG -->
+                                <div class="py-2 px-2 bg-[#0F172A] border-t border-[#1E293B]/60 flex items-center justify-center text-center flex-shrink-0">
+                                    <h3 class="font-bold text-white text-[12px] line-clamp-1 leading-snug group-hover:text-blue-400 transition-colors"
+                                        title="@entry.GameName">
+                                        @entry.GameName
+                                    </h3>
                                 </div>
                             </div>
                         }

@@ -129,8 +129,18 @@ public class PathResolverService
 
     private static string ReplaceTag(string text, string tagName, string replacement)
     {
-        var pattern = @"\{\{p\|" + Regex.Escape(tagName) + @"\}\}";
-        text = Regex.Replace(text, pattern, replacement, RegexOptions.IgnoreCase);
+        // Hỗ trợ cả {{p|tagName}} và {{p|tagName\subpath}} hoặc {{p|tagName/subpath}}
+        var pattern = @"\{\{p\|" + Regex.Escape(tagName) + @"(?:[\\/]([^}]+))?\}\}";
+        text = Regex.Replace(text, pattern, m =>
+        {
+            if (m.Groups[1].Success && !string.IsNullOrWhiteSpace(m.Groups[1].Value))
+            {
+                var sub = m.Groups[1].Value.Trim().Replace('/', '\\');
+                return Path.Combine(replacement, sub);
+            }
+            return replacement;
+        }, RegexOptions.IgnoreCase);
+
         text = Regex.Replace(text, @"<" + Regex.Escape(tagName) + @">", replacement, RegexOptions.IgnoreCase);
         return text;
     }
@@ -184,6 +194,10 @@ public class PathResolverService
                         if (i == parts.Length - 1)
                         {
                             var fileMatches = Directory.GetFiles(parent, part);
+                            if (fileMatches.Length > 0)
+                            {
+                                results.Add(parent);
+                            }
                             nextList.AddRange(fileMatches);
                         }
                     }

@@ -360,8 +360,8 @@ public static class GameCoverService
             var pageTitle = titles[0].GetString();
             if (string.IsNullOrEmpty(pageTitle)) return (null, null);
 
-            // Bước 2: Lấy wikitext của trang để tìm trường cover và steam app id
-            var parseUrl = $"https://www.pcgamingwiki.com/w/api.php?action=parse&page={Uri.EscapeDataString(pageTitle)}&prop=wikitext&format=json";
+            // Bước 2: Lấy wikitext của trang để tìm trường cover và steam app id (thêm &redirects=1 để xử lý trang chuyển hướng)
+            var parseUrl = $"https://www.pcgamingwiki.com/w/api.php?action=parse&page={Uri.EscapeDataString(pageTitle)}&prop=wikitext&format=json&redirects=1";
             var parseResp = await _httpClient.GetStringAsync(parseUrl, cancellationToken);
             using var parseDoc = JsonDocument.Parse(parseResp);
             if (!parseDoc.RootElement.TryGetProperty("parse", out var parseEl)) return (null, null);
@@ -389,7 +389,7 @@ public static class GameCoverService
                 ? coverFileName
                 : $"File:{coverFileName}";
 
-            var imageInfoUrl = $"https://www.pcgamingwiki.com/w/api.php?action=query&titles={Uri.EscapeDataString(fileTitle)}&prop=imageinfo&iiprop=url&format=json";
+            var imageInfoUrl = $"https://www.pcgamingwiki.com/w/api.php?action=query&titles={Uri.EscapeDataString(fileTitle)}&prop=imageinfo&iiprop=url&format=json&redirects=1";
             var imageInfoResp = await _httpClient.GetStringAsync(imageInfoUrl, cancellationToken);
             using var imageDoc = JsonDocument.Parse(imageInfoResp);
             if (imageDoc.RootElement.TryGetProperty("query", out var queryEl) &&

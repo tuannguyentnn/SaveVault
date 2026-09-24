@@ -40,7 +40,7 @@
                     if (!el) el = document.getElementById(elementId);
                     if (!el) return;
                     var width = el.clientWidth || window.innerWidth;
-                    var cardMin = 210;
+                    var cardMin = 160;
                     var gap = 16;
                     var cols = Math.max(2, Math.floor((width + gap) / (cardMin + gap)));
                     if (cols !== lastCols) {

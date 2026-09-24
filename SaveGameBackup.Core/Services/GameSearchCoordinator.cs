@@ -34,8 +34,8 @@ public class GameSearchCoordinator
         statusProgress?.Report("Đang kiểm tra dữ liệu trong bộ nhớ đệm SQLite...");
         gameInfo = await _databaseService.GetCachedGameAsync(gameName);
 
-        // Step 2: If not found in cache, fetch online from PCGamingWiki
-        if (gameInfo == null || gameInfo.RawPatterns.Count == 0)
+        // Step 2: If not found in cache or previously only had heuristic fallback, fetch online from PCGamingWiki
+        if (gameInfo == null || gameInfo.RawPatterns.Count == 0 || string.Equals(gameInfo.Source, "Heuristic Detection", StringComparison.OrdinalIgnoreCase))
         {
             statusProgress?.Report($"Đang tìm kiếm thông tin game '{gameName}' trên PCGamingWiki...");
             var onlineInfo = await _wikiService.SearchAndFetchSaveInfoAsync(gameName, cancellationToken);
@@ -56,7 +56,7 @@ public class GameSearchCoordinator
         }
 
         // Add standard heuristic candidate locations if not already present
-        AddHeuristicCandidates(gameInfo);
+        AddHeuristicCandidates(gameInfo, gameName);
 
         // Step 4: Resolve concrete paths
         statusProgress?.Report("Đang phân giải đường dẫn và quét file save trên máy tính...");
@@ -86,25 +86,47 @@ public class GameSearchCoordinator
         return gameInfo;
     }
 
-    private static void AddHeuristicCandidates(GameSaveInfo gameInfo)
+    private static void AddHeuristicCandidates(GameSaveInfo gameInfo, string? originalQuery = null)
     {
-        var sanitized = BackupService.SanitizeFolderName(gameInfo.GameName);
-        var candidates = new[]
+        var namesToCheck = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(gameInfo.GameName))
         {
-            $@"{{{{p|localappdata}}}}\{sanitized}\Saved\SaveGames",
-            $@"{{{{p|localappdata}}}}\{sanitized}",
-            $@"{{{{p|appdata}}}}\{sanitized}",
-            $@"{{{{p|savedgames}}}}\{sanitized}",
-            $@"{{{{p|documents}}}}\My Games\{sanitized}",
-            $@"{{{{p|documents}}}}\Saved Games\{sanitized}",
-            $@"{{{{p|documents}}}}\{sanitized}"
-        };
-
-        foreach (var c in candidates)
-        {
-            if (!gameInfo.RawPatterns.Contains(c, StringComparer.OrdinalIgnoreCase))
+            namesToCheck.Add(gameInfo.GameName);
+            if (gameInfo.GameName.Contains(':'))
             {
-                gameInfo.RawPatterns.Add(c);
+                namesToCheck.Add(gameInfo.GameName.Split(':')[0].Trim());
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(originalQuery))
+        {
+            namesToCheck.Add(originalQuery.Trim());
+            if (originalQuery.Contains(':'))
+            {
+                namesToCheck.Add(originalQuery.Split(':')[0].Trim());
+            }
+        }
+
+        foreach (var name in namesToCheck)
+        {
+            var sanitized = BackupService.SanitizeFolderName(name);
+            var candidates = new[]
+            {
+                $@"{{{{p|localappdata}}}}\{sanitized}\Saved\SaveGames",
+                $@"{{{{p|localappdata}}}}\{sanitized}",
+                $@"{{{{p|appdata}}}}\{sanitized}",
+                $@"{{{{p|savedgames}}}}\{sanitized}",
+                $@"{{{{p|documents}}}}\My Games\{sanitized}",
+                $@"{{{{p|documents}}}}\Saved Games\{sanitized}",
+                $@"{{{{p|documents}}}}\{sanitized}\gamesaves",
+                $@"{{{{p|documents}}}}\{sanitized}"
+            };
+
+            foreach (var c in candidates)
+            {
+                if (!gameInfo.RawPatterns.Contains(c, StringComparer.OrdinalIgnoreCase))
+                {
+                    gameInfo.RawPatterns.Add(c);
+                }
             }
         }
     }
