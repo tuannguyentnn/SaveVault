@@ -39,17 +39,26 @@ public class SearchSubViewModel : INotifyPropertyChanged
 
     private bool _isGameDropdownOpen;
     private TaskCompletionSource<string?>? _candidateSelectionTcs;
+    private CancellationTokenSource? _searchCts;
+    private int _searchEpoch;
 
     public bool IsGameDropdownOpen
     {
         get => _isGameDropdownOpen;
-        set => SetField(ref _isGameDropdownOpen, value);
+        set
+        {
+            if (SetField(ref _isGameDropdownOpen, value))
+            {
+                OnPropertyChanged(nameof(IsGameSelectModalOpen));
+                (SearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
     }
 
     public bool IsGameSelectModalOpen
     {
         get => _isGameDropdownOpen;
-        set => SetField(ref _isGameDropdownOpen, value);
+        set => IsGameDropdownOpen = value;
     }
 
     public ObservableCollection<string> GameCandidates { get; } = new();
@@ -80,7 +89,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
         _eventBus = eventBus;
         _nativeDialog = nativeDialog;
 
-        SearchCommand = new RelayCommand(async _ => await ExecuteSearchAsync(), _ => !IsSearching && !string.IsNullOrWhiteSpace(SearchQuery));
+        SearchCommand = new RelayCommand(async _ => await ExecuteSearchAsync(), _ => (!IsSearching || IsGameDropdownOpen) && !string.IsNullOrWhiteSpace(SearchQuery));
         AddCustomPathCommand = new RelayCommand(async _ => await ExecuteAddCustomPathAsync());
         SelectAllPathsCommand = new RelayCommand(_ => ExecuteSelectAllPaths(), _ => DetectedPathItems.Count > 0);
         DeselectAllPathsCommand = new RelayCommand(_ => ExecuteDeselectAllPaths(), _ => DetectedPathItems.Count > 0);
@@ -251,6 +260,20 @@ public class SearchSubViewModel : INotifyPropertyChanged
         var query = !string.IsNullOrWhiteSpace(explicitQuery) ? explicitQuery : SearchQuery;
         if (string.IsNullOrWhiteSpace(query)) return;
 
+        // Nếu dropdown đang mở hoặc đang chờ chọn từ tìm kiếm trước, hủy lượt chờ đó để tìm kiếm mới ngay
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = new CancellationTokenSource();
+        var ct = _searchCts.Token;
+
+        var epoch = ++_searchEpoch;
+
+        if (IsGameDropdownOpen || (_candidateSelectionTcs != null && !_candidateSelectionTcs.Task.IsCompleted))
+        {
+            IsGameDropdownOpen = false;
+            _candidateSelectionTcs?.TrySetResult(null);
+        }
+
         IsSearching = true;
         StatusMessage = $"Đang tìm kiếm vị trí save game cho '{query}'...";
         LoggingService.LogAction("Search_Game_Start", new { Query = query });
@@ -259,8 +282,19 @@ public class SearchSubViewModel : INotifyPropertyChanged
         {
             ClearPreviousDetectedPaths();
 
-            var progressReporter = new Progress<string>(msg => StatusMessage = msg);
-            var gameInfo = await _searchCoordinator.SearchAndDetectGameAsync(query, progressReporter, PromptChooseCandidateAsync);
+            var progressReporter = new Progress<string>(msg =>
+            {
+                if (epoch == _searchEpoch)
+                {
+                    StatusMessage = msg;
+                }
+            });
+
+            var gameInfo = await _searchCoordinator.SearchAndDetectGameAsync(query, progressReporter, PromptChooseCandidateAsync, ct);
+            ct.ThrowIfCancellationRequested();
+
+            if (epoch != _searchEpoch) return;
+
             if (gameInfo == null)
             {
                 StatusMessage = $"Không tìm thấy thông tin cấu hình save game cho '{query}' hoặc bạn đã hủy chọn. Bạn có thể thêm đường dẫn thủ công bên dưới.";
@@ -285,20 +319,35 @@ public class SearchSubViewModel : INotifyPropertyChanged
                 var tempUri = await GameCoverService.DownloadToTempCoverAsync(
                     gameInfo.GameName,
                     gameInfo.OnlineCoverUrl,
-                    gameInfo.SteamAppId);
+                    gameInfo.SteamAppId,
+                    ct);
+
+                if (epoch != _searchEpoch) return;
 
                 OnlineCoverUrl = tempUri;
                 if (!string.IsNullOrEmpty(tempUri))
                 {
-                    gameInfo.OnlineCoverUrl = tempUri;
+                    if (string.IsNullOrEmpty(gameInfo.OnlineCoverUrl) || gameInfo.OnlineCoverUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var realWebUrl = await GameCoverService.FindOnlineCoverUrlAsync(gameInfo.GameName, gameInfo.SteamAppId, ct);
+                        if (!string.IsNullOrEmpty(realWebUrl) && !realWebUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
+                        {
+                            gameInfo.OnlineCoverUrl = realWebUrl;
+                        }
+                    }
                     await _databaseService.SaveGameCacheAsync(gameInfo);
                 }
             }
             catch (Exception ex)
             {
                 LoggingService.Warn("Lỗi tải ảnh cover tạm cho {Game}: {Message}", gameInfo.GameName, ex.Message);
-                OnlineCoverUrl = null;
+                if (epoch == _searchEpoch)
+                {
+                    OnlineCoverUrl = null;
+                }
             }
+
+            if (epoch != _searchEpoch) return;
 
             // Nạp các pattern online
             foreach (var p in gameInfo.RawPatterns)
@@ -343,15 +392,25 @@ public class SearchSubViewModel : INotifyPropertyChanged
             // Làm mới danh sách 10 game gợi ý gần nhất từ SQLite cache
             _ = LoadRecentCacheSuggestionsAsync();
         }
+        catch (OperationCanceledException)
+        {
+            // Bị hủy bởi lượt tìm kiếm mới hơn, bỏ qua an toàn
+        }
         catch (Exception ex)
         {
-            StatusMessage = $"Lỗi khi tìm kiếm: {ex.Message}";
-            LoggingService.Error(ex, "Lỗi tìm kiếm game: {Message}", ex.Message);
-            _dialogService.ShowMessage("Lỗi Tìm Kiếm", ex.Message, "Error", ex.StackTrace);
+            if (epoch == _searchEpoch)
+            {
+                StatusMessage = $"Lỗi khi tìm kiếm: {ex.Message}";
+                LoggingService.Error(ex, "Lỗi tìm kiếm game: {Message}", ex.Message);
+                _dialogService.ShowMessage("Lỗi Tìm Kiếm", ex.Message, "Error", ex.StackTrace);
+            }
         }
         finally
         {
-            IsSearching = false;
+            if (epoch == _searchEpoch)
+            {
+                IsSearching = false;
+            }
         }
     }
 

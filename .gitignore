@@ -604,3 +604,5 @@ FodyWeavers.xsd
 /img guid
 Covers/baldur's_gate_3.jpg
 /Covers
+*.md
+*.jpg

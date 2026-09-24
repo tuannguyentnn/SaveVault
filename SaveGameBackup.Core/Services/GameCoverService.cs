@@ -215,25 +215,36 @@ public static class GameCoverService
         }
 
         var effectiveUrl = onlineCoverUrl;
+        // Bỏ qua các URI ảo cục bộ (.local) nếu file trên đĩa không tồn tại
+        if (!string.IsNullOrEmpty(effectiveUrl) && 
+            (effectiveUrl.Contains(".local", StringComparison.OrdinalIgnoreCase) || 
+             !effectiveUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)))
+        {
+            effectiveUrl = null;
+        }
+
         // Ưu tiên Steam trước: nếu onlineCoverUrl rỗng hoặc là từ pcgamingwiki (dễ bị Cloudflare chặn),
         // luôn tra cứu link ảnh Steam CDN trước
         if (string.IsNullOrEmpty(effectiveUrl) || effectiveUrl.Contains("pcgamingwiki.com", StringComparison.OrdinalIgnoreCase))
         {
             var steamUrl = await FindOnlineCoverUrlAsync(gameName, steamAppId, cancellationToken);
-            if (!string.IsNullOrEmpty(steamUrl) && steamUrl.Contains("steamstatic.com", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(steamUrl) && !steamUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
             {
-                effectiveUrl = steamUrl;
+                if (steamUrl.Contains("steamstatic.com", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(effectiveUrl))
+                {
+                    effectiveUrl = steamUrl;
+                }
             }
-            else if (string.IsNullOrEmpty(effectiveUrl))
+            else if (string.IsNullOrEmpty(effectiveUrl) && !string.IsNullOrEmpty(steamUrl) && !steamUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
             {
                 effectiveUrl = steamUrl;
             }
         }
 
-        if (!string.IsNullOrEmpty(effectiveUrl))
+        if (!string.IsNullOrEmpty(effectiveUrl) && !effectiveUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
         {
             var downloaded = await DownloadImageAsync(effectiveUrl, targetTempFile, cancellationToken);
-            if (downloaded && File.Exists(targetTempFile))
+            if (downloaded && File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
             {
                 return GetTempCoverImageUri(targetTempFile);
             }

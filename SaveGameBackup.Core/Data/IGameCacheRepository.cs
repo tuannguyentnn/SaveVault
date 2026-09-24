@@ -67,7 +67,9 @@ public class GameCacheRepository : IGameCacheRepository
             SteamAppId = row.SteamAppId,
             RawPatterns = patterns,
             Source = row.Source ?? "Cache",
-            OnlineCoverUrl = row.CoverUrl,
+            OnlineCoverUrl = !string.IsNullOrEmpty(row.CoverUrl) && !row.CoverUrl.Contains(".local", StringComparison.OrdinalIgnoreCase)
+                ? row.CoverUrl
+                : null,
             LastScanned = DateTime.TryParse(row.LastUpdated, out var dt) ? dt : null
         };
     }
@@ -81,6 +83,10 @@ public class GameCacheRepository : IGameCacheRepository
 
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
 
+        var coverUrlToSave = !string.IsNullOrEmpty(game.OnlineCoverUrl) && !game.OnlineCoverUrl.Contains(".local", StringComparison.OrdinalIgnoreCase)
+            ? game.OnlineCoverUrl
+            : null;
+
         const string sql = @"
             INSERT INTO games_cache (GameName, NormalizedName, WikiPageTitle, SteamAppId, RawPatternsJson, Source, CoverUrl, LastUpdated)
             VALUES (@GameName, @NormalizedName, @WikiPageTitle, @SteamAppId, @RawPatternsJson, @Source, @CoverUrl, @LastUpdated)
@@ -90,7 +96,7 @@ public class GameCacheRepository : IGameCacheRepository
                 SteamAppId = excluded.SteamAppId,
                 RawPatternsJson = excluded.RawPatternsJson,
                 Source = excluded.Source,
-                CoverUrl = excluded.CoverUrl,
+                CoverUrl = COALESCE(@CoverUrl, games_cache.CoverUrl),
                 LastUpdated = excluded.LastUpdated;
         ";
 
@@ -102,7 +108,7 @@ public class GameCacheRepository : IGameCacheRepository
             SteamAppId = game.SteamAppId,
             RawPatternsJson = rawJson,
             Source = game.Source,
-            CoverUrl = game.OnlineCoverUrl,
+            CoverUrl = coverUrlToSave,
             LastUpdated = DateTime.Now.ToString("o")
         });
     }
@@ -137,7 +143,9 @@ public class GameCacheRepository : IGameCacheRepository
                 SteamAppId = row.SteamAppId,
                 RawPatterns = patterns,
                 Source = row.Source ?? "Cache",
-                OnlineCoverUrl = row.CoverUrl,
+                OnlineCoverUrl = !string.IsNullOrEmpty(row.CoverUrl) && !row.CoverUrl.Contains(".local", StringComparison.OrdinalIgnoreCase)
+                    ? row.CoverUrl
+                    : null,
                 LastScanned = DateTime.TryParse(row.LastUpdated, out var dt) ? dt : null
             });
         }
