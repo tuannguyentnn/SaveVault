@@ -19,6 +19,12 @@ public partial class MainPage : ContentPage
                 "covers.local",
                 coversDir,
                 Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+
+            var tempCoversDir = SaveGameBackup.Core.Services.GameCoverService.GetTempCoverDirectory();
+            e.WebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "tempcovers.local",
+                tempCoversDir,
+                Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
         }
         catch (Exception ex)
         {

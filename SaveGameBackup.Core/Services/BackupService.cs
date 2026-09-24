@@ -308,6 +308,10 @@ public class BackupService
         };
 
         progress?.Report(new BackupProgress { Percent = 100, Message = "Sao lưu hoàn tất thành công!" });
+
+        // Xóa sạch toàn bộ data ảnh tạm trong Temp/covers/ sau khi backup hoàn tất
+        GameCoverService.ClearTempCovers();
+
         return record;
     }
 

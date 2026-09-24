@@ -90,6 +90,7 @@ public class DatabaseService
                 SteamAppId TEXT,
                 RawPatternsJson TEXT NOT NULL,
                 Source TEXT,
+                CoverUrl TEXT,
                 LastUpdated TEXT NOT NULL
             );
 
@@ -141,6 +142,7 @@ public class DatabaseService
 
         connection.Execute(schemaSql);
 
+        EnsureColumnExists(connection, "games_cache", "CoverUrl", "TEXT");
         EnsureColumnExists(connection, "backup_history", "CoverUrl", "TEXT");
         EnsureColumnExists(connection, "backup_history", "CoverPath", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CoverUrl", "TEXT");
@@ -182,6 +184,16 @@ public class DatabaseService
     public Task SaveGameCacheAsync(GameSaveInfo game)
     {
         return _cacheRepository.SaveGameCacheAsync(game);
+    }
+
+    public Task<List<GameSaveInfo>> GetRecentCachedGamesAsync(int limit = 10)
+    {
+        return _cacheRepository.GetRecentCachedGamesAsync(limit);
+    }
+
+    public Task TouchGameCacheAsync(string gameName)
+    {
+        return _cacheRepository.TouchGameCacheAsync(gameName);
     }
 
     // --- History Delegation to IBackupHistoryRepository (Dapper) ---

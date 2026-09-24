@@ -15,12 +15,15 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     private readonly IDialogService _dialogService;
     private readonly IAppEventBus _eventBus;
     private readonly INativeDialogService? _nativeDialog;
+    private readonly LudusaviManifestService _ludusaviService;
 
     private string _databaseLocation = string.Empty;
     private string _backupDestinationRoot = string.Empty;
     private bool _createTimestampSubfolder = true;
     private bool _autoCompressZip = true;
     private int _pageSize = 10;
+    private bool _isSyncingCatalog;
+    private string _syncCatalogStatus = string.Empty;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -28,12 +31,14 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         DatabaseService databaseService,
         IDialogService dialogService,
         IAppEventBus eventBus,
-        INativeDialogService? nativeDialog = null)
+        INativeDialogService? nativeDialog = null,
+        LudusaviManifestService? ludusaviService = null)
     {
         _databaseService = databaseService;
         _dialogService = dialogService;
         _eventBus = eventBus;
         _nativeDialog = nativeDialog;
+        _ludusaviService = ludusaviService ?? new LudusaviManifestService();
 
         var config = AppConfigService.GetConfig();
         _databaseLocation = !string.IsNullOrWhiteSpace(config.DatabasePath)
@@ -53,6 +58,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         ResetDatabaseLocationCommand = new RelayCommand(_ => ExecuteResetDatabaseLocation());
         BrowseBackupDirectoryCommand = new RelayCommand(async _ => await ExecuteBrowseBackupDirectoryAsync());
         SaveSettingsCommand = new RelayCommand(async _ => await ExecuteSaveSettingsAsync());
+        SyncCatalogCommand = new RelayCommand(async _ => await ExecuteSyncCatalogAsync(), _ => !IsSyncingCatalog);
     }
 
     public string DatabaseLocation
@@ -85,11 +91,63 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         set => SetField(ref _pageSize, value);
     }
 
+    public int CatalogGamesCount => _ludusaviService.TotalGamesCount;
+
+    public bool IsSyncingCatalog
+    {
+        get => _isSyncingCatalog;
+        set
+        {
+            if (SetField(ref _isSyncingCatalog, value))
+            {
+                (SyncCatalogCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string SyncCatalogStatus
+    {
+        get => _syncCatalogStatus;
+        set => SetField(ref _syncCatalogStatus, value);
+    }
+
     public ICommand BrowseDatabaseFileCommand { get; }
     public ICommand ApplyDatabaseLocationCommand { get; }
     public ICommand ResetDatabaseLocationCommand { get; }
     public ICommand BrowseBackupDirectoryCommand { get; }
     public ICommand SaveSettingsCommand { get; }
+    public ICommand SyncCatalogCommand { get; }
+
+    public async Task ExecuteSyncCatalogAsync()
+    {
+        if (IsSyncingCatalog) return;
+        IsSyncingCatalog = true;
+        SyncCatalogStatus = "Đang kết nối tới GitHub để tải Ludusavi Manifest...";
+        try
+        {
+            var progress = new Progress<string>(msg => SyncCatalogStatus = msg);
+            int count = await _ludusaviService.SyncFromGithubAsync(progress);
+            if (count > 0)
+            {
+                SyncCatalogStatus = $"Cập nhật thành công {count:N0} tựa game vào danh mục!";
+                OnPropertyChanged(nameof(CatalogGamesCount));
+                _dialogService.ShowMessage("Cập Nhật Danh Mục", $"Đã đồng bộ thành công {count:N0} tựa game từ Ludusavi Manifest (GitHub)!", "Success");
+            }
+            else
+            {
+                SyncCatalogStatus = "Không thể tải danh mục từ GitHub hoặc xảy ra lỗi mạng.";
+                _dialogService.ShowMessage("Cập Nhật Danh Mục", "Không thể tải danh mục game. Vui lòng kiểm tra kết nối internet.", "Warning");
+            }
+        }
+        catch (Exception ex)
+        {
+            SyncCatalogStatus = $"Lỗi: {ex.Message}";
+        }
+        finally
+        {
+            IsSyncingCatalog = false;
+        }
+    }
 
     private async Task ExecuteBrowseDatabaseFileAsync()
     {
@@ -193,11 +251,16 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         await Task.CompletedTask;
     }
 
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
     protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
         if (Equals(field, value)) return false;
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        OnPropertyChanged(propertyName);
         return true;
     }
 }

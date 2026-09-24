@@ -8,6 +8,15 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+
+        // 1. Khi mở app: Xóa sạch toàn bộ data ảnh tạm trong Temp/covers/
+        SaveGameBackup.Core.Services.GameCoverService.ClearTempCovers();
+
+        // 2. Khi thoát app qua ProcessExit: Xóa sạch toàn bộ data ảnh tạm
+        AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+        {
+            SaveGameBackup.Core.Services.GameCoverService.ClearTempCovers();
+        };
     }
 
     protected override Window CreateWindow(IActivationState? activationState)
@@ -19,6 +28,12 @@ public partial class App : Application
             Height = WindowHeight,
             MinimumWidth = WindowWidth,
             MinimumHeight = WindowHeight
+        };
+
+        // 3. Khi đóng cửa sổ / thoát app: Xóa sạch ảnh tạm
+        window.Destroying += (s, e) =>
+        {
+            SaveGameBackup.Core.Services.GameCoverService.ClearTempCovers();
         };
 
         window.Created += (s, e) =>

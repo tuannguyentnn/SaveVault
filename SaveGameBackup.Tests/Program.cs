@@ -1041,8 +1041,198 @@ try
     }
     Console.WriteLine($"  ✓ UpdateCoverPathAsync updated and persisted CoverPath OK!");
 
+    // [22] Testing KnownGameCatalogService & Palworld Detection
+    Console.WriteLine("\n[22] Testing KnownGameCatalogService & Palworld Detection");
+    var catalog = new KnownGameCatalogService();
+    var palDef = catalog.FindGame("palworld");
+    if (palDef == null || palDef.GameName != "Palworld")
+    {
+        throw new Exception("FAIL: KnownGameCatalogService could not find 'palworld'!");
+    }
+    if (!palDef.SavePatterns.Any(p => p.Contains(@"Pal\Saved\SaveGames")))
+    {
+        throw new Exception("FAIL: Palworld definition missing Pal\\Saved\\SaveGames pattern!");
+    }
+    Console.WriteLine($"  ✓ KnownGameCatalogService verified Palworld definition: AppID={palDef.SteamAppId}, Patterns={palDef.SavePatterns.Length}");
+
+    // Test SearchCoordinator detecting Palworld on disk
+    var palSearchCoordinator = new GameSearchCoordinator(db, catalogService: catalog);
+    var palResult = await palSearchCoordinator.SearchAndDetectGameAsync("Palworld");
+    Console.WriteLine($"  ✓ GameSearchCoordinator Palworld search result: {palResult.GameName} (Source: {palResult.Source})");
+    Console.WriteLine($"    Found on disk: {palResult.IsFoundOnDisk}, Files: {palResult.FileCount}, Size: {palResult.TotalSizeBytes} bytes");
+    foreach (var p in palResult.DetectedPathsOnDisk)
+    {
+        Console.WriteLine($"    - Detected: {p}");
+    }
+
+    var expectedPalPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Pal", "Saved", "SaveGames");
+    if (Directory.Exists(expectedPalPath))
+    {
+        if (!palResult.IsFoundOnDisk || !palResult.DetectedPathsOnDisk.Any(p => string.Equals(p.TrimEnd('\\'), expectedPalPath.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new Exception($"FAIL: Palworld save folder exists at '{expectedPalPath}' but was not detected by GameSearchCoordinator!");
+        }
+        Console.WriteLine($"  ✓ Verified: Palworld save folder '{expectedPalPath}' was successfully detected on disk!");
+    }
+
+    // [23] Testing LudusaviManifestService (Multi-Tier Search Architecture)
+    Console.WriteLine("\n[23] Testing LudusaviManifestService (Multi-Tier Search Architecture)");
+    var ludusavi = new LudusaviManifestService();
+    if (ludusavi.TotalGamesCount < 10)
+    {
+        throw new Exception($"FAIL: LudusaviManifestService preloaded catalog too small ({ludusavi.TotalGamesCount} games)!");
+    }
+
+    var convertedPath = LudusaviManifestService.ConvertLudusaviPathToSaveVaultPattern("<winLocalAppData>/Pal/Saved/SaveGames");
+    if (convertedPath != @"{{p|localappdata}}\Pal\Saved\SaveGames")
+    {
+        throw new Exception($"FAIL: Ludusavi path conversion failed! Got: {convertedPath}");
+    }
+    Console.WriteLine($"  ✓ ConvertLudusaviPathToSaveVaultPattern verified OK: {convertedPath}");
+
+    var hogwartsInfo = ludusavi.CreateGameSaveInfo("Hogwarts Legacy");
+    if (hogwartsInfo == null || !hogwartsInfo.RawPatterns.Any(p => p.Contains("Phoenix")))
+    {
+        throw new Exception("FAIL: LudusaviManifestService failed to find Hogwarts Legacy or missing Phoenix pattern!");
+    }
+    Console.WriteLine($"  ✓ LudusaviManifestService lookup verified: {hogwartsInfo.GameName} (Source: {hogwartsInfo.Source}, Patterns: {hogwartsInfo.RawPatterns.Count})");
+
+    // Coordinator with all tiers active
+    var multiTierCoordinator = new GameSearchCoordinator(db, catalogService: catalog, ludusaviService: ludusavi);
+    var coordinatorHogwarts = await multiTierCoordinator.SearchAndDetectGameAsync("Hogwarts Legacy");
+    Console.WriteLine($"  ✓ Multi-Tier GameSearchCoordinator resolved: {coordinatorHogwarts.GameName} (Source: {coordinatorHogwarts.Source})");
+
+    // [24] Testing New Search Logic: Empty SQLite Cache Initialization, Top 10 Recent Cache, Candidate Chooser & CoverUrl
+    Console.WriteLine("\n[24] Testing New Search Logic, Top 10 Recent Cache & Candidate Chooser");
+    var freshDbPath = Path.Combine(tempTestDir, "fresh_empty_cache.db");
+    var freshDb = new DatabaseService(freshDbPath);
+    var initialRecent = await freshDb.GetRecentCachedGamesAsync(10);
+    if (initialRecent.Count != 0)
+    {
+        throw new Exception($"FAIL: Fresh database cache should be empty, but found {initialRecent.Count} games!");
+    }
+    Console.WriteLine("  ✓ Verified: Local Cache in SQLite is initially empty (0 games)!");
+
+    // Add 12 games into cache to test top 10 limit and order
+    for (int i = 1; i <= 12; i++)
+    {
+        var testCachedGame = new GameSaveInfo
+        {
+            GameName = $"Cache Game {i}",
+            Source = "PCGamingWiki",
+            OnlineCoverUrl = $"https://covers.local/game_{i}.jpg",
+            RawPatterns = new List<string> { $@"{{{{p|localappdata}}}}\Game_{i}" }
+        };
+        await freshDb.SaveGameCacheAsync(testCachedGame);
+        await Task.Delay(10); // ensure distinct timestamps
+    }
+
+    var top10Recent = await freshDb.GetRecentCachedGamesAsync(10);
+    if (top10Recent.Count != 10)
+    {
+        throw new Exception($"FAIL: GetRecentCachedGamesAsync should return exactly 10 games, got: {top10Recent.Count}");
+    }
+    if (top10Recent[0].GameName != "Cache Game 12" || top10Recent[9].GameName != "Cache Game 3")
+    {
+        throw new Exception($"FAIL: Top 10 order incorrect! Most recent: {top10Recent[0].GameName}, 10th: {top10Recent[9].GameName}");
+    }
+    Console.WriteLine($"  ✓ Top 10 Recent Cached Games returned: {top10Recent.Count} games, 1st: {top10Recent[0].GameName}, 10th: {top10Recent[9].GameName}");
+
+    // Test TouchGameCacheAsync bumps "Cache Game 3" to the top
+    await freshDb.TouchGameCacheAsync("Cache Game 3");
+    var updatedRecent = await freshDb.GetRecentCachedGamesAsync(10);
+    if (updatedRecent[0].GameName != "Cache Game 3")
+    {
+        throw new Exception($"FAIL: TouchGameCacheAsync did not bump 'Cache Game 3' to top! Got: {updatedRecent[0].GameName}");
+    }
+    Console.WriteLine($"  ✓ TouchGameCacheAsync bumped '{updatedRecent[0].GameName}' to 1st place in Top 10!");
+
+    // Test Candidate Chooser Delegate with multiple results
+    string? chosenCandidate = null;
+    var coordinatorWithChooser = new GameSearchCoordinator(freshDb);
+    var candidateGame = new GameSaveInfo
+    {
+        GameName = "The Witcher 3: Wild Hunt",
+        WikiPageTitle = "The Witcher 3: Wild Hunt",
+        Source = "PCGamingWiki",
+        OnlineCoverUrl = "https://images.pcgamingwiki.com/witcher3.jpg",
+        RawPatterns = new List<string> { @"{{p|documents}}\The Witcher 3\gamesaves" }
+    };
+    await freshDb.SaveGameCacheAsync(candidateGame);
+
+    // Hit cache directly
+    var cachedHit = await coordinatorWithChooser.SearchAndDetectGameAsync("The Witcher 3: Wild Hunt", candidateChooser: candidates =>
+    {
+        chosenCandidate = candidates.FirstOrDefault();
+        return Task.FromResult(chosenCandidate);
+    });
+    if (cachedHit == null || cachedHit.Source != "Cache" && cachedHit.Source != "PCGamingWiki" && cachedHit.Source != "SQLite Cache")
+    {
+        throw new Exception($"FAIL: SearchCoordinator failed to retrieve cached game! Source={cachedHit?.Source}");
+    }
+    if (cachedHit.OnlineCoverUrl != "https://images.pcgamingwiki.com/witcher3.jpg")
+    {
+        throw new Exception($"FAIL: OnlineCoverUrl was not restored from SQLite cache! Got: {cachedHit.OnlineCoverUrl}");
+    }
+    Console.WriteLine($"  ✓ SQLite Cache Hit verified OK! Game: {cachedHit.GameName}, Cover: {cachedHit.OnlineCoverUrl}");
+
+    // ==========================================
+    // [25] Testing Temp Cover Management, Steam Priority & Webview2 Local Mapping
+    // ==========================================
+    Console.WriteLine("\n[25] Testing Temp Cover Management, Steam Priority & Webview2 Local Mapping");
+    var tempCoverDir = GameCoverService.GetTempCoverDirectory();
+    if (!Directory.Exists(tempCoverDir)) Directory.CreateDirectory(tempCoverDir);
+
+    var dummyTempFile = Path.Combine(tempCoverDir, "test_game_temp.jpg");
+    using (var bmp = new System.Drawing.Bitmap(600, 900))
+    {
+        bmp.Save(dummyTempFile, System.Drawing.Imaging.ImageFormat.Jpeg);
+    }
+
+    var tempUri = GameCoverService.GetTempCoverImageUri(dummyTempFile);
+    if (tempUri == null || !tempUri.StartsWith("https://tempcovers.local/"))
+    {
+        throw new Exception($"FAIL: GetTempCoverImageUri returned invalid URI: {tempUri}");
+    }
+    if (tempUri.Contains("base64", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new Exception("FAIL: TempCoverImageUri must NOT use Base64!");
+    }
+    Console.WriteLine($"  ✓ Temp cover virtual host mapping: {tempUri} (Non-Base64)");
+
+    // Test DownloadAndProcessCoverAsync copies from Temp/covers/ and resizes to width 450px
+    var processedCover = await GameCoverService.DownloadAndProcessCoverAsync("Test Game Temp", tempUri);
+    if (string.IsNullOrEmpty(processedCover) || !File.Exists(processedCover))
+    {
+        throw new Exception("FAIL: DownloadAndProcessCoverAsync did not create target file!");
+    }
+    using (var processedImg = System.Drawing.Image.FromFile(processedCover))
+    {
+        if (processedImg.Width != 450)
+        {
+            throw new Exception($"FAIL: Expected width 450px, got {processedImg.Width}px");
+        }
+    }
+    Console.WriteLine($"  ✓ DownloadAndProcessCoverAsync correctly sourced from Temp/covers and resized to 450px");
+
+    GameCoverService.ClearTempCovers();
+    if (File.Exists(dummyTempFile))
+    {
+        throw new Exception("FAIL: ClearTempCovers did not delete dummyTempFile!");
+    }
+    Console.WriteLine("  ✓ ClearTempCovers() wiped all temporary covers successfully!");
+
+    // Test real download to Temp/covers/ with Steam AppID
+    var realTempUri = await GameCoverService.DownloadToTempCoverAsync("Final Assault", null, "793690");
+    if (string.IsNullOrEmpty(realTempUri) || !realTempUri.StartsWith("https://tempcovers.local/"))
+    {
+        throw new Exception($"FAIL: DownloadToTempCoverAsync failed to download cover for Final Assault! Got: {realTempUri}");
+    }
+    Console.WriteLine($"  ✓ DownloadToTempCoverAsync downloaded Steam cover for Final Assault: {realTempUri}");
+    GameCoverService.ClearTempCovers();
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 21 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 25 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally

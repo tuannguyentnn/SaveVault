@@ -496,8 +496,7 @@
     {
         if (SelectedEntry == null) return;
         VM.SelectedTabIndex = 0;
-        VM.SearchVM.SearchQuery = SelectedEntry.GameName;
-        await VM.SearchVM.ExecuteSearchAsync();
+        await VM.SearchVM.LoadGameFromHistoryAsync(SelectedEntry);
     }
 
     protected override async Task OnInitializedAsync()

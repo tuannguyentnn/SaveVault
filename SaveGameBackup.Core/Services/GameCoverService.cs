@@ -45,6 +45,66 @@ public static class GameCoverService
     }
 
     /// <summary>
+    /// Lấy đường dẫn thư mục tạm Temp/covers để lưu ảnh bìa vừa tìm kiếm.
+    /// </summary>
+    public static string GetTempCoverDirectory()
+    {
+        var rootDir = DatabaseService.GetDefaultProjectRoot();
+        var tempDir = Path.Combine(rootDir, "Temp", "covers");
+        if (!Directory.Exists(tempDir))
+        {
+            try
+            {
+                Directory.CreateDirectory(tempDir);
+            }
+            catch { /* Ignore */ }
+        }
+        return tempDir;
+    }
+
+    /// <summary>
+    /// Trả về đường dẫn file ảnh cover tạm trong Temp/covers/.
+    /// </summary>
+    public static string GetTempCoverFilePath(string gameName)
+    {
+        var sanitized = SanitizeFileName(gameName);
+        return Path.Combine(GetTempCoverDirectory(), $"{sanitized}.jpg");
+    }
+
+    /// <summary>
+    /// Chuyển đổi đường dẫn ảnh tạm sang URL ảo an toàn của WebView2 (https://tempcovers.local/[filename]).
+    /// BỎ HOÀN TOÀN Base64 Data URL, hiển thị trực tiếp từ file đĩa cục bộ.
+    /// </summary>
+    public static string? GetTempCoverImageUri(string? tempFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(tempFilePath)) return null;
+        var fileName = Path.GetFileName(tempFilePath);
+        if (string.IsNullOrWhiteSpace(fileName)) return null;
+        return $"https://tempcovers.local/{fileName}";
+    }
+
+    /// <summary>
+    /// Xóa toàn bộ file ảnh tạm trong thư mục Temp/covers/.
+    /// Được gọi tại 3 thời điểm: khi mở app, khi thoát app, và sau khi backup hoàn tất.
+    /// </summary>
+    public static void ClearTempCovers()
+    {
+        try
+        {
+            var tempDir = GetTempCoverDirectory();
+            if (Directory.Exists(tempDir))
+            {
+                var files = Directory.GetFiles(tempDir);
+                foreach (var f in files)
+                {
+                    try { File.Delete(f); } catch { }
+                }
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>
     /// Trả về đường dẫn file ảnh cover cục bộ chuẩn hóa theo tên game.
     /// </summary>
     public static string GetCoverFilePath(string gameName)
@@ -64,8 +124,8 @@ public static class GameCoverService
     }
 
     /// <summary>
-    /// Tra cứu nhanh URL ảnh bìa online (từ PCGamingWiki hoặc Steam CDN) để xem trước, KHÔNG tải về đĩa.
-    /// Nếu máy đã có sẵn file cục bộ thì trả về đường dẫn ảo https://covers.local/... đó.
+    /// Tra cứu URL ảnh bìa online (ƯU TIÊN STEAM TRƯỚC -> NẾU KHÔNG CÓ MỚI LẤY TỪ PCGAMINGWIKI).
+    /// Nếu máy đã có sẵn file cục bộ trong Covers/ thì trả về đường dẫn ảo https://covers.local/... đó.
     /// </summary>
     public static async Task<string?> FindOnlineCoverUrlAsync(string gameName, string? steamAppId = null, CancellationToken cancellationToken = default)
     {
@@ -79,6 +139,27 @@ public static class GameCoverService
 
         try
         {
+            // 1. Ưu tiên Steam trước:
+            var effectiveSteamAppId = steamAppId;
+            if (string.IsNullOrEmpty(effectiveSteamAppId))
+            {
+                effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
+            }
+            if (string.IsNullOrEmpty(effectiveSteamAppId))
+            {
+                effectiveSteamAppId = new LudusaviManifestService().FindGame(gameName)?.SteamId;
+            }
+            if (string.IsNullOrEmpty(effectiveSteamAppId))
+            {
+                effectiveSteamAppId = await FetchSteamAppIdFromStoreSearchAsync(gameName, cancellationToken);
+            }
+
+            if (!string.IsNullOrEmpty(effectiveSteamAppId))
+            {
+                return $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
+            }
+
+            // 2. Không có Steam -> Mới lấy từ PCGamingWiki:
             string? pcgwCoverUrl = null;
             string? extractedSteamAppId = null;
 
@@ -91,10 +172,9 @@ public static class GameCoverService
                 LoggingService.Warn("Lỗi tra cứu PCGW preview cho {Game}: {Message}", gameName, ex.Message);
             }
 
-            var effectiveSteamAppId = steamAppId ?? extractedSteamAppId;
-            if (!string.IsNullOrEmpty(effectiveSteamAppId))
+            if (!string.IsNullOrEmpty(extractedSteamAppId))
             {
-                return $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
+                return $"https://shared.steamstatic.com/store_item_assets/steam/apps/{extractedSteamAppId}/library_600x900.jpg";
             }
 
             if (!string.IsNullOrEmpty(pcgwCoverUrl))
@@ -105,6 +185,58 @@ public static class GameCoverService
         catch (Exception ex)
         {
             LoggingService.Warn("Không thể tìm link ảnh online cho {Game}: {Message}", gameName, ex.Message);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Tải ảnh bìa về thư mục Temp/covers/ và trả về URI ảo cục bộ (https://tempcovers.local/...) để hiển thị trên giao diện.
+    /// Hoàn toàn không dùng Base64.
+    /// </summary>
+    public static async Task<string?> DownloadToTempCoverAsync(
+        string gameName,
+        string? onlineCoverUrl = null,
+        string? steamAppId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(gameName)) return null;
+
+        var localFile = GetCoverFilePath(gameName);
+        if (File.Exists(localFile) && new FileInfo(localFile).Length > 0)
+        {
+            return GetCoverImageUri(localFile);
+        }
+
+        var targetTempFile = GetTempCoverFilePath(gameName);
+        if (File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
+        {
+            return GetTempCoverImageUri(targetTempFile);
+        }
+
+        var effectiveUrl = onlineCoverUrl;
+        // Ưu tiên Steam trước: nếu onlineCoverUrl rỗng hoặc là từ pcgamingwiki (dễ bị Cloudflare chặn),
+        // luôn tra cứu link ảnh Steam CDN trước
+        if (string.IsNullOrEmpty(effectiveUrl) || effectiveUrl.Contains("pcgamingwiki.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var steamUrl = await FindOnlineCoverUrlAsync(gameName, steamAppId, cancellationToken);
+            if (!string.IsNullOrEmpty(steamUrl) && steamUrl.Contains("steamstatic.com", StringComparison.OrdinalIgnoreCase))
+            {
+                effectiveUrl = steamUrl;
+            }
+            else if (string.IsNullOrEmpty(effectiveUrl))
+            {
+                effectiveUrl = steamUrl;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(effectiveUrl))
+        {
+            var downloaded = await DownloadImageAsync(effectiveUrl, targetTempFile, cancellationToken);
+            if (downloaded && File.Exists(targetTempFile))
+            {
+                return GetTempCoverImageUri(targetTempFile);
+            }
         }
 
         return null;
@@ -181,8 +313,46 @@ public static class GameCoverService
             return targetFile;
         }
 
-        // Nếu đã có sẵn link online tìm được từ bước preview, tải trực tiếp
+        var coverDir = GetCoverDirectory();
+        if (!Directory.Exists(coverDir)) Directory.CreateDirectory(coverDir);
+
+        // 1. Ưu tiên copy từ thư mục Temp/covers/ nếu ảnh đã được tải sẵn ở bước search/preview
+        string? tempSourceFile = null;
+        var defaultTempFile = GetTempCoverFilePath(gameName);
+        if (File.Exists(defaultTempFile))
+        {
+            tempSourceFile = defaultTempFile;
+        }
+        else if (!string.IsNullOrEmpty(onlineCoverUrl) && onlineCoverUrl.Contains("tempcovers.local", StringComparison.OrdinalIgnoreCase))
+        {
+            var uri = new Uri(onlineCoverUrl);
+            var fileName = Path.GetFileName(uri.LocalPath);
+            var candidate = Path.Combine(GetTempCoverDirectory(), fileName);
+            if (File.Exists(candidate))
+            {
+                tempSourceFile = candidate;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(tempSourceFile) && File.Exists(tempSourceFile))
+        {
+            try
+            {
+                File.Copy(tempSourceFile, targetFile, true);
+                ResizeCoverImage(targetFile, 450);
+                _dataUrlCache.TryRemove(targetFile, out _);
+                return targetFile;
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("Lỗi sao chép ảnh từ Temp/covers/ cho {Game}: {Message}", gameName, ex.Message);
+            }
+        }
+
+        // 2. Nếu là URL mạng ngoài (http/https thực tế không phải tempcovers.local), tải trực tiếp
         if (!string.IsNullOrEmpty(onlineCoverUrl) && 
+            !onlineCoverUrl.Contains("tempcovers.local", StringComparison.OrdinalIgnoreCase) &&
+            !onlineCoverUrl.Contains("covers.local", StringComparison.OrdinalIgnoreCase) &&
             (onlineCoverUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
              onlineCoverUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
         {
@@ -201,14 +371,14 @@ public static class GameCoverService
             }
         }
 
-        // Fallback: Tra cứu và tải theo quy trình đầy đủ
+        // 3. Fallback: Tra cứu và tải theo quy trình đầy đủ
         return await EnsureCoverForGameAsync(gameName, steamAppId, cancellationToken);
     }
 
     /// <summary>
     /// Đảm bảo game có ảnh bìa trên máy:
     /// - Nếu file đã tồn tại: trả về đường dẫn hiện có, không tải lại.
-    /// - Nếu chưa có: tra cứu từ PCGamingWiki / Steam, tải về máy và resize width 450px.
+    /// - Nếu chưa có: tra cứu từ Steam trước -> PCGamingWiki, tải về máy và resize width 450px.
     /// - Nếu không tìm thấy: trả về null.
     /// </summary>
     public static async Task<string?> EnsureCoverForGameAsync(string gameName, string? steamAppId = null, CancellationToken cancellationToken = default)
@@ -223,22 +393,17 @@ public static class GameCoverService
 
         try
         {
-            string? pcgwCoverUrl = null;
-            string? extractedSteamAppId = null;
-
-            // 1. Thử lấy cover & steamAppId từ PCGamingWiki
-            try
+            // 1. Ưu tiên Steam trước (AppID, Catalog, hoặc Steam Store Search)
+            var effectiveSteamAppId = steamAppId;
+            if (string.IsNullOrEmpty(effectiveSteamAppId))
             {
-                (pcgwCoverUrl, extractedSteamAppId) = await FetchPCGamingWikiCoverAndSteamIdAsync(gameName, cancellationToken);
+                effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
             }
-            catch (Exception ex)
+            if (string.IsNullOrEmpty(effectiveSteamAppId))
             {
-                LoggingService.Warn("Lỗi tra cứu PCGamingWiki cho {Game}: {Message}", gameName, ex.Message);
+                effectiveSteamAppId = await FetchSteamAppIdFromStoreSearchAsync(gameName, cancellationToken);
             }
 
-            var effectiveSteamAppId = steamAppId ?? extractedSteamAppId;
-
-            // 1. Ưu tiên tải từ Steam CDN nếu có Steam AppID (ảnh library dọc chuẩn 600x900, không bị chặn)
             if (!string.IsNullOrEmpty(effectiveSteamAppId))
             {
                 var steamLibraryUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
@@ -250,7 +415,31 @@ public static class GameCoverService
                 }
             }
 
-            // 2. Thử cover từ PCGW
+            // 2. Không có Steam -> Mới lấy từ PCGamingWiki
+            string? pcgwCoverUrl = null;
+            string? extractedSteamAppId = null;
+
+            try
+            {
+                (pcgwCoverUrl, extractedSteamAppId) = await FetchPCGamingWikiCoverAndSteamIdAsync(gameName, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("Lỗi tra cứu PCGamingWiki cho {Game}: {Message}", gameName, ex.Message);
+            }
+
+            if (string.IsNullOrEmpty(effectiveSteamAppId) && !string.IsNullOrEmpty(extractedSteamAppId))
+            {
+                effectiveSteamAppId = extractedSteamAppId;
+                var steamLibraryUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
+                if (await DownloadImageAsync(steamLibraryUrl, targetFile, cancellationToken))
+                {
+                    ResizeCoverImage(targetFile, 450);
+                    _dataUrlCache.TryRemove(targetFile, out _);
+                    return targetFile;
+                }
+            }
+            // 3. Thử cover từ PCGW
             if (!string.IsNullOrEmpty(pcgwCoverUrl))
             {
                 var success = await DownloadImageAsync(pcgwCoverUrl, targetFile, cancellationToken);
@@ -479,6 +668,63 @@ public static class GameCoverService
         }
 
         return false;
+    }
+
+    private static async Task<string?> FetchSteamAppIdFromStoreSearchAsync(string gameName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(gameName)) return null;
+
+        // 1. Thử qua Steam Community SearchApps (Không bị nhà mạng chặn TCP Reset, trả về JSON trực tiếp)
+        try
+        {
+            var communityUrl = $"https://steamcommunity.com/actions/SearchApps/{Uri.EscapeDataString(gameName.Trim())}";
+            var response = await _httpClient.GetStringAsync(communityUrl, cancellationToken);
+            using var doc = JsonDocument.Parse(response);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+            {
+                var first = doc.RootElement[0];
+                if (first.TryGetProperty("appid", out var appIdProp))
+                {
+                    var idStr = appIdProp.GetString();
+                    if (!string.IsNullOrEmpty(idStr))
+                    {
+                        return idStr;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Lỗi tra cứu Steam Community Search cho {Game}: {Message}", gameName, ex.Message);
+        }
+
+        // 2. Fallback: Thử Steam Store Search API
+        try
+        {
+            var searchUrl = $"https://store.steampowered.com/api/storesearch/?term={Uri.EscapeDataString(gameName)}&l=english&cc=US";
+            var response = await _httpClient.GetStringAsync(searchUrl, cancellationToken);
+            using var doc = JsonDocument.Parse(response);
+            if (doc.RootElement.TryGetProperty("items", out var items) && items.GetArrayLength() > 0)
+            {
+                var firstItem = items[0];
+                if (firstItem.TryGetProperty("id", out var idProp))
+                {
+                    if (idProp.ValueKind == JsonValueKind.Number)
+                    {
+                        return idProp.GetInt64().ToString();
+                    }
+                    if (idProp.ValueKind == JsonValueKind.String)
+                    {
+                        return idProp.GetString();
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Lỗi tra cứu Steam Store Search cho {Game}: {Message}", gameName, ex.Message);
+        }
+        return null;
     }
 
     private static string SanitizeFileName(string name)

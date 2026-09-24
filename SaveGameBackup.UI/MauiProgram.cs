@@ -28,6 +28,11 @@ public static class MauiProgram
 
         // Core Services
         builder.Services.AddSingleton<DatabaseService>();
+        builder.Services.AddSingleton<KnownGameCatalogService>();
+        builder.Services.AddSingleton<LudusaviManifestService>();
+        builder.Services.AddSingleton<IHeadlessBrowserService, WebView2HeadlessService>();
+        builder.Services.AddSingleton<PCGamingWikiService>(sp => 
+            new PCGamingWikiService(headlessBrowser: sp.GetService<IHeadlessBrowserService>()));
         builder.Services.AddSingleton<GameSearchCoordinator>();
         builder.Services.AddSingleton<BackupService>();
         builder.Services.AddSingleton<CloudManagerService>();

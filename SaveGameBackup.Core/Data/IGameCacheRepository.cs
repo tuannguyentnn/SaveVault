@@ -8,6 +8,8 @@ public interface IGameCacheRepository
 {
     Task<GameSaveInfo?> GetCachedGameAsync(string gameName);
     Task SaveGameCacheAsync(GameSaveInfo game);
+    Task<List<GameSaveInfo>> GetRecentCachedGamesAsync(int limit = 10);
+    Task TouchGameCacheAsync(string gameName);
 }
 
 public class GameCacheRepository : IGameCacheRepository
@@ -27,6 +29,7 @@ public class GameCacheRepository : IGameCacheRepository
         public string? SteamAppId { get; set; }
         public string RawPatternsJson { get; set; } = string.Empty;
         public string? Source { get; set; }
+        public string? CoverUrl { get; set; }
         public string LastUpdated { get; set; } = string.Empty;
     }
 
@@ -38,7 +41,7 @@ public class GameCacheRepository : IGameCacheRepository
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
 
         const string sql = @"
-            SELECT GameName, NormalizedName, WikiPageTitle, SteamAppId, RawPatternsJson, Source, LastUpdated 
+            SELECT GameName, NormalizedName, WikiPageTitle, SteamAppId, RawPatternsJson, Source, CoverUrl, LastUpdated 
             FROM games_cache 
             WHERE NormalizedName = @Normalized OR LOWER(GameName) = LOWER(@Name)
             LIMIT 1;
@@ -64,6 +67,7 @@ public class GameCacheRepository : IGameCacheRepository
             SteamAppId = row.SteamAppId,
             RawPatterns = patterns,
             Source = row.Source ?? "Cache",
+            OnlineCoverUrl = row.CoverUrl,
             LastScanned = DateTime.TryParse(row.LastUpdated, out var dt) ? dt : null
         };
     }
@@ -78,14 +82,15 @@ public class GameCacheRepository : IGameCacheRepository
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
 
         const string sql = @"
-            INSERT INTO games_cache (GameName, NormalizedName, WikiPageTitle, SteamAppId, RawPatternsJson, Source, LastUpdated)
-            VALUES (@GameName, @NormalizedName, @WikiPageTitle, @SteamAppId, @RawPatternsJson, @Source, @LastUpdated)
+            INSERT INTO games_cache (GameName, NormalizedName, WikiPageTitle, SteamAppId, RawPatternsJson, Source, CoverUrl, LastUpdated)
+            VALUES (@GameName, @NormalizedName, @WikiPageTitle, @SteamAppId, @RawPatternsJson, @Source, @CoverUrl, @LastUpdated)
             ON CONFLICT(GameName) DO UPDATE SET
                 NormalizedName = excluded.NormalizedName,
                 WikiPageTitle = excluded.WikiPageTitle,
                 SteamAppId = excluded.SteamAppId,
                 RawPatternsJson = excluded.RawPatternsJson,
                 Source = excluded.Source,
+                CoverUrl = excluded.CoverUrl,
                 LastUpdated = excluded.LastUpdated;
         ";
 
@@ -97,7 +102,67 @@ public class GameCacheRepository : IGameCacheRepository
             SteamAppId = game.SteamAppId,
             RawPatternsJson = rawJson,
             Source = game.Source,
+            CoverUrl = game.OnlineCoverUrl,
             LastUpdated = DateTime.Now.ToString("o")
+        });
+    }
+
+    public async Task<List<GameSaveInfo>> GetRecentCachedGamesAsync(int limit = 10)
+    {
+        if (limit <= 0) limit = 10;
+
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync();
+
+        const string sql = @"
+            SELECT GameName, NormalizedName, WikiPageTitle, SteamAppId, RawPatternsJson, Source, CoverUrl, LastUpdated
+            FROM games_cache
+            ORDER BY LastUpdated DESC
+            LIMIT @Limit;
+        ";
+
+        var rows = await connection.QueryAsync<GameCacheRecord>(sql, new { Limit = limit });
+        var results = new List<GameSaveInfo>();
+
+        foreach (var row in rows)
+        {
+            var patterns = !string.IsNullOrEmpty(row.RawPatternsJson)
+                ? JsonSerializer.Deserialize<List<string>>(row.RawPatternsJson) ?? new List<string>()
+                : new List<string>();
+
+            results.Add(new GameSaveInfo
+            {
+                GameName = row.GameName,
+                NormalizedName = row.NormalizedName,
+                WikiPageTitle = row.WikiPageTitle,
+                SteamAppId = row.SteamAppId,
+                RawPatterns = patterns,
+                Source = row.Source ?? "Cache",
+                OnlineCoverUrl = row.CoverUrl,
+                LastScanned = DateTime.TryParse(row.LastUpdated, out var dt) ? dt : null
+            });
+        }
+
+        return results;
+    }
+
+    public async Task TouchGameCacheAsync(string gameName)
+    {
+        if (string.IsNullOrWhiteSpace(gameName)) return;
+
+        var normalized = NormalizeGameName(gameName);
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync();
+
+        const string sql = @"
+            UPDATE games_cache
+            SET LastUpdated = @LastUpdated
+            WHERE NormalizedName = @Normalized OR LOWER(GameName) = LOWER(@Name);
+        ";
+
+        await connection.ExecuteAsync(sql, new
+        {
+            LastUpdated = DateTime.Now.ToString("o"),
+            Normalized = normalized,
+            Name = gameName.Trim()
         });
     }
 

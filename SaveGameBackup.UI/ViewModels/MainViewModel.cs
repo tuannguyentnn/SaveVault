@@ -72,6 +72,7 @@ public class MainViewModel : INotifyPropertyChanged
 
         // Đăng ký theo dõi thay đổi trạng thái modal để cập nhật IsModalOpen
         DialogService.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
+        SearchVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
         HistoryVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
         RestoreVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
         CloudVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
@@ -142,7 +143,8 @@ public class MainViewModel : INotifyPropertyChanged
         HistoryVM.IsHistoryDetailsModalOpen ||
         RestoreVM.IsRestoreModalOpen ||
         RestoreVM.IsRestoreSourceModalOpen ||
-        CloudVM.IsSyncCloudSelectModalOpen;
+        CloudVM.IsSyncCloudSelectModalOpen ||
+        SearchVM.IsGameSelectModalOpen;
 
     // --- CHUYỂN TIẾP CÁC THUỘC TÍNH TỪ SUB-VIEWMODELS (Bảo toàn 100% XAML Bindings) ---
 
@@ -326,6 +328,12 @@ public class MainViewModel : INotifyPropertyChanged
         if (DialogService.IsConfirmModalOpen)
         {
             DialogService.CancelConfirm();
+            return;
+        }
+
+        if (SearchVM.IsGameSelectModalOpen)
+        {
+            SearchVM.CancelCandidateModalCommand.Execute(null);
             return;
         }
 
