@@ -34,6 +34,39 @@ public class HistorySubViewModel : INotifyPropertyChanged
     public ObservableCollection<BackupRecord> BackupHistory { get; } = new();
     public ObservableCollection<BackupHistoryDetail> CurrentHistoryDetails { get; } = new();
 
+    // SQL Pagination Collections & State (Parallel with RAM Pagination)
+    public ObservableCollection<GameHistoryEntry> PagedGameHistories { get; } = new();
+    public ObservableCollection<BackupHistoryDetail> PagedHistoryDetails { get; } = new();
+
+    private int _pagedTotalGames;
+    public int PagedTotalGames
+    {
+        get => _pagedTotalGames;
+        set => SetField(ref _pagedTotalGames, value);
+    }
+
+    private int _pagedTotalSnapshots;
+    public int PagedTotalSnapshots
+    {
+        get => _pagedTotalSnapshots;
+        set => SetField(ref _pagedTotalSnapshots, value);
+    }
+
+    public bool UseSqlPagination
+    {
+        get => AppConfigService.GetConfig().UseSqlPagination;
+        set
+        {
+            var config = AppConfigService.GetConfig();
+            if (config.UseSqlPagination != value)
+            {
+                config.UseSqlPagination = value;
+                AppConfigService.SaveConfig(config);
+                OnPropertyChanged();
+            }
+        }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public HistorySubViewModel(
@@ -303,17 +336,98 @@ public class HistorySubViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task LoadGameHistoriesPagedAsync(int pageNumber, int pageSize, string? filter = null, string sortColumn = "Date", bool sortAscending = false)
+    {
+        try
+        {
+            if (UseSqlPagination)
+            {
+                var result = await _databaseService.GetGameHistoriesPagedAsync(pageNumber, pageSize, filter, sortColumn, sortAscending);
+                void UpdateUiCollections()
+                {
+                    PagedGameHistories.Clear();
+                    foreach (var item in result.Items)
+                    {
+                        PagedGameHistories.Add(item);
+                    }
+                    PagedTotalGames = result.TotalItems;
+                }
+
+                if (Microsoft.Maui.ApplicationModel.MainThread.IsMainThread)
+                {
+                    UpdateUiCollections();
+                }
+                else
+                {
+                    await Microsoft.Maui.ApplicationModel.MainThread.InvokeOnMainThreadAsync(UpdateUiCollections);
+                }
+
+                OnPropertyChanged(nameof(PagedGameHistories));
+                OnPropertyChanged(nameof(PagedTotalGames));
+            }
+            else
+            {
+                if (GameHistories.Count == 0)
+                {
+                    await RefreshHistoryAsync();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(ex, "Lỗi khi nạp danh sách game theo trang: {Message}", ex.Message);
+        }
+    }
+
+    public async Task LoadGameDetailsPagedAsync(long gameHistoryId, int pageNumber, int pageSize, bool sortAscending = false)
+    {
+        try
+        {
+            if (UseSqlPagination)
+            {
+                var result = await _databaseService.GetHistoryDetailsPagedAsync(gameHistoryId, pageNumber, pageSize, sortAscending);
+                void UpdateUiCollections()
+                {
+                    PagedHistoryDetails.Clear();
+                    foreach (var item in result.Items)
+                    {
+                        PagedHistoryDetails.Add(item);
+                    }
+                    PagedTotalSnapshots = result.TotalItems;
+                }
+
+                if (Microsoft.Maui.ApplicationModel.MainThread.IsMainThread)
+                {
+                    UpdateUiCollections();
+                }
+                else
+                {
+                    await Microsoft.Maui.ApplicationModel.MainThread.InvokeOnMainThreadAsync(UpdateUiCollections);
+                }
+
+                OnPropertyChanged(nameof(PagedHistoryDetails));
+                OnPropertyChanged(nameof(PagedTotalSnapshots));
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(ex, "Lỗi khi nạp snapshot theo trang: {Message}", ex.Message);
+        }
+    }
+
     public async Task ExecuteOpenGameDetailsAsync(object? param)
     {
         GameHistoryEntry? entry = null;
         if (param is GameHistoryEntry ghe) entry = ghe;
         else if (param is GameBackupSummary summary)
         {
-            entry = GameHistories.FirstOrDefault(g => string.Equals(g.GameName, summary.GameName, StringComparison.OrdinalIgnoreCase));
+            entry = GameHistories.FirstOrDefault(g => string.Equals(g.GameName, summary.GameName, StringComparison.OrdinalIgnoreCase))
+                 ?? PagedGameHistories.FirstOrDefault(g => string.Equals(g.GameName, summary.GameName, StringComparison.OrdinalIgnoreCase));
         }
         else if (param is string name)
         {
-            entry = GameHistories.FirstOrDefault(g => string.Equals(g.GameName, name, StringComparison.OrdinalIgnoreCase));
+            entry = GameHistories.FirstOrDefault(g => string.Equals(g.GameName, name, StringComparison.OrdinalIgnoreCase))
+                 ?? PagedGameHistories.FirstOrDefault(g => string.Equals(g.GameName, name, StringComparison.OrdinalIgnoreCase));
         }
 
         if (entry == null) return;
@@ -322,17 +436,32 @@ public class HistorySubViewModel : INotifyPropertyChanged
         SelectedGameHistory = entry;
         RefreshCurrentRevertPoint(entry.GameName);
         CurrentHistoryDetails.Clear();
+        PagedHistoryDetails.Clear();
 
         try
         {
-            var details = await _databaseService.GetHistoryDetailsByGameIdAsync(entry.Id);
-            foreach (var d in details)
+            if (UseSqlPagination)
             {
-                CurrentHistoryDetails.Add(d);
+                var pageSize = Math.Max(1, AppConfigService.GetConfig().PageSize);
+                var result = await _databaseService.GetHistoryDetailsPagedAsync(entry.Id, 1, pageSize, sortAscending: false);
+                PagedTotalSnapshots = result.TotalItems;
+                foreach (var d in result.Items)
+                {
+                    PagedHistoryDetails.Add(d);
+                    CurrentHistoryDetails.Add(d);
+                }
+            }
+            else
+            {
+                var details = await _databaseService.GetHistoryDetailsByGameIdAsync(entry.Id);
+                foreach (var d in details)
+                {
+                    CurrentHistoryDetails.Add(d);
+                }
             }
 
             IsHistoryDetailsModalOpen = true;
-            LoggingService.LogAction("View_Game_Snapshots", new { Game = entry.GameName, SnapshotCount = details.Count });
+            LoggingService.LogAction("View_Game_Snapshots", new { Game = entry.GameName, UseSql = UseSqlPagination });
         }
         catch (Exception ex)
         {

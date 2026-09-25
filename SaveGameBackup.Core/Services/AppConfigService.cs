@@ -17,6 +17,7 @@ public class AppConfigFile
     public bool CreateTimestampSubfolder { get; set; } = true;
     public bool AutoCompressZip { get; set; } = true; // Mặc định và bắt buộc nén zip 100%
     public int PageSize { get; set; } = 10; // Số dòng trên mỗi trang cho các bảng phân trang
+    public bool UseSqlPagination { get; set; } = true; // true: Phân trang trực tiếp từ SQL (LIMIT/OFFSET), false: RAM Pagination cũ
 
     // Nhà cung cấp Cloud hiện thời ("GoogleDrive" hoặc "OneDrive")
     public string ActiveCloudProvider { get; set; } = "GoogleDrive";
@@ -26,7 +27,7 @@ public class AppConfigFile
     public string? OneDriveRefreshTokenProtected { get; set; }
     public string? OneDriveAccessTokenProtected { get; set; }
     public DateTime OneDriveAccessTokenExpiry { get; set; } = DateTime.MinValue;
-    public string? OneDriveAccountEmail { get; set; }
+    public string? OneDriveAccountEmailProtected { get; set; }
 
     // Cấu hình Google Drive (được mã hóa với Salt)
     public string? GoogleDriveClientIdProtected { get; set; }
@@ -34,7 +35,36 @@ public class AppConfigFile
     public string? GoogleDriveRefreshTokenProtected { get; set; }
     public string? GoogleDriveAccessTokenProtected { get; set; }
     public DateTime GoogleDriveAccessTokenExpiry { get; set; } = DateTime.MinValue;
-    public string? GoogleDriveAccountEmail { get; set; }
+    public string? GoogleDriveAccountEmailProtected { get; set; }
+
+    // Tương thích ngược: Đọc trường plaintext cũ nếu file JSON cũ chưa được mã hóa email
+    [JsonPropertyName("OneDriveAccountEmail")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyOneDriveAccountEmail
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrEmpty(value) && string.IsNullOrEmpty(OneDriveAccountEmailProtected))
+            {
+                OneDriveAccountEmailProtected = SecurityHelper.EncryptWithSalt(value);
+            }
+        }
+    }
+
+    [JsonPropertyName("GoogleDriveAccountEmail")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyGoogleDriveAccountEmail
+    {
+        get => null;
+        set
+        {
+            if (!string.IsNullOrEmpty(value) && string.IsNullOrEmpty(GoogleDriveAccountEmailProtected))
+            {
+                GoogleDriveAccountEmailProtected = SecurityHelper.EncryptWithSalt(value);
+            }
+        }
+    }
 
     // Tùy chọn sử dụng API riêng thay vì cấu hình tự động mặc định (1-Click)
     public bool UseCustomOneDriveApi { get; set; } = false;
@@ -63,6 +93,13 @@ public class AppConfigFile
     }
 
     [JsonIgnore]
+    public string? OneDriveAccountEmail
+    {
+        get => string.IsNullOrEmpty(OneDriveAccountEmailProtected) ? null : SecurityHelper.DecryptWithSalt(OneDriveAccountEmailProtected);
+        set => OneDriveAccountEmailProtected = string.IsNullOrEmpty(value) ? null : SecurityHelper.EncryptWithSalt(value);
+    }
+
+    [JsonIgnore]
     public string GoogleDriveClientId
     {
         get => SecurityHelper.DecryptWithSalt(GoogleDriveClientIdProtected);
@@ -88,6 +125,13 @@ public class AppConfigFile
     {
         get => SecurityHelper.DecryptWithSalt(GoogleDriveAccessTokenProtected);
         set => GoogleDriveAccessTokenProtected = SecurityHelper.EncryptWithSalt(value);
+    }
+
+    [JsonIgnore]
+    public string? GoogleDriveAccountEmail
+    {
+        get => string.IsNullOrEmpty(GoogleDriveAccountEmailProtected) ? null : SecurityHelper.DecryptWithSalt(GoogleDriveAccountEmailProtected);
+        set => GoogleDriveAccountEmailProtected = string.IsNullOrEmpty(value) ? null : SecurityHelper.EncryptWithSalt(value);
     }
 }
 
@@ -152,7 +196,15 @@ public static class AppConfigService
             {
                 var json = File.ReadAllText(path);
                 var config = JsonSerializer.Deserialize<AppConfigFile>(json);
-                if (config != null) return config;
+                if (config != null)
+                {
+                    // Tự động kiểm tra và nâng cấp nếu file config còn chứa field legacy chưa mã hóa
+                    if (json.Contains("\"OneDriveAccountEmail\"") || json.Contains("\"GoogleDriveAccountEmail\""))
+                    {
+                        SaveConfig(config);
+                    }
+                    return config;
+                }
             }
         }
         catch { }

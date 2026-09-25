@@ -77,6 +77,39 @@
                     </select>
                 </div>
             </div>
+
+            <!-- Cơ chế Phân trang: SQL Pagination vs RAM Pagination -->
+            <div class="pt-3 border-t border-[#1E293B] flex items-center justify-between">
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <label class="text-[11.5px] text-slate-300 font-semibold">Cơ chế phân trang (Pagination Engine):</label>
+                        <span class="px-1.5 py-0.5 text-[9.5px] font-bold rounded @(SettingsVM.UseSqlPagination ? "bg-cyan-950/80 text-cyan-300 border border-cyan-500/40" : "bg-amber-950/80 text-amber-300 border border-amber-500/40")">
+                            @(SettingsVM.UseSqlPagination ? "⚡ SQL-level (Tối ưu)" : "💾 In-Memory RAM (Cũ)")
+                        </span>
+                    </div>
+                    <span class="text-[11px] text-slate-500 block mt-0.5">
+                        @(SettingsVM.UseSqlPagination 
+                            ? "SQL Pagination: Truy vấn trực tiếp phân trang từ SQLite bằng LIMIT/OFFSET (Tối ưu RAM tối đa, tốc độ cực nhanh với hàng ngàn bản lưu)." 
+                            : "RAM Pagination: Nạp toàn bộ lịch sử game vào bộ nhớ RAM rồi phân trang trên giao diện (Cơ chế hoạt động cũ).")
+                    </span>
+                </div>
+                <div class="inline-flex rounded-lg p-0.5 bg-[#0F172A] border border-[#334155] flex-shrink-0">
+                    <button type="button"
+                            class="px-3 py-1.5 text-[11.5px] font-semibold rounded-md transition-all flex items-center space-x-1.5 @(SettingsVM.UseSqlPagination ? "bg-cyan-600 text-white shadow" : "text-slate-400 hover:text-slate-200")"
+                            @onclick="() => SettingsVM.UseSqlPagination = true"
+                            title="Sử dụng phân trang trực tiếp từ SQLite Database (Khuyên dùng)">
+                        <span>⚡</span>
+                        <span>SQL Pagination</span>
+                    </button>
+                    <button type="button"
+                            class="px-3 py-1.5 text-[11.5px] font-semibold rounded-md transition-all flex items-center space-x-1.5 @(!SettingsVM.UseSqlPagination ? "bg-blue-600 text-white shadow" : "text-slate-400 hover:text-slate-200")"
+                            @onclick="() => SettingsVM.UseSqlPagination = false"
+                            title="Sử dụng nạp toàn bộ vào RAM rồi phân trang (Cơ chế cũ)">
+                        <span>💾</span>
+                        <span>RAM Pagination</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 

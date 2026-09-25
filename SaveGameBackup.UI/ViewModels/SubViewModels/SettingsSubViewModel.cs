@@ -22,6 +22,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     private bool _createTimestampSubfolder = true;
     private bool _autoCompressZip = true;
     private int _pageSize = 10;
+    private bool _useSqlPagination = true;
     private bool _isSyncingCatalog;
     private string _syncCatalogStatus = string.Empty;
     private int _syncProgressPercent;
@@ -55,6 +56,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _createTimestampSubfolder = config.CreateTimestampSubfolder;
         _autoCompressZip = config.AutoCompressZip;
         _pageSize = config.PageSize > 0 ? config.PageSize : 10;
+        _useSqlPagination = config.UseSqlPagination;
 
         BrowseDatabaseFileCommand = new RelayCommand(async _ => await ExecuteBrowseDatabaseFileAsync());
         ApplyDatabaseLocationCommand = new RelayCommand(async _ => await ExecuteApplyDatabaseLocationAsync());
@@ -92,6 +94,12 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     {
         get => _pageSize;
         set => SetField(ref _pageSize, value);
+    }
+
+    public bool UseSqlPagination
+    {
+        get => _useSqlPagination;
+        set => SetField(ref _useSqlPagination, value);
     }
 
     public int CatalogGamesCount => _ludusaviService.TotalGamesCount;
@@ -297,7 +305,10 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             cfg.AutoCompressZip = AutoCompressZip;
             cfg.PageSize = PageSize;
             cfg.DatabasePath = DatabaseLocation;
+            cfg.UseSqlPagination = UseSqlPagination;
         });
+
+        _eventBus.Publish(new HistoryChangedEvent());
 
         _dialogService.ShowMessage("Lưu Cài Đặt", "Đã lưu toàn bộ cấu hình vào app_config.json thành công!", "Success");
         LoggingService.LogAction("Save_General_Settings", new
@@ -306,7 +317,8 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             CreateTimestampSubfolder,
             AutoCompressZip,
             PageSize,
-            DatabaseLocation
+            DatabaseLocation,
+            UseSqlPagination
         });
 
         await Task.CompletedTask;

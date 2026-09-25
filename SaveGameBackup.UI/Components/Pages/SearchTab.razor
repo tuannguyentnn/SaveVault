@@ -1,6 +1,7 @@
 @namespace SaveGameBackup.UI.Components.Pages
 @inject MainViewModel VM
 @inject INativeDialogService NativeDialog
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 
 <div class="h-full flex flex-col space-y-3.5 p-5 overflow-y-auto" style="background-color: #0A0F1D;">
@@ -266,58 +267,72 @@
                             </div>
                         </div>
 
-                        <!-- Khung danh sách thư mục (List box - Image 2 / 0.JPG & 1.JPG) -->
-                        <div class="sv-listbox">
-                            @if (SearchVM.DetectedPathItems.Count == 0)
-                            {
-                                <div class="flex items-center justify-center h-full min-h-[60px]">
-                                    <span style="color: #64748B; font-size: 12px; font-style: italic; text-align: center;">
-                                        Chưa phát hiện thư mục save nào trên máy tính. Bạn có thể nhấn '📁 Chọn thư mục thủ công' ở
-                                        góc trên
-                                        để thêm vị trí lưu.
-                                    </span>
-                                </div>
-                            }
-                            else
-                            {
-                                <div class="space-y-1.5 w-full">
-                                    @foreach (var item in SearchVM.DetectedPathItems)
-                                    {
-                                        <div class="flex items-center justify-between p-2 rounded"
-                                             style="background-color: #0F172A; border: 1px solid @(item.IsSelected ? "#059669" : "#1E293B");">
-                                            <label class="flex items-center space-x-2.5 min-w-0 flex-1 mr-3 cursor-pointer select-none"
-                                                   @onclick="() => TogglePathItem(item)" @onclick:preventDefault="true">
-                                                <input type="checkbox" checked="@item.IsSelected" style="cursor: pointer;" />
-                                                <span style="font-size: 13px; color: #94A3B8;">📁</span>
-                                                <div class="min-w-0 flex-1">
-                                                    <div style="font-family: var(--font-mono); font-size: 12px; color: #E2E8F0; word-break: break-all;">
-                                                        @item.Path
+                        <!-- Khung danh sách thư mục (List box - max-height 200px kèm scroll hint) -->
+                        <div class="sv-listbox-wrapper">
+                            <div id="sv-detected-paths-box" class="sv-listbox">
+                                @if (SearchVM.DetectedPathItems.Count == 0)
+                                {
+                                    <div class="flex items-center justify-center h-full min-h-[60px]">
+                                        <span style="color: #64748B; font-size: 12px; font-style: italic; text-align: center;">
+                                            Chưa phát hiện thư mục save nào trên máy tính. Bạn có thể nhấn '📁 Chọn thư mục thủ công' ở
+                                            góc trên
+                                            để thêm vị trí lưu.
+                                        </span>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="space-y-1.5 w-full">
+                                        @foreach (var item in SearchVM.DetectedPathItems)
+                                        {
+                                            <div class="flex items-center justify-between p-2 rounded"
+                                                 style="background-color: #0F172A; border: 1px solid @(item.IsSelected ? "#059669" : "#1E293B");">
+                                                <label class="flex items-center space-x-2.5 min-w-0 flex-1 mr-3 cursor-pointer select-none"
+                                                       @onclick="() => TogglePathItem(item)" @onclick:preventDefault="true">
+                                                    <input type="checkbox" checked="@item.IsSelected" style="cursor: pointer;" />
+                                                    <span style="font-size: 13px; color: #94A3B8;">📁</span>
+                                                    <div class="min-w-0 flex-1">
+                                                        <div style="font-family: var(--font-mono); font-size: 12px; color: #E2E8F0; word-break: break-all;">
+                                                            @item.Path
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            </label>
+                                                </label>
 
-                                            <div class="flex items-center space-x-3 flex-shrink-0">
-                                                <span style="font-size: 11px; color: #8D9CB0; font-family: var(--font-mono);">
-                                                    @item.FileCount tệp
-                                                </span>
-                                                <span style="font-size: 11px; color: #34D399; font-family: var(--font-mono); font-weight: 600;">
-                                                    @item.FormattedSize
-                                                </span>
-                                                <button type="button" class="sv-btn-dark sv-btn-sm"
-                                                        title="Mở thư mục trong File Explorer"
-                                                        @onclick="() => SearchVM.OpenSpecificDetectedPathCommand.Execute(item.Path)">
-                                                    📁 Mở
-                                                </button>
-                                                <button type="button"
-                                                        class="bg-red-600/20 hover:bg-red-600 border border-red-500/50 hover:border-red-500 text-red-300 hover:text-white font-semibold text-[11px] py-1 px-2.5 rounded transition-all cursor-pointer"
-                                                        title="Xóa khỏi danh sách này"
-                                                        @onclick="() => SearchVM.RemoveDetectedPathCommand.Execute(item)">
-                                                    🗑 Xóa
-                                                </button>
+                                                <div class="flex items-center space-x-3 flex-shrink-0">
+                                                    <span style="font-size: 11px; color: #8D9CB0; font-family: var(--font-mono);">
+                                                        @item.FileCount tệp
+                                                    </span>
+                                                    <span style="font-size: 11px; color: #34D399; font-family: var(--font-mono); font-weight: 600;">
+                                                        @item.FormattedSize
+                                                    </span>
+                                                    <button type="button" class="sv-btn-dark sv-btn-sm"
+                                                            title="Mở thư mục trong File Explorer"
+                                                            @onclick="() => SearchVM.OpenSpecificDetectedPathCommand.Execute(item.Path)">
+                                                        📁 Mở
+                                                    </button>
+                                                    <button type="button"
+                                                            class="bg-red-600/20 hover:bg-red-600 border border-red-500/50 hover:border-red-500 text-red-300 hover:text-white font-semibold text-[11px] py-1 px-2.5 rounded transition-all cursor-pointer"
+                                                            title="Xóa khỏi danh sách này"
+                                                            @onclick="() => SearchVM.RemoveDetectedPathCommand.Execute(item)">
+                                                        🗑 Xóa
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
-                                    }
-                                </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            @if (CanScrollDown && SearchVM.DetectedPathItems.Count > 0)
+                            {
+                                <div class="sv-listbox-gradient-overlay"></div>
+                                <button type="button"
+                                        class="sv-listbox-scroll-hint"
+                                        @onclick="ScrollListboxDown"
+                                        title="Nhấp để cuộn xuống xem thêm thư mục save bên dưới">
+                                    <span>▼</span>
+                                    <span>Còn vị trí bên dưới (Cuộn)</span>
+                                </button>
                             }
                         </div>
 
@@ -405,6 +420,9 @@
     private bool IsEditingGameName { get; set; } = false;
     private string EditedGameName { get; set; } = string.Empty;
 
+    private bool CanScrollDown { get; set; } = false;
+    private DotNetObjectReference<SearchTab>? _dotNetRef;
+
     private bool CanBackup => !BackupVM.IsBackingUp && SearchVM.HasGame && SearchVM.HasSelectedPaths;
 
     protected override void OnInitialized()
@@ -418,6 +436,14 @@
         if (!SearchVM.HasGame)
         {
             IsEditingGameName = false;
+        }
+        if (SearchVM.DetectedPathItems.Count > 3)
+        {
+            CanScrollDown = true;
+        }
+        else if (SearchVM.DetectedPathItems.Count <= 2)
+        {
+            CanScrollDown = false;
         }
         InvokeAsync(StateHasChanged);
     }
@@ -489,9 +515,47 @@
         await BackupVM.ExecuteBackupAsync();
     }
 
+    [JSInvokable]
+    public void OnListBoxScrollChanged(bool canScroll)
+    {
+        if (CanScrollDown != canScroll)
+        {
+            CanScrollDown = canScroll;
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ScrollListboxDown()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("listboxHelper.scrollDown", "sv-detected-paths-box");
+        }
+        catch { }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _dotNetRef = DotNetObjectReference.Create(this);
+                await JSRuntime.InvokeVoidAsync("listboxHelper.init", "sv-detected-paths-box", _dotNetRef);
+            }
+            catch { }
+        }
+    }
+
     public void Dispose()
     {
         SearchVM.PropertyChanged -= OnStateChanged;
         BackupVM.PropertyChanged -= OnStateChanged;
+        try
+        {
+            _dotNetRef?.Dispose();
+            _ = JSRuntime.InvokeVoidAsync("listboxHelper.dispose", "sv-detected-paths-box");
+        }
+        catch { }
     }
 }

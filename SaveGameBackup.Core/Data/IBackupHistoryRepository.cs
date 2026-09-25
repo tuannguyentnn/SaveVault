@@ -9,7 +9,9 @@ public interface IBackupHistoryRepository
 {
     Task<long> InsertOrUpdateBackupHistoryAsync(BackupHistoryDetail detail);
     Task<List<GameHistoryEntry>> GetGameHistoriesAsync();
+    Task<PagedResult<GameHistoryEntry>> GetGameHistoriesPagedAsync(int pageNumber, int pageSize, string? filterText = null, string sortColumn = "Date", bool sortAscending = false);
     Task<List<BackupHistoryDetail>> GetHistoryDetailsByGameIdAsync(long gameHistoryId);
+    Task<PagedResult<BackupHistoryDetail>> GetHistoryDetailsPagedAsync(long gameHistoryId, int pageNumber, int pageSize, bool sortAscending = false);
     Task UpdateCloudSyncDetailAsync(long detailId, bool isSynced, string provider, string fileId, string fileName, DateTime? syncDate, string? cloudSyncJson = null, string? backupPathJson = null);
     Task UpdateSnapshotLocationsAsync(long detailId, BackupHistoryDetail detail);
     Task<bool> DeleteHistoryDetailAsync(long detailId, long gameHistoryId);
@@ -278,6 +280,88 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         }).ToList();
     }
 
+    public async Task<PagedResult<GameHistoryEntry>> GetGameHistoriesPagedAsync(int pageNumber, int pageSize, string? filterText = null, string sortColumn = "Date", bool sortAscending = false)
+    {
+        pageNumber = Math.Max(1, pageNumber);
+        pageSize = Math.Max(1, pageSize);
+        var offset = (pageNumber - 1) * pageSize;
+
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync();
+
+        var filter = string.IsNullOrWhiteSpace(filterText) ? null : filterText.Trim();
+
+        const string countSql = @"
+            SELECT COUNT(*) 
+            FROM backup_history h
+            WHERE (@Filter IS NULL OR h.GameName LIKE '%' || @Filter || '%');
+        ";
+        var totalItems = await connection.ExecuteScalarAsync<int>(countSql, new { Filter = filter });
+
+        string sqlOrderBy = sortColumn switch
+        {
+            "GameName" => sortAscending ? "h.GameName COLLATE NOCASE ASC" : "h.GameName COLLATE NOCASE DESC",
+            "Count" => sortAscending ? "h.BackupCount ASC" : "h.BackupCount DESC",
+            "Date" => sortAscending ? "h.LatestBackupDate ASC" : "h.LatestBackupDate DESC",
+            "LatestSize" => sortAscending ? "h.LatestSizeBytes ASC" : "h.LatestSizeBytes DESC",
+            "TotalSize" => sortAscending ? "h.TotalSizeBytes ASC" : "h.TotalSizeBytes DESC",
+            _ => sortAscending ? "h.LatestBackupDate ASC" : "h.LatestBackupDate DESC"
+        };
+
+        string dataSql = $@"
+            SELECT h.Id, h.GameName, h.BackupCount, h.LatestBackupPath, h.LatestBackupDate, h.TotalSizeBytes, h.LatestSizeBytes, h.LatestFileCount, h.SavePaths, h.Status, h.Note, h.CoverUrl, h.CoverPath,
+                   CASE WHEN EXISTS (
+                       SELECT 1 FROM backup_history_details d 
+                       WHERE d.GameHistoryId = h.Id 
+                         AND (d.IsCloudSynced = 1 OR (d.CloudFileId IS NOT NULL AND d.CloudFileId != '') OR (d.CloudSyncJson IS NOT NULL AND d.CloudSyncJson != '' AND d.CloudSyncJson != '[]') OR (d.BackupPath LIKE '%""CloudUrls"":{{%' AND d.BackupPath NOT LIKE '%""CloudUrls"":{{}}%'))
+                   ) THEN 1 ELSE 0 END AS HasCloudBackup
+            FROM backup_history h
+            WHERE (@Filter IS NULL OR h.GameName LIKE '%' || @Filter || '%')
+            ORDER BY {sqlOrderBy}
+            LIMIT @PageSize OFFSET @Offset;
+        ";
+
+        var rows = await connection.QueryAsync<MasterHistoryRow>(dataSql, new { Filter = filter, PageSize = pageSize, Offset = offset });
+        var items = rows.Select(r =>
+        {
+            var cover = r.CoverUrl;
+            var coverPath = r.CoverPath;
+            if (string.IsNullOrEmpty(coverPath) && SaveGameBackup.Core.Services.GameCoverService.HasLocalCover(r.GameName))
+            {
+                coverPath = SaveGameBackup.Core.Services.GameCoverService.GetCoverFilePath(r.GameName);
+            }
+            if (string.IsNullOrEmpty(cover))
+            {
+                cover = coverPath;
+            }
+
+            return new GameHistoryEntry
+            {
+                Id = r.Id,
+                GameName = r.GameName,
+                BackupCount = r.BackupCount,
+                LatestBackupPath = r.LatestBackupPath,
+                LatestBackupDate = DateTime.TryParse(r.LatestBackupDate, out var dt) ? dt : DateTime.MinValue,
+                TotalSizeBytes = r.TotalSizeBytes,
+                LatestSizeBytes = r.LatestSizeBytes,
+                LatestFileCount = r.LatestFileCount,
+                SavePaths = r.SavePaths ?? string.Empty,
+                Status = r.Status,
+                Note = r.Note,
+                HasCloudBackup = r.HasCloudBackup == 1,
+                CoverUrl = cover,
+                CoverPath = coverPath
+            };
+        }).ToList();
+
+        return new PagedResult<GameHistoryEntry>
+        {
+            Items = items,
+            TotalItems = totalItems,
+            PageNumber = pageNumber,
+            PageSize = pageSize
+        };
+    }
+
     public async Task<List<BackupHistoryDetail>> GetHistoryDetailsByGameIdAsync(long gameHistoryId)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
@@ -361,6 +445,111 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         }
 
         return list;
+    }
+
+    public async Task<PagedResult<BackupHistoryDetail>> GetHistoryDetailsPagedAsync(long gameHistoryId, int pageNumber, int pageSize, bool sortAscending = false)
+    {
+        pageNumber = Math.Max(1, pageNumber);
+        pageSize = Math.Max(1, pageSize);
+        var offset = (pageNumber - 1) * pageSize;
+
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync();
+
+        const string countSql = @"
+            SELECT COUNT(*) 
+            FROM backup_history_details
+            WHERE GameHistoryId = @GameId;
+        ";
+        var totalItems = await connection.ExecuteScalarAsync<int>(countSql, new { GameId = gameHistoryId });
+
+        string orderDir = sortAscending ? "ASC" : "DESC";
+        string dataSql = $@"
+            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson, CoverUrl, CoverPath
+            FROM backup_history_details
+            WHERE GameHistoryId = @GameId
+            ORDER BY Id {orderDir}
+            LIMIT @PageSize OFFSET @Offset;
+        ";
+
+        var rows = await connection.QueryAsync<DetailHistoryRow>(dataSql, new { GameId = gameHistoryId, PageSize = pageSize, Offset = offset });
+        var list = new List<BackupHistoryDetail>();
+
+        foreach (var r in rows)
+        {
+            var isCloudSynced = r.IsCloudSynced == 1;
+            var cloudProvider = r.CloudProvider ?? string.Empty;
+            var cloudFileId = r.CloudFileId ?? string.Empty;
+            var cloudFileName = r.CloudFileName ?? string.Empty;
+            var cloudSyncDate = DateTime.TryParse(r.CloudSyncDate, out var cdt) ? cdt : (DateTime?)null;
+            var cloudSyncJson = r.CloudSyncJson ?? string.Empty;
+
+            var syncList = new List<CloudSyncInfo>();
+            if (!string.IsNullOrEmpty(cloudSyncJson))
+            {
+                try
+                {
+                    syncList = JsonSerializer.Deserialize<List<CloudSyncInfo>>(cloudSyncJson) ?? new();
+                }
+                catch { }
+            }
+
+            if (syncList.Count == 0 && isCloudSynced && !string.IsNullOrEmpty(cloudFileId))
+            {
+                var provName = !string.IsNullOrEmpty(cloudProvider) ? cloudProvider : "Cloud";
+                var webUrl = provName.Equals("OneDrive", StringComparison.OrdinalIgnoreCase)
+                    ? $"https://onedrive.live.com/?id={cloudFileId}"
+                    : $"https://drive.google.com/file/d/{cloudFileId}/view";
+
+                syncList.Add(new CloudSyncInfo
+                {
+                    Provider = provName,
+                    FileId = cloudFileId,
+                    FileName = cloudFileName,
+                    SyncDate = cloudSyncDate ?? DateTime.Now,
+                    WebViewUrl = webUrl
+                });
+            }
+
+            var coverPath = r.CoverPath;
+            if (string.IsNullOrEmpty(coverPath) && SaveGameBackup.Core.Services.GameCoverService.HasLocalCover(r.GameName))
+            {
+                coverPath = SaveGameBackup.Core.Services.GameCoverService.GetCoverFilePath(r.GameName);
+            }
+
+            list.Add(new BackupHistoryDetail
+            {
+                Id = r.Id,
+                GameHistoryId = r.GameHistoryId,
+                GameName = r.GameName,
+                BackupPath = r.BackupPath,
+                SourcePath = r.SourcePath,
+                SavePaths = r.SavePaths ?? string.Empty,
+                ManifestJson = r.ManifestJson ?? string.Empty,
+                FileCount = r.FileCount,
+                TotalSizeBytes = r.TotalSizeBytes,
+                BackupDate = DateTime.TryParse(r.BackupDate, out var dt) ? dt : DateTime.MinValue,
+                IsCompressed = r.IsCompressed == 1,
+                Status = r.Status,
+                Note = r.Note,
+                IsCloudSynced = isCloudSynced || syncList.Count > 0,
+                CloudProvider = syncList.Count > 0 ? string.Join(", ", syncList.Select(c => c.Provider)) : cloudProvider,
+                CloudFileId = cloudFileId,
+                CloudFileName = cloudFileName,
+                CloudSyncDate = cloudSyncDate,
+                CloudSyncJson = cloudSyncJson,
+                CloudSyncList = syncList,
+                CoverUrl = r.CoverUrl ?? coverPath,
+                CoverPath = coverPath
+            });
+        }
+
+        return new PagedResult<BackupHistoryDetail>
+        {
+            Items = list,
+            TotalItems = totalItems,
+            PageNumber = pageNumber,
+            PageSize = pageSize
+        };
     }
 
     public async Task UpdateCloudSyncDetailAsync(long detailId, bool isSynced, string provider, string fileId, string fileName, DateTime? syncDate, string? cloudSyncJson = null, string? backupPathJson = null)

@@ -12,12 +12,14 @@
         : (IEnumerable<BackupHistoryDetail>)DialogService.CurrentGameDetails).ToList();
 
     var sortedDetails = GetSortedDetails(detailsList);
-    var totalDetails = sortedDetails.Count;
+    var totalDetails = HistoryVM.UseSqlPagination ? HistoryVM.PagedTotalSnapshots : sortedDetails.Count;
     var totalDetailPages = Math.Max(1, (int)Math.Ceiling(totalDetails / (double)DetailPageSize));
     if (CurrentDetailPage > totalDetailPages) CurrentDetailPage = totalDetailPages;
     if (CurrentDetailPage < 1) CurrentDetailPage = 1;
 
-    var pagedDetails = sortedDetails.Skip((CurrentDetailPage - 1) * DetailPageSize).Take(DetailPageSize).ToList();
+    var pagedDetails = HistoryVM.UseSqlPagination
+        ? HistoryVM.PagedHistoryDetails.ToList()
+        : sortedDetails.Skip((CurrentDetailPage - 1) * DetailPageSize).Take(DetailPageSize).ToList();
     var fromDetailItem = totalDetails == 0 ? 0 : (CurrentDetailPage - 1) * DetailPageSize + 1;
     var toDetailItem = Math.Min(CurrentDetailPage * DetailPageSize, totalDetails);
 
@@ -262,7 +264,7 @@
                         <button type="button"
                                 class="py-1 px-2.5 rounded text-[11px] font-medium border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                                 disabled="@(CurrentDetailPage <= 1)"
-                                @onclick="() => CurrentDetailPage--">
+                                @onclick="() => ChangeDetailPage(CurrentDetailPage - 1)">
                             ◀ Trước
                         </button>
                         <span class="px-2 font-mono text-[11.5px] text-white">
@@ -271,7 +273,7 @@
                         <button type="button"
                                 class="py-1 px-2.5 rounded text-[11px] font-medium border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                                 disabled="@(CurrentDetailPage >= totalDetailPages)"
-                                @onclick="() => CurrentDetailPage++">
+                                @onclick="() => ChangeDetailPage(CurrentDetailPage + 1)">
                             Tiếp ▶
                         </button>
                     </div>
@@ -337,6 +339,9 @@
     private int CurrentDetailPage { get; set; } = 1;
     private int DetailPageSize => Math.Max(1, AppConfigService.GetConfig().PageSize);
 
+    private int TotalDetailItems => HistoryVM.UseSqlPagination ? HistoryVM.PagedTotalSnapshots : GetAllDetails().Count();
+    private int TotalDetailPages => Math.Max(1, (int)Math.Ceiling(TotalDetailItems / (double)DetailPageSize));
+
     private BackupHistoryDetail? ActiveDetail => HistoryVM.SelectedHistoryDetail ?? SelectedDetail ?? DialogService.SelectedDetail;
 
     private IEnumerable<BackupHistoryDetail> GetAllDetails()
@@ -383,7 +388,20 @@
         InvokeAsync(StateHasChanged);
     }
 
-    private void SortDetailBy(string column)
+    private async Task ChangeDetailPage(int newPage)
+    {
+        CurrentDetailPage = Math.Clamp(newPage, 1, Math.Max(1, TotalDetailPages));
+        if (HistoryVM.UseSqlPagination)
+        {
+            var entry = HistoryVM.SelectedGameHistory ?? DialogService.DetailsGameHistory;
+            if (entry != null)
+            {
+                await HistoryVM.LoadGameDetailsPagedAsync(entry.Id, CurrentDetailPage, DetailPageSize, DetailSortAscending);
+            }
+        }
+    }
+
+    private async Task SortDetailBy(string column)
     {
         if (DetailSortColumn == column)
         {
@@ -395,6 +413,14 @@
             DetailSortAscending = (column == "Date") ? false : true;
         }
         CurrentDetailPage = 1;
+        if (HistoryVM.UseSqlPagination)
+        {
+            var entry = HistoryVM.SelectedGameHistory ?? DialogService.DetailsGameHistory;
+            if (entry != null)
+            {
+                await HistoryVM.LoadGameDetailsPagedAsync(entry.Id, CurrentDetailPage, DetailPageSize, DetailSortAscending);
+            }
+        }
     }
 
     private List<BackupHistoryDetail> GetSortedDetails(List<BackupHistoryDetail> raw)

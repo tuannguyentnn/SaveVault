@@ -909,20 +909,29 @@ try
     if (loadedConfig.GoogleDriveRefreshToken != "1//mock-google-refresh-token" ||
         loadedConfig.GoogleDriveAccessToken != "ya29.mock-google-access-token" ||
         loadedConfig.OneDriveAccessToken != "EwBA.mock-onedrive-access-token" ||
+        loadedConfig.GoogleDriveAccountEmail != "gamer@gmail.com" ||
+        loadedConfig.OneDriveAccountEmail != "gamer@outlook.com" ||
         loadedConfig.ActiveCloudProvider != "OneDrive")
     {
-        throw new Exception("FAIL: AppConfigService token encryption/decryption failed!");
+        throw new Exception("FAIL: AppConfigService token/email encryption/decryption failed!");
     }
 
-    // Verify raw JSON file contains encrypted ciphertext and NOT plaintext secrets
+    // Verify raw JSON file contains encrypted ciphertext and NOT plaintext secrets or emails
     var rawConfigJson = File.ReadAllText(AppConfigService.GetConfigFilePath());
     if (rawConfigJson.Contains("1//mock-google-refresh-token") ||
         rawConfigJson.Contains("ya29.mock-google-access-token") ||
-        rawConfigJson.Contains("EwBA.mock-onedrive-access-token"))
+        rawConfigJson.Contains("EwBA.mock-onedrive-access-token") ||
+        rawConfigJson.Contains("gamer@gmail.com") ||
+        rawConfigJson.Contains("gamer@outlook.com"))
     {
-        throw new Exception("FAIL: Tokens were stored in plaintext! They MUST be AES-256 encrypted in app_config.json!");
+        throw new Exception("FAIL: Tokens or Account Emails were stored in plaintext! They MUST be AES-256 encrypted in app_config.json!");
     }
-    Console.WriteLine("  ✓ OAuth Refresh & Access tokens safely stored with AES-256 encryption in app_config.json!");
+    if (!rawConfigJson.Contains("OneDriveAccountEmailProtected") ||
+        !rawConfigJson.Contains("GoogleDriveAccountEmailProtected"))
+    {
+        throw new Exception("FAIL: Protected email keys missing from app_config.json!");
+    }
+    Console.WriteLine("  ✓ OAuth Refresh & Access tokens and Drive Account Emails safely stored with AES-256 encryption in app_config.json!");
     Console.WriteLine("  ✓ Database contains 0 configuration tables/values, strictly adhering to architectural requirements!");
 
     // Test 19: AppEventBus Mediator Pub/Sub
@@ -1732,10 +1741,102 @@ try
     {
         throw new Exception($"FAIL: Record Id={idToDelete} still exists after deletion!");
     }
-    Console.WriteLine("  ✓ GetAllRestoreHistoryAsync and DeleteRestoreHistoryAsync verified OK!");
+    // 31. Test SQL-level Pagination vs RAM Pagination (Parallel Implementation)
+    Console.WriteLine("\n[31] Testing SQL-level Pagination vs RAM Pagination (Parallel Implementation)");
+    
+    // Insert 15 test games into backup_history with snapshots
+    for (int i = 1; i <= 15; i++)
+    {
+        var pagedGameDetail = new BackupHistoryDetail
+        {
+            GameName = $"PagedGame {i:D2}",
+            BackupPath = Path.Combine(tempTestDir, $"Backups/PagedGame_{i:D2}"),
+            SourcePath = Path.Combine(tempTestDir, $"Source_{i:D2}"),
+            FileCount = i,
+            TotalSizeBytes = i * 1024 * 100,
+            BackupDate = DateTime.Now.AddMinutes(-i),
+            IsCompressed = true,
+            Status = "Success"
+        };
+        await db.InsertOrUpdateBackupHistoryAsync(pagedGameDetail);
+
+        // Add 2 extra snapshots for game 01
+        if (i == 1)
+        {
+            for (int s = 1; s <= 2; s++)
+            {
+                var extraSnapshot = new BackupHistoryDetail
+                {
+                    GameName = $"PagedGame 01",
+                    BackupPath = Path.Combine(tempTestDir, $"Backups/PagedGame_01_snap{s}"),
+                    SourcePath = Path.Combine(tempTestDir, $"Source_01"),
+                    FileCount = 5,
+                    TotalSizeBytes = 5000,
+                    BackupDate = DateTime.Now.AddDays(-s),
+                    IsCompressed = true,
+                    Status = "Success"
+                };
+                await db.InsertOrUpdateBackupHistoryAsync(extraSnapshot);
+            }
+        }
+    }
+
+    // 31.1: Test SQL Page 1 with pageSize 5, sorted by GameName ASC
+    var sqlPage1 = await db.GetGameHistoriesPagedAsync(pageNumber: 1, pageSize: 5, filterText: "PagedGame", sortColumn: "GameName", sortAscending: true);
+    if (sqlPage1.TotalItems != 15)
+        throw new Exception($"FAIL: SQL Pagination TotalItems expected 15, got {sqlPage1.TotalItems}");
+    if (sqlPage1.Items.Count != 5)
+        throw new Exception($"FAIL: SQL Pagination Page 1 Items.Count expected 5, got {sqlPage1.Items.Count}");
+    if (!sqlPage1.Items[0].GameName.StartsWith("PagedGame 01"))
+        throw new Exception($"FAIL: Expected first item 'PagedGame 01', got '{sqlPage1.Items[0].GameName}'");
+    Console.WriteLine($"  ✓ SQL Pagination Page 1 OK: {sqlPage1.Items.Count} items, TotalItems={sqlPage1.TotalItems}, TotalPages={sqlPage1.TotalPages}");
+
+    // 31.2: Test SQL Page 2
+    var sqlPage2 = await db.GetGameHistoriesPagedAsync(pageNumber: 2, pageSize: 5, filterText: "PagedGame", sortColumn: "GameName", sortAscending: true);
+    if (sqlPage2.Items.Count != 5)
+        throw new Exception($"FAIL: SQL Pagination Page 2 Items.Count expected 5, got {sqlPage2.Items.Count}");
+    if (!sqlPage2.Items[0].GameName.StartsWith("PagedGame 06"))
+        throw new Exception($"FAIL: Expected first item on Page 2 'PagedGame 06', got '{sqlPage2.Items[0].GameName}'");
+    Console.WriteLine($"  ✓ SQL Pagination Page 2 OK: First item is '{sqlPage2.Items[0].GameName}'");
+
+    // 31.3: Test SQL Search Filter
+    var sqlFiltered = await db.GetGameHistoriesPagedAsync(pageNumber: 1, pageSize: 10, filterText: "PagedGame 0", sortColumn: "GameName", sortAscending: true);
+    if (sqlFiltered.TotalItems != 9) // 01 to 09
+        throw new Exception($"FAIL: Expected 9 items for filter 'PagedGame 0', got {sqlFiltered.TotalItems}");
+    Console.WriteLine($"  ✓ SQL Pagination Search Filter OK: Found {sqlFiltered.TotalItems} matching games");
+
+    // 31.4: Test SQL Snapshots Pagination for PagedGame 01 (which has 3 snapshots)
+    var pagedGame1Entry = sqlPage1.Items[0];
+    var snapshotPage = await db.GetHistoryDetailsPagedAsync(pagedGame1Entry.Id, pageNumber: 1, pageSize: 2);
+    if (snapshotPage.TotalItems != 3)
+        throw new Exception($"FAIL: Expected 3 snapshots for PagedGame 01, got {snapshotPage.TotalItems}");
+    if (snapshotPage.Items.Count != 2)
+        throw new Exception($"FAIL: Expected 2 items on page 1 of snapshots, got {snapshotPage.Items.Count}");
+    Console.WriteLine($"  ✓ SQL Snapshot Pagination OK: Total={snapshotPage.TotalItems}, PageItems={snapshotPage.Items.Count}");
+
+    // 31.5: Test AppConfigService.UseSqlPagination runtime toggle (Parallel capability)
+    var currentConfig = AppConfigService.GetConfig();
+    if (!currentConfig.UseSqlPagination)
+        throw new Exception("FAIL: UseSqlPagination should default to true!");
+    
+    // Toggle to false (RAM mode)
+    currentConfig.UseSqlPagination = false;
+    AppConfigService.SaveConfig(currentConfig);
+    var toggledConfig = AppConfigService.GetConfig();
+    if (toggledConfig.UseSqlPagination != false)
+        throw new Exception("FAIL: UseSqlPagination should be false after toggling!");
+    Console.WriteLine("  ✓ AppConfigService UseSqlPagination toggle to false (RAM Mode) verified OK!");
+
+    // Toggle back to true (SQL mode)
+    currentConfig.UseSqlPagination = true;
+    AppConfigService.SaveConfig(currentConfig);
+    toggledConfig = AppConfigService.GetConfig();
+    if (toggledConfig.UseSqlPagination != true)
+        throw new Exception("FAIL: UseSqlPagination should be true after toggling back!");
+    Console.WriteLine("  ✓ AppConfigService UseSqlPagination toggle back to true (SQL Mode) verified OK!");
 
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 30 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 31 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally

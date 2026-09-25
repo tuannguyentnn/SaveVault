@@ -227,9 +227,19 @@ public class DatabaseService
         return _historyRepository.GetGameHistoriesAsync();
     }
 
+    public Task<PagedResult<GameHistoryEntry>> GetGameHistoriesPagedAsync(int pageNumber, int pageSize, string? filterText = null, string sortColumn = "Date", bool sortAscending = false)
+    {
+        return _historyRepository.GetGameHistoriesPagedAsync(pageNumber, pageSize, filterText, sortColumn, sortAscending);
+    }
+
     public Task<List<BackupHistoryDetail>> GetHistoryDetailsByGameIdAsync(long gameHistoryId)
     {
         return _historyRepository.GetHistoryDetailsByGameIdAsync(gameHistoryId);
+    }
+
+    public Task<PagedResult<BackupHistoryDetail>> GetHistoryDetailsPagedAsync(long gameHistoryId, int pageNumber, int pageSize, bool sortAscending = false)
+    {
+        return _historyRepository.GetHistoryDetailsPagedAsync(gameHistoryId, pageNumber, pageSize, sortAscending);
     }
 
     public Task UpdateCloudSyncDetailAsync(long detailId, bool isSynced, string provider, string fileId, string fileName, DateTime? syncDate, string? cloudSyncJson = null, string? backupPathJson = null)

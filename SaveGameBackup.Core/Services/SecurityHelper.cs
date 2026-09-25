@@ -7,7 +7,7 @@ namespace SaveGameBackup.Core.Services;
 
 /// <summary>
 /// Cung cấp thuật toán mã hóa đối xứng an toàn AES-256 kết hợp Salt ngẫu nhiên và PBKDF2
-/// để bảo mật các thông tin nhạy cảm (OAuth Tokens, Client Secrets, Client IDs) khi lưu vào app_config.json.
+/// để bảo mật các thông tin nhạy cảm (OAuth Tokens, Client Secrets, Client IDs, Drive Account Emails) khi lưu vào app_config.json.
 /// </summary>
 public static class SecurityHelper
 {

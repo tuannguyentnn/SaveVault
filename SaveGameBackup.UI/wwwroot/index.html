@@ -64,6 +64,46 @@
                 }
             }
         };
+
+        window.listboxHelper = {
+            observers: {},
+            init: function (elementId, dotNetHelper) {
+                var el = document.getElementById(elementId);
+                if (!el) return;
+
+                var check = function () {
+                    if (!el) el = document.getElementById(elementId);
+                    if (!el) return;
+                    var canScroll = (el.scrollHeight - el.scrollTop - el.clientHeight) > 10;
+                    dotNetHelper.invokeMethodAsync('OnListBoxScrollChanged', canScroll);
+                };
+
+                el.addEventListener('scroll', check, { passive: true });
+                if (window.ResizeObserver) {
+                    if (this.observers[elementId]) {
+                        this.observers[elementId].disconnect();
+                    }
+                    var ro = new ResizeObserver(function () {
+                        check();
+                    });
+                    ro.observe(el);
+                    this.observers[elementId] = ro;
+                }
+                setTimeout(check, 60);
+                check();
+            },
+            scrollDown: function (elementId) {
+                var el = document.getElementById(elementId);
+                if (!el) return;
+                el.scrollBy({ top: 90, behavior: 'smooth' });
+            },
+            dispose: function (elementId) {
+                if (this.observers[elementId]) {
+                    this.observers[elementId].disconnect();
+                    delete this.observers[elementId];
+                }
+            }
+        };
     </script>
 </body>
 </html>
