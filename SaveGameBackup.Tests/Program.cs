@@ -973,7 +973,9 @@ try
     }
     Console.WriteLine("  ✓ Local Cover base64 Data URL verified OK!");
 
+    GameCoverService.EnableSteamCovers = true;
     var realCover = await GameCoverService.EnsureCoverForGameAsync("Cyberpunk 2077");
+    GameCoverService.EnableSteamCovers = false;
     Console.WriteLine($"  ✓ Real cover for Cyberpunk 2077: {realCover}");
     if (string.IsNullOrEmpty(realCover) || !File.Exists(realCover))
     {
@@ -1222,8 +1224,18 @@ try
     }
     Console.WriteLine("  ✓ ClearTempCovers() wiped all temporary covers successfully!");
 
-    // Test real download to Temp/covers/ with Steam AppID
+    // Verify when EnableSteamCovers is false, Steam cover is ignored
+    var disabledSteamUri = await GameCoverService.DownloadToTempCoverAsync("Final Assault", null, "793690");
+    if (!string.IsNullOrEmpty(disabledSteamUri))
+    {
+        throw new Exception("FAIL: Steam cover should be skipped when EnableSteamCovers is false!");
+    }
+    Console.WriteLine("  ✓ Verified Steam cover is ignored when EnableSteamCovers is false");
+
+    // Test real download to Temp/covers/ when EnableSteamCovers is true
+    GameCoverService.EnableSteamCovers = true;
     var realTempUri = await GameCoverService.DownloadToTempCoverAsync("Final Assault", null, "793690");
+    GameCoverService.EnableSteamCovers = false; // Restore to default false
     if (string.IsNullOrEmpty(realTempUri) || !realTempUri.StartsWith("https://tempcovers.local/"))
     {
         throw new Exception($"FAIL: DownloadToTempCoverAsync failed to download cover for Final Assault! Got: {realTempUri}");

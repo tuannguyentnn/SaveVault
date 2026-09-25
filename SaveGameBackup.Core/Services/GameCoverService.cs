@@ -18,6 +18,11 @@ public static class GameCoverService
     private static readonly ConcurrentDictionary<string, string> _dataUrlCache = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HttpClient _httpClient;
 
+    /// <summary>
+    /// Cờ bật/tắt tìm ảnh data từ Steam. Mặc định là false (tạm thời ẩn tìm ảnh data từ Steam theo yêu cầu).
+    /// </summary>
+    public static bool EnableSteamCovers { get; set; } = false;
+
     static GameCoverService()
     {
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
@@ -124,7 +129,7 @@ public static class GameCoverService
     }
 
     /// <summary>
-    /// Tra cứu URL ảnh bìa online (ƯU TIÊN STEAM TRƯỚC -> NẾU KHÔNG CÓ MỚI LẤY TỪ PCGAMINGWIKI).
+    /// Tra cứu URL ảnh bìa online (ƯU TIÊN PCGAMINGWIKI TRƯỚC -> NẾU KHÔNG CÓ MỚI LẤY TỪ STEAM).
     /// Nếu máy đã có sẵn file cục bộ trong Covers/ thì trả về đường dẫn ảo https://covers.local/... đó.
     /// </summary>
     public static async Task<string?> FindOnlineCoverUrlAsync(string gameName, string? steamAppId = null, CancellationToken cancellationToken = default)
@@ -139,27 +144,7 @@ public static class GameCoverService
 
         try
         {
-            // 1. Ưu tiên Steam trước:
-            var effectiveSteamAppId = steamAppId;
-            if (string.IsNullOrEmpty(effectiveSteamAppId))
-            {
-                effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
-            }
-            if (string.IsNullOrEmpty(effectiveSteamAppId))
-            {
-                effectiveSteamAppId = new LudusaviManifestService().FindGame(gameName)?.SteamId;
-            }
-            if (string.IsNullOrEmpty(effectiveSteamAppId))
-            {
-                effectiveSteamAppId = await FetchSteamAppIdFromStoreSearchAsync(gameName, cancellationToken);
-            }
-
-            if (!string.IsNullOrEmpty(effectiveSteamAppId))
-            {
-                return $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
-            }
-
-            // 2. Không có Steam -> Mới lấy từ PCGamingWiki:
+            // 1. Ưu tiên PCGamingWiki trước:
             string? pcgwCoverUrl = null;
             string? extractedSteamAppId = null;
 
@@ -172,14 +157,32 @@ public static class GameCoverService
                 LoggingService.Warn("Lỗi tra cứu PCGW preview cho {Game}: {Message}", gameName, ex.Message);
             }
 
-            if (!string.IsNullOrEmpty(extractedSteamAppId))
-            {
-                return $"https://shared.steamstatic.com/store_item_assets/steam/apps/{extractedSteamAppId}/library_600x900.jpg";
-            }
-
             if (!string.IsNullOrEmpty(pcgwCoverUrl))
             {
                 return pcgwCoverUrl;
+            }
+
+            // 2. Tạm thời ẩn tìm ảnh data từ Steam:
+            if (EnableSteamCovers)
+            {
+                var effectiveSteamAppId = steamAppId ?? extractedSteamAppId;
+                if (string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
+                }
+                if (string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    effectiveSteamAppId = new LudusaviManifestService().FindGame(gameName)?.SteamId;
+                }
+                if (string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    effectiveSteamAppId = await FetchSteamAppIdFromStoreSearchAsync(gameName, cancellationToken);
+                }
+
+                if (!string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    return $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
+                }
             }
         }
         catch (Exception ex)
@@ -215,38 +218,77 @@ public static class GameCoverService
         }
 
         var effectiveUrl = onlineCoverUrl;
-        // Bỏ qua các URI ảo cục bộ (.local) nếu file trên đĩa không tồn tại
+        // Bỏ qua các URI ảo cục bộ (.local) nếu file trên đĩa không tồn tại hoặc ảnh Steam nếu đang tạm ẩn
         if (!string.IsNullOrEmpty(effectiveUrl) && 
             (effectiveUrl.Contains(".local", StringComparison.OrdinalIgnoreCase) || 
+             (!EnableSteamCovers && effectiveUrl.Contains("steamstatic.com", StringComparison.OrdinalIgnoreCase)) ||
              !effectiveUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)))
         {
             effectiveUrl = null;
         }
 
-        // Ưu tiên Steam trước: nếu onlineCoverUrl rỗng hoặc là từ pcgamingwiki (dễ bị Cloudflare chặn),
-        // luôn tra cứu link ảnh Steam CDN trước
-        if (string.IsNullOrEmpty(effectiveUrl) || effectiveUrl.Contains("pcgamingwiki.com", StringComparison.OrdinalIgnoreCase))
+        // Ưu tiên PCGamingWiki trước -> Steam sau:
+        // Nếu chưa có URL, tìm kiếm URL theo thứ tự PCGamingWiki trước, Steam sau
+        if (string.IsNullOrEmpty(effectiveUrl))
         {
-            var steamUrl = await FindOnlineCoverUrlAsync(gameName, steamAppId, cancellationToken);
-            if (!string.IsNullOrEmpty(steamUrl) && !steamUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
-            {
-                if (steamUrl.Contains("steamstatic.com", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(effectiveUrl))
-                {
-                    effectiveUrl = steamUrl;
-                }
-            }
-            else if (string.IsNullOrEmpty(effectiveUrl) && !string.IsNullOrEmpty(steamUrl) && !steamUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
-            {
-                effectiveUrl = steamUrl;
-            }
+            effectiveUrl = await FindOnlineCoverUrlAsync(gameName, steamAppId, cancellationToken);
         }
 
+        // Thử tải từ effectiveUrl
         if (!string.IsNullOrEmpty(effectiveUrl) && !effectiveUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
         {
             var downloaded = await DownloadImageAsync(effectiveUrl, targetTempFile, cancellationToken);
             if (downloaded && File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
             {
                 return GetTempCoverImageUri(targetTempFile);
+            }
+        }
+
+        // Nếu tải từ effectiveUrl thất bại, fallback sang Steam (tạm thời ẩn nếu EnableSteamCovers = false)
+        if (EnableSteamCovers)
+        {
+            try
+            {
+                var effectiveSteamAppId = steamAppId;
+                if (string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
+                }
+                if (string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    effectiveSteamAppId = new LudusaviManifestService().FindGame(gameName)?.SteamId;
+                }
+                if (string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    effectiveSteamAppId = await FetchSteamAppIdFromStoreSearchAsync(gameName, cancellationToken);
+                }
+
+                if (!string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    var steamLibraryUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
+                    if (!string.Equals(effectiveUrl, steamLibraryUrl, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var downloaded = await DownloadImageAsync(steamLibraryUrl, targetTempFile, cancellationToken);
+                        if (downloaded && File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
+                        {
+                            return GetTempCoverImageUri(targetTempFile);
+                        }
+                    }
+
+                    var steamHeaderUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/header.jpg";
+                    if (!string.Equals(effectiveUrl, steamHeaderUrl, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var downloaded = await DownloadImageAsync(steamHeaderUrl, targetTempFile, cancellationToken);
+                        if (downloaded && File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
+                        {
+                            return GetTempCoverImageUri(targetTempFile);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("Lỗi fallback Steam cho {Game}: {Message}", gameName, ex.Message);
             }
         }
 
@@ -389,7 +431,7 @@ public static class GameCoverService
     /// <summary>
     /// Đảm bảo game có ảnh bìa trên máy:
     /// - Nếu file đã tồn tại: trả về đường dẫn hiện có, không tải lại.
-    /// - Nếu chưa có: tra cứu từ Steam trước -> PCGamingWiki, tải về máy và resize width 450px.
+    /// - Nếu chưa có: tra cứu từ PCGamingWiki trước -> Steam sau, tải về máy và resize width 450px.
     /// - Nếu không tìm thấy: trả về null.
     /// </summary>
     public static async Task<string?> EnsureCoverForGameAsync(string gameName, string? steamAppId = null, CancellationToken cancellationToken = default)
@@ -404,29 +446,7 @@ public static class GameCoverService
 
         try
         {
-            // 1. Ưu tiên Steam trước (AppID, Catalog, hoặc Steam Store Search)
-            var effectiveSteamAppId = steamAppId;
-            if (string.IsNullOrEmpty(effectiveSteamAppId))
-            {
-                effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
-            }
-            if (string.IsNullOrEmpty(effectiveSteamAppId))
-            {
-                effectiveSteamAppId = await FetchSteamAppIdFromStoreSearchAsync(gameName, cancellationToken);
-            }
-
-            if (!string.IsNullOrEmpty(effectiveSteamAppId))
-            {
-                var steamLibraryUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
-                if (await DownloadImageAsync(steamLibraryUrl, targetFile, cancellationToken))
-                {
-                    ResizeCoverImage(targetFile, 450);
-                    _dataUrlCache.TryRemove(targetFile, out _);
-                    return targetFile;
-                }
-            }
-
-            // 2. Không có Steam -> Mới lấy từ PCGamingWiki
+            // 1. Ưu tiên PCGamingWiki trước
             string? pcgwCoverUrl = null;
             string? extractedSteamAppId = null;
 
@@ -439,18 +459,7 @@ public static class GameCoverService
                 LoggingService.Warn("Lỗi tra cứu PCGamingWiki cho {Game}: {Message}", gameName, ex.Message);
             }
 
-            if (string.IsNullOrEmpty(effectiveSteamAppId) && !string.IsNullOrEmpty(extractedSteamAppId))
-            {
-                effectiveSteamAppId = extractedSteamAppId;
-                var steamLibraryUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
-                if (await DownloadImageAsync(steamLibraryUrl, targetFile, cancellationToken))
-                {
-                    ResizeCoverImage(targetFile, 450);
-                    _dataUrlCache.TryRemove(targetFile, out _);
-                    return targetFile;
-                }
-            }
-            // 3. Thử cover từ PCGW
+            // Nếu có cover từ PCGW, thử tải về trước
             if (!string.IsNullOrEmpty(pcgwCoverUrl))
             {
                 var success = await DownloadImageAsync(pcgwCoverUrl, targetFile, cancellationToken);
@@ -462,15 +471,41 @@ public static class GameCoverService
                 }
             }
 
-            // 3. Thử header Steam (header.jpg) nếu có steamAppId
-            if (!string.IsNullOrEmpty(effectiveSteamAppId))
+            // 2. Không có hoặc tải PCGamingWiki thất bại -> Lấy từ Steam (tạm thời ẩn nếu EnableSteamCovers = false)
+            if (EnableSteamCovers)
             {
-                var steamHeaderUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/header.jpg";
-                if (await DownloadImageAsync(steamHeaderUrl, targetFile, cancellationToken))
+                var effectiveSteamAppId = steamAppId ?? extractedSteamAppId;
+                if (string.IsNullOrEmpty(effectiveSteamAppId))
                 {
-                    ResizeCoverImage(targetFile, 450);
-                    _dataUrlCache.TryRemove(targetFile, out _);
-                    return targetFile;
+                    effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
+                }
+                if (string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    effectiveSteamAppId = new LudusaviManifestService().FindGame(gameName)?.SteamId;
+                }
+                if (string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    effectiveSteamAppId = await FetchSteamAppIdFromStoreSearchAsync(gameName, cancellationToken);
+                }
+
+                if (!string.IsNullOrEmpty(effectiveSteamAppId))
+                {
+                    var steamLibraryUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
+                    if (await DownloadImageAsync(steamLibraryUrl, targetFile, cancellationToken))
+                    {
+                        ResizeCoverImage(targetFile, 450);
+                        _dataUrlCache.TryRemove(targetFile, out _);
+                        return targetFile;
+                    }
+
+                    // Thử header Steam (header.jpg) nếu library_600x900 thất bại
+                    var steamHeaderUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/header.jpg";
+                    if (await DownloadImageAsync(steamHeaderUrl, targetFile, cancellationToken))
+                    {
+                        ResizeCoverImage(targetFile, 450);
+                        _dataUrlCache.TryRemove(targetFile, out _);
+                        return targetFile;
+                    }
                 }
             }
         }

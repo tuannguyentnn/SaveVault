@@ -313,7 +313,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
             }
 
             // Tải ảnh bìa về Temp/covers/ và lấy URI ảo cục bộ https://tempcovers.local/{fileName}
-            // Ưu tiên Steam trước -> PCGamingWiki. Hoàn toàn không dùng Base64.
+            // Ưu tiên PCGamingWiki trước -> Steam sau. Hoàn toàn không dùng Base64.
             try
             {
                 var tempUri = await GameCoverService.DownloadToTempCoverAsync(

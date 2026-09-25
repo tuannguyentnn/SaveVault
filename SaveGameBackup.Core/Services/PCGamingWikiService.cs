@@ -129,7 +129,7 @@ public class PCGamingWikiService
                     ?? new LudusaviManifestService().FindGame(gameInfo.GameName)?.SteamId;
             }
 
-            // Extract Cover image URL (ƯU TIÊN STEAM TRƯỚC -> PCGamingWiki)
+            // Extract Cover image URL (ƯU TIÊN PCGAMINGWIKI TRƯỚC -> STEAM)
             gameInfo.OnlineCoverUrl = await FetchDirectCoverUrlAsync(wikitext, gameInfo.SteamAppId, cancellationToken);
 
             // Extract Windows save patterns
@@ -158,13 +158,7 @@ public class PCGamingWikiService
     {
         try
         {
-            // 1. ƯU TIÊN STEAM TRƯỚC: Nếu có Steam AppID, dùng ngay link library_600x900.jpg từ Steam CDN
-            if (!string.IsNullOrEmpty(steamAppId))
-            {
-                return $"https://shared.steamstatic.com/store_item_assets/steam/apps/{steamAppId}/library_600x900.jpg";
-            }
-
-            // 2. Không có Steam -> Mới lấy cover từ PCGamingWiki MediaWiki imageinfo API
+            // 1. ƯU TIÊN PCGAMINGWIKI TRƯỚC: MediaWiki imageinfo API
             var match = Regex.Match(wikitext, @"cover\s*=\s*([^\r\n\|\}]+)", RegexOptions.IgnoreCase);
             if (match.Success)
             {
@@ -197,6 +191,12 @@ public class PCGamingWikiService
                         }
                     }
                 }
+            }
+
+            // 2. Không có ảnh từ PCGamingWiki -> Mới lấy từ Steam CDN (tạm thời ẩn nếu EnableSteamCovers = false)
+            if (GameCoverService.EnableSteamCovers && !string.IsNullOrEmpty(steamAppId))
+            {
+                return $"https://shared.steamstatic.com/store_item_assets/steam/apps/{steamAppId}/library_600x900.jpg";
             }
         }
         catch
