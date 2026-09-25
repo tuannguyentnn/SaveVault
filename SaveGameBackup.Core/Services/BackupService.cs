@@ -261,6 +261,11 @@ public class BackupService
         }
         catch { /* Bỏ qua nếu lỗi mạng để không chặn quá trình sao lưu */ }
 
+        if (!string.IsNullOrEmpty(coverPath) && !GameCoverService.IsValidImageFile(coverPath))
+        {
+            coverPath = null;
+        }
+
         progress?.Report(new BackupProgress 
         { 
             Percent = 98, 
@@ -307,19 +312,28 @@ public class BackupService
             CoverPath = coverPath
         };
 
-        // CHỈ THÊM VÀO CACHE KHI BACKUP THÀNH CÔNG
+        // CHỈ THÊM VÀO CACHE KHI BACKUP LẦN ĐẦU TIÊN (nếu chưa từng có trong cache)
         try
         {
-            if (!string.IsNullOrEmpty(coverPath) && string.IsNullOrEmpty(gameInfo.OnlineCoverUrl))
+            var existingCache = await _databaseService.GetCachedGameAsync(gameInfo.GameName);
+            if (existingCache == null)
             {
-                gameInfo.OnlineCoverUrl = coverPath;
+                if (!string.IsNullOrEmpty(coverPath) && string.IsNullOrEmpty(gameInfo.OnlineCoverUrl))
+                {
+                    gameInfo.OnlineCoverUrl = coverPath;
+                }
+                if (pathsToBackup.Count > 0 && gameInfo.RawPatterns.Count == 0)
+                {
+                    gameInfo.RawPatterns = new List<string>(pathsToBackup);
+                    gameInfo.ResolvedPaths = new List<string>(pathsToBackup);
+                }
+                await _databaseService.SaveGameCacheAsync(gameInfo);
+                LoggingService.LogAction("Game_Cached_On_First_Backup_Success", new { Game = gameInfo.GameName });
             }
-            await _databaseService.SaveGameCacheAsync(gameInfo);
-            LoggingService.LogAction("Game_Cached_On_Backup_Success", new { Game = gameInfo.GameName });
         }
         catch (Exception ex)
         {
-            LoggingService.Warn("Lỗi lưu cache game sau khi backup thành công cho {Game}: {Message}", gameInfo.GameName, ex.Message);
+            LoggingService.Warn("Lỗi lưu cache game lần đầu sau khi backup thành công cho {Game}: {Message}", gameInfo.GameName, ex.Message);
         }
 
         progress?.Report(new BackupProgress { Percent = 100, Message = "Sao lưu hoàn tất thành công!" });
@@ -695,110 +709,122 @@ public class BackupService
             throw new InvalidOperationException("Không có vị trí lưu nào được chọn để khôi phục!");
         }
 
-        string zipFilePath = detail.LocalBackupPath;
-        string? tempDownloadedZip = null;
-
-        if (restoreFromCloud)
-        {
-            if (cloudService == null)
+        await ExecuteRestoreWithAutoRevertAsync(
+            gameName: detail.GameName,
+            detailId: detail.Id,
+            sourcePath: detail.LocalBackupPath,
+            fileCount: detail.FileCount,
+            totalSizeBytes: detail.TotalSizeBytes,
+            isCloud: restoreFromCloud,
+            cloudProvider: cloudService?.DisplayName ?? detail.CloudProvider,
+            selectedItems: selectedItems,
+            restoreAction: async (innerProgress, ct) =>
             {
-                throw new InvalidOperationException("Chưa cấu hình dịch vụ lưu trữ đám mây để tải bản sao lưu!");
-            }
-            var syncInfo = detail.CloudSyncList.FirstOrDefault(c => c.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase));
-            if (syncInfo == null && !string.IsNullOrEmpty(detail.CloudSyncJson))
-            {
-                try
-                {
-                    var parsed = JsonSerializer.Deserialize<List<CloudSyncInfo>>(detail.CloudSyncJson);
-                    syncInfo = parsed?.FirstOrDefault(c => c.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase));
-                }
-                catch { }
-            }
-            var cloudFileId = syncInfo?.FileId ?? detail.CloudFileId;
-            if (string.IsNullOrEmpty(cloudFileId))
-            {
-                throw new InvalidOperationException($"Bản sao lưu này chưa có mã tệp trên {cloudService.DisplayName}!");
-            }
-
-            tempDownloadedZip = Path.Combine(Path.GetTempPath(), $"SaveVault_CloudDl_{Guid.NewGuid():N}.zip");
-            progress?.Report(new BackupProgress { Percent = 0, Message = $"Bắt đầu tải từ {cloudService.DisplayName}..." });
-
-            var dlProgress = new Progress<BackupProgress>(p =>
-            {
-                progress?.Report(new BackupProgress
-                {
-                    Percent = (int)(p.Percent * 0.5), // 0% -> 50%
-                    CurrentFile = p.CurrentFile,
-                    ProcessedBytes = p.ProcessedBytes,
-                    TotalBytes = p.TotalBytes,
-                    SpeedText = p.SpeedText,
-                    Message = $"[1/2] {p.Message}"
-                });
-            });
-
-            await cloudService.DownloadFileAsync(cloudFileId, tempDownloadedZip, dlProgress, cancellationToken);
-            zipFilePath = tempDownloadedZip;
-        }
-
-        try
-        {
-            if (detail.IsCompressed || restoreFromCloud)
-            {
-                if (!File.Exists(zipFilePath))
-                    throw new FileNotFoundException($"Không tìm thấy file zip backup: {zipFilePath}");
-
-                int extractStart = restoreFromCloud ? 50 : 10;
-                int extractEnd = restoreFromCloud ? 75 : 40;
-
-                progress?.Report(new BackupProgress { Percent = extractStart, Message = "Đang chuẩn bị giải nén dữ liệu sao lưu..." });
-
-                var tempExtractDir = Path.Combine(Path.GetTempPath(), "SaveBackup_Restore_" + Guid.NewGuid().ToString("N"));
-                Directory.CreateDirectory(tempExtractDir);
+                string zipFilePath = detail.LocalBackupPath;
+                string? tempDownloadedZip = null;
 
                 try
                 {
-                    await ExtractZipWithProgressAsync(zipFilePath, tempExtractDir, progress, extractStart, extractEnd, cancellationToken);
-
-                    var restoreProgress = new Progress<BackupProgress>(p =>
+                    if (restoreFromCloud)
                     {
-                        var start = extractEnd;
-                        var span = 99 - start;
-                        var scaled = start + (int)(p.Percent / 100.0 * span);
-                        progress?.Report(new BackupProgress
+                        if (cloudService == null)
                         {
-                            Percent = Math.Clamp(scaled, start, 99),
-                            CurrentFile = p.CurrentFile,
-                            ProcessedBytes = p.ProcessedBytes,
-                            TotalBytes = p.TotalBytes,
-                            Message = restoreFromCloud ? $"[2/2] {p.Message}" : p.Message
-                        });
-                    });
+                            throw new InvalidOperationException("Chưa cấu hình dịch vụ lưu trữ đám mây để tải bản sao lưu!");
+                        }
+                        var syncInfo = detail.CloudSyncList.FirstOrDefault(c => c.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase));
+                        if (syncInfo == null && !string.IsNullOrEmpty(detail.CloudSyncJson))
+                        {
+                            try
+                            {
+                                var parsed = JsonSerializer.Deserialize<List<CloudSyncInfo>>(detail.CloudSyncJson);
+                                syncInfo = parsed?.FirstOrDefault(c => c.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase));
+                            }
+                            catch { }
+                        }
+                        var cloudFileId = syncInfo?.FileId ?? detail.CloudFileId;
+                        if (string.IsNullOrEmpty(cloudFileId))
+                        {
+                            throw new InvalidOperationException($"Bản sao lưu này chưa có mã tệp trên {cloudService.DisplayName}!");
+                        }
 
-                    await RestoreSelectedFromDirectoryAsync(tempExtractDir, selectedItems, restoreProgress, cancellationToken);
+                        tempDownloadedZip = Path.Combine(Path.GetTempPath(), $"SaveVault_CloudDl_{Guid.NewGuid():N}.zip");
+                        innerProgress?.Report(new BackupProgress { Percent = 0, Message = $"Bắt đầu tải từ {cloudService.DisplayName}..." });
+
+                        var dlProgress = new Progress<BackupProgress>(p =>
+                        {
+                            innerProgress?.Report(new BackupProgress
+                            {
+                                Percent = (int)(p.Percent * 0.5), // 0% -> 50%
+                                CurrentFile = p.CurrentFile,
+                                ProcessedBytes = p.ProcessedBytes,
+                                TotalBytes = p.TotalBytes,
+                                SpeedText = p.SpeedText,
+                                Message = $"[1/2] {p.Message}"
+                            });
+                        });
+
+                        await cloudService.DownloadFileAsync(cloudFileId, tempDownloadedZip, dlProgress, ct);
+                        zipFilePath = tempDownloadedZip;
+                    }
+
+                    if (detail.IsCompressed || restoreFromCloud)
+                    {
+                        if (!File.Exists(zipFilePath))
+                            throw new FileNotFoundException($"Không tìm thấy file zip backup: {zipFilePath}");
+
+                        int extractStart = restoreFromCloud ? 50 : 10;
+                        int extractEnd = restoreFromCloud ? 75 : 40;
+
+                        innerProgress?.Report(new BackupProgress { Percent = extractStart, Message = "Đang chuẩn bị giải nén dữ liệu sao lưu..." });
+
+                        var tempExtractDir = Path.Combine(Path.GetTempPath(), "SaveBackup_Restore_" + Guid.NewGuid().ToString("N"));
+                        Directory.CreateDirectory(tempExtractDir);
+
+                        try
+                        {
+                            await ExtractZipWithProgressAsync(zipFilePath, tempExtractDir, innerProgress, extractStart, extractEnd, ct);
+
+                            var restoreProgress = new Progress<BackupProgress>(p =>
+                            {
+                                var start = extractEnd;
+                                var span = 99 - start;
+                                var scaled = start + (int)(p.Percent / 100.0 * span);
+                                innerProgress?.Report(new BackupProgress
+                                {
+                                    Percent = Math.Clamp(scaled, start, 99),
+                                    CurrentFile = p.CurrentFile,
+                                    ProcessedBytes = p.ProcessedBytes,
+                                    TotalBytes = p.TotalBytes,
+                                    Message = restoreFromCloud ? $"[2/2] {p.Message}" : p.Message
+                                });
+                            });
+
+                            await RestoreSelectedFromDirectoryAsync(tempExtractDir, selectedItems, restoreProgress, ct);
+                        }
+                        finally
+                        {
+                            try { Directory.Delete(tempExtractDir, true); } catch { /* Ignore */ }
+                        }
+                    }
+                    else
+                    {
+                        var localDirPath = detail.LocalBackupPath;
+                        if (!Directory.Exists(localDirPath))
+                            throw new DirectoryNotFoundException($"Không tìm thấy thư mục backup: {localDirPath}");
+
+                        await RestoreSelectedFromDirectoryAsync(localDirPath, selectedItems, innerProgress, ct);
+                    }
                 }
                 finally
                 {
-                    try { Directory.Delete(tempExtractDir, true); } catch { /* Ignore */ }
+                    if (!string.IsNullOrEmpty(tempDownloadedZip) && File.Exists(tempDownloadedZip))
+                    {
+                        try { File.Delete(tempDownloadedZip); } catch { /* Ignore */ }
+                    }
                 }
-            }
-            else
-            {
-                var localDirPath = detail.LocalBackupPath;
-                if (!Directory.Exists(localDirPath))
-                    throw new DirectoryNotFoundException($"Không tìm thấy thư mục backup: {localDirPath}");
-
-                await RestoreSelectedFromDirectoryAsync(localDirPath, selectedItems, progress, cancellationToken);
-            }
-        }
-        finally
-        {
-            if (!string.IsNullOrEmpty(tempDownloadedZip) && File.Exists(tempDownloadedZip))
-            {
-                try { File.Delete(tempDownloadedZip); } catch { /* Ignore */ }
-            }
-        }
-
-        progress?.Report(new BackupProgress { Percent = 100, Message = "Khôi phục hoàn tất!" });
+            },
+            progress: progress,
+            cancellationToken: cancellationToken);
     }
 
     public Task RestoreAsync(BackupRecord record, IProgress<BackupProgress>? progress = null, CancellationToken cancellationToken = default)
@@ -822,47 +848,242 @@ public class BackupService
             throw new InvalidOperationException("Không có vị trí lưu nào được chọn để khôi phục!");
         }
 
-        if (record.IsCompressed)
+        await ExecuteRestoreWithAutoRevertAsync(
+            gameName: record.GameName,
+            detailId: record.Id > 0 ? record.Id : null,
+            sourcePath: record.BackupPath,
+            fileCount: record.FileCount,
+            totalSizeBytes: record.TotalSizeBytes,
+            isCloud: false,
+            cloudProvider: null,
+            selectedItems: selectedItems,
+            restoreAction: async (innerProgress, ct) =>
+            {
+                if (record.IsCompressed)
+                {
+                    if (!File.Exists(record.BackupPath))
+                        throw new FileNotFoundException($"Không tìm thấy file zip backup: {record.BackupPath}");
+
+                    innerProgress?.Report(new BackupProgress { Percent = 10, Message = "Đang giải nén dữ liệu sao lưu..." });
+
+                    var tempExtractDir = Path.Combine(Path.GetTempPath(), "SaveBackup_Restore_" + Guid.NewGuid().ToString("N"));
+                    Directory.CreateDirectory(tempExtractDir);
+
+                    try
+                    {
+                        await ExtractZipWithProgressAsync(record.BackupPath, tempExtractDir, innerProgress, 10, 40, ct);
+
+                        var restoreProgress = new Progress<BackupProgress>(p =>
+                        {
+                            var scaled = 40 + (int)(p.Percent / 100.0 * 59);
+                            innerProgress?.Report(new BackupProgress
+                            {
+                                Percent = Math.Clamp(scaled, 40, 99),
+                                CurrentFile = p.CurrentFile,
+                                Message = p.Message
+                            });
+                        });
+
+                        await RestoreSelectedFromDirectoryAsync(tempExtractDir, selectedItems, restoreProgress, ct);
+                    }
+                    finally
+                    {
+                        try { Directory.Delete(tempExtractDir, true); } catch { /* Ignore */ }
+                    }
+                }
+                else
+                {
+                    if (!Directory.Exists(record.BackupPath))
+                        throw new DirectoryNotFoundException($"Không tìm thấy thư mục backup: {record.BackupPath}");
+
+                    await RestoreSelectedFromDirectoryAsync(record.BackupPath, selectedItems, innerProgress, ct);
+                }
+            },
+            progress: progress,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Thực hiện chu trình Restore an toàn:
+    /// 1/ Nén zip folder save gốc hiện có làm điểm hoàn tác (Revert Point).
+    /// 2/ Restore lại save từ backup.
+    /// 2.1/ Thành công: Ghi nhận restore_history (Status = Success, RevertZipPath = revertZip) và hoàn tất.
+    /// 2.2/ Thất bại: Sử dụng file revert đã nén để tự động phục hồi lại như ban đầu.
+    /// 2.2.1/ Nếu restore revert cũng bị lỗi: Ngưng toàn bộ, giữ file revert và báo lỗi.
+    /// 2.2.2/ Nếu restore revert thành công: Xóa file revert đó đi, ghi nhận restore_history và báo lỗi an toàn.
+    /// </summary>
+    private async Task ExecuteRestoreWithAutoRevertAsync(
+        string gameName,
+        long? detailId,
+        string sourcePath,
+        int fileCount,
+        long totalSizeBytes,
+        bool isCloud,
+        string? cloudProvider,
+        List<RestoreItemTarget> selectedItems,
+        Func<IProgress<BackupProgress>?, CancellationToken, Task> restoreAction,
+        IProgress<BackupProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        // 1/ Nén zip folder save gốc hiện có trên máy làm điểm hoàn tác an toàn trước khi chép đè
+        string? revertZip = null;
+        try
         {
-            if (!File.Exists(record.BackupPath))
-                throw new FileNotFoundException($"Không tìm thấy file zip backup: {record.BackupPath}");
+            revertZip = await RevertService.CreateRevertPointAsync(gameName, selectedItems, progress, cancellationToken);
+            if (!string.IsNullOrEmpty(revertZip))
+            {
+                LoggingService.LogAction("Safety_Revert_Created", new { Game = gameName, Path = revertZip });
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Không thể tạo điểm hoàn tác an toàn trước khi Restore cho {Game}: {Message}", gameName, ex.Message);
+        }
 
-            progress?.Report(new BackupProgress { Percent = 10, Message = "Đang giải nén dữ liệu sao lưu..." });
+        // 2/ Restore lại save từ backup
+        bool restoreSucceeded = false;
+        Exception? restoreException = null;
 
-            var tempExtractDir = Path.Combine(Path.GetTempPath(), "SaveBackup_Restore_" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempExtractDir);
+        try
+        {
+            await restoreAction(progress, cancellationToken);
+            restoreSucceeded = true;
+        }
+        catch (Exception ex)
+        {
+            restoreException = ex;
+        }
+
+        // 2.1/ Thành công thì oke xong
+        if (restoreSucceeded)
+        {
+            try
+            {
+                var record = new RestoreHistoryRecord
+                {
+                    GameName = gameName,
+                    BackupHistoryDetailId = detailId,
+                    SourcePath = sourcePath,
+                    RestoreDate = DateTime.Now,
+                    Status = "Success",
+                    RevertZipPath = revertZip,
+                    RestoredPathsJson = JsonSerializer.Serialize(selectedItems.Select(x => x.RestoreDestinationPath)),
+                    FileCount = fileCount,
+                    TotalSizeBytes = totalSizeBytes,
+                    IsCloud = isCloud,
+                    CloudProvider = cloudProvider
+                };
+                await _databaseService.InsertRestoreHistoryAsync(record);
+            }
+            catch (Exception dbEx)
+            {
+                LoggingService.Warn("Không thể ghi lịch sử restore_history cho {Game}: {Message}", gameName, dbEx.Message);
+            }
+
+            progress?.Report(new BackupProgress { Percent = 100, Message = "Khôi phục hoàn tất!" });
+            return;
+        }
+
+        // 2.2/ Thất bại: dùng lại file revert đã nén đó, restore lại như ban đầu
+        if (!string.IsNullOrEmpty(revertZip) && File.Exists(revertZip))
+        {
+            bool revertSucceeded = false;
+            Exception? revertException = null;
 
             try
             {
-                await ExtractZipWithProgressAsync(record.BackupPath, tempExtractDir, progress, 10, 40, cancellationToken);
-
-                var restoreProgress = new Progress<BackupProgress>(p =>
-                {
-                    var scaled = 40 + (int)(p.Percent / 100.0 * 59);
-                    progress?.Report(new BackupProgress
-                    {
-                        Percent = Math.Clamp(scaled, 40, 99),
-                        CurrentFile = p.CurrentFile,
-                        Message = p.Message
-                    });
-                });
-
-                await RestoreSelectedFromDirectoryAsync(tempExtractDir, selectedItems, restoreProgress, cancellationToken);
+                progress?.Report(new BackupProgress { Percent = 50, Message = "Khôi phục gặp sự cố! Đang tự động hoàn tác về trạng thái ban đầu..." });
+                revertSucceeded = await RevertService.RevertGameSaveAsync(gameName, revertZip, progress, cancellationToken);
             }
-            finally
+            catch (Exception ex)
             {
-                try { Directory.Delete(tempExtractDir, true); } catch { /* Ignore */ }
+                revertException = ex;
+            }
+
+            if (!revertSucceeded || revertException != null)
+            {
+                // 2.2.1/ Nếu restore revert cũng bị lỗi thì ngưng toàn bộ và báo lỗi
+                var errorMsg = $"Khôi phục thất bại ({restoreException!.Message}) và hoàn tác tự động cũng gặp lỗi ({revertException?.Message ?? "Không rõ nguyên nhân"}). File hoàn tác an toàn được giữ tại: {revertZip}";
+
+                try
+                {
+                    var historyRecord = new RestoreHistoryRecord
+                    {
+                        GameName = gameName,
+                        BackupHistoryDetailId = detailId,
+                        SourcePath = sourcePath,
+                        RestoreDate = DateTime.Now,
+                        Status = "Failed_RevertFailed",
+                        RevertZipPath = revertZip,
+                        RestoredPathsJson = JsonSerializer.Serialize(selectedItems.Select(x => x.RestoreDestinationPath)),
+                        FileCount = fileCount,
+                        TotalSizeBytes = totalSizeBytes,
+                        ErrorMessage = errorMsg,
+                        IsCloud = isCloud,
+                        CloudProvider = cloudProvider
+                    };
+                    await _databaseService.InsertRestoreHistoryAsync(historyRecord);
+                }
+                catch { }
+
+                LoggingService.Error(revertException ?? restoreException, "Restore and Revert both failed for {Game}. Safety zip preserved at {Zip}", gameName, revertZip);
+                throw new InvalidOperationException(errorMsg, revertException ?? restoreException);
+            }
+            else
+            {
+                // 2.2.2/ Nếu restore revert oke thì xóa thư mục revert của game đó đi
+                RevertService.ClearRevertPoints(gameName);
+
+                try
+                {
+                    var historyRecord = new RestoreHistoryRecord
+                    {
+                        GameName = gameName,
+                        BackupHistoryDetailId = detailId,
+                        SourcePath = sourcePath,
+                        RestoreDate = DateTime.Now,
+                        Status = "Failed_Reverted",
+                        RevertZipPath = null,
+                        RestoredPathsJson = JsonSerializer.Serialize(selectedItems.Select(x => x.RestoreDestinationPath)),
+                        FileCount = fileCount,
+                        TotalSizeBytes = totalSizeBytes,
+                        ErrorMessage = $"Khôi phục thất bại: {restoreException!.Message}. Dữ liệu save ban đầu đã được hoàn tác an toàn về trạng thái gốc.",
+                        IsCloud = isCloud,
+                        CloudProvider = cloudProvider
+                    };
+                    await _databaseService.InsertRestoreHistoryAsync(historyRecord);
+                }
+                catch { }
+
+                LoggingService.Warn("Restore failed for {Game}, but successfully auto-reverted to original state: {Message}", gameName, restoreException!.Message);
+                throw new InvalidOperationException($"Khôi phục thất bại: {restoreException!.Message}. Tuy nhiên hệ thống đã hoàn tác an toàn dữ liệu save của bạn về trạng thái ban đầu.", restoreException);
             }
         }
         else
         {
-            if (!Directory.Exists(record.BackupPath))
-                throw new DirectoryNotFoundException($"Không tìm thấy thư mục backup: {record.BackupPath}");
+            try
+            {
+                var historyRecord = new RestoreHistoryRecord
+                {
+                    GameName = gameName,
+                    BackupHistoryDetailId = detailId,
+                    SourcePath = sourcePath,
+                    RestoreDate = DateTime.Now,
+                    Status = "Failed",
+                    RevertZipPath = null,
+                    RestoredPathsJson = JsonSerializer.Serialize(selectedItems.Select(x => x.RestoreDestinationPath)),
+                    FileCount = fileCount,
+                    TotalSizeBytes = totalSizeBytes,
+                    ErrorMessage = restoreException!.Message,
+                    IsCloud = isCloud,
+                    CloudProvider = cloudProvider
+                };
+                await _databaseService.InsertRestoreHistoryAsync(historyRecord);
+            }
+            catch { }
 
-            await RestoreSelectedFromDirectoryAsync(record.BackupPath, selectedItems, progress, cancellationToken);
+            throw new InvalidOperationException($"Khôi phục thất bại: {restoreException!.Message}", restoreException);
         }
-
-        progress?.Report(new BackupProgress { Percent = 100, Message = "Khôi phục hoàn tất!" });
     }
 
     private static List<CloudSyncInfo> GetAllCloudTargets(BackupHistoryDetail detail, ICloudStorageService? fallbackService)
@@ -1117,7 +1338,16 @@ public class BackupService
         else
         {
             progress?.Report(new BackupProgress { Percent = 90, Message = "Đang dọn dẹp cơ sở dữ liệu SQLite..." });
-            await _databaseService.DeleteHistoryDetailAsync(detail.Id, detail.GameHistoryId);
+            bool masterDeleted = await _databaseService.DeleteHistoryDetailAsync(detail.Id, detail.GameHistoryId);
+            if (masterDeleted)
+            {
+                var gameName = detail.GameName;
+                if (!string.IsNullOrWhiteSpace(gameName))
+                {
+                    GameCoverService.DeleteCoverForGame(gameName);
+                    RevertService.ClearRevertPoints(gameName);
+                }
+            }
             progress?.Report(new BackupProgress { Percent = 100, Message = "Xóa bản sao lưu hoàn tất!" });
         }
     }
@@ -1286,6 +1516,8 @@ public class BackupService
 
         progress?.Report(new BackupProgress { Percent = 90, Message = "Đang dọn dẹp cơ sở dữ liệu SQLite..." });
         await _databaseService.DeleteGameHistoryAsync(gameHistory.Id);
+        GameCoverService.DeleteCoverForGame(gameHistory.GameName);
+        RevertService.ClearRevertPoints(gameHistory.GameName);
 
         progress?.Report(new BackupProgress { Percent = 100, Message = $"Đã xóa sạch toàn bộ lịch sử game '{gameHistory.GameName}'!" });
     }
@@ -1337,8 +1569,78 @@ public class BackupService
                 });
             });
 
+            // Xóa sạch dữ liệu trong thư mục/tệp đích cũ trước khi restore mới vào
+            if (Directory.Exists(destPath))
+            {
+                ClearDirectorySafely(destPath);
+            }
+            else if (File.Exists(destPath))
+            {
+                DeleteFileSafely(destPath);
+            }
+
             await CopyAllFilesAsync(itemSourceDir, destPath, itemProgress, cancellationToken, skipManifest: string.IsNullOrEmpty(item.SubFolder));
         }
+    }
+
+    private static void ClearDirectorySafely(string dirPath)
+    {
+        if (!Directory.Exists(dirPath)) return;
+
+        try
+        {
+            var files = Directory.GetFiles(dirPath, "*", SearchOption.AllDirectories);
+            foreach (var f in files)
+            {
+                try
+                {
+                    var attr = File.GetAttributes(f);
+                    if ((attr & (FileAttributes.ReadOnly | FileAttributes.Hidden)) != 0)
+                    {
+                        File.SetAttributes(f, attr & ~FileAttributes.ReadOnly & ~FileAttributes.Hidden);
+                    }
+                    File.Delete(f);
+                }
+                catch { }
+            }
+
+            var subDirs = Directory.GetDirectories(dirPath, "*", SearchOption.AllDirectories)
+                                   .OrderByDescending(d => d.Length);
+            foreach (var sd in subDirs)
+            {
+                try
+                {
+                    if (Directory.Exists(sd)) Directory.Delete(sd, true);
+                }
+                catch { }
+            }
+        }
+        catch
+        {
+            try
+            {
+                Directory.Delete(dirPath, true);
+                Directory.CreateDirectory(dirPath);
+            }
+            catch { }
+        }
+    }
+
+    private static void DeleteFileSafely(string filePath)
+    {
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                var attr = File.GetAttributes(filePath);
+                if ((attr & (FileAttributes.ReadOnly | FileAttributes.Hidden)) != 0)
+                {
+                    File.SetAttributes(filePath, attr & ~FileAttributes.ReadOnly & ~FileAttributes.Hidden);
+                }
+                File.Delete(filePath);
+            }
+        }
+        catch { }
     }
 
     private static async Task CopyAllFilesAsync(string sourceDir, string destinationDir, IProgress<BackupProgress>? progress, CancellationToken cancellationToken, bool skipManifest = false)
@@ -1512,4 +1814,29 @@ public class BackupService
         }
         catch { }
     }
+
+    /// <summary>
+    /// Thực hiện hoàn tác (Revert) đưa save game về trạng thái trước lần Restore gần nhất.
+    /// </summary>
+    public Task<bool> RevertGameSaveAsync(string gameName, string? revertZipPath = null, IProgress<BackupProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        return RevertService.RevertGameSaveAsync(gameName, revertZipPath, progress, cancellationToken);
+    }
+
+    /// <summary>
+    /// Xóa toàn bộ file nén hoàn tác (Revert) của game để giải phóng dung lượng ổ đĩa.
+    /// </summary>
+    public void ClearRevertPoints(string gameName)
+    {
+        RevertService.ClearRevertPoints(gameName);
+    }
+
+    /// <summary>
+    /// Lấy thông tin điểm hoàn tác gần nhất của game (nếu có).
+    /// </summary>
+    public RevertPointInfo? GetLatestRevertPoint(string gameName)
+    {
+        return RevertService.GetLatestRevertPoint(gameName);
+    }
 }
+

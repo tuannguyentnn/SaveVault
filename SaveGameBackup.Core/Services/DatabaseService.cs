@@ -134,6 +134,25 @@ public class DatabaseService
                 CoverPath TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS restore_history (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                GameName TEXT NOT NULL,
+                BackupHistoryDetailId INTEGER,
+                SourcePath TEXT NOT NULL,
+                RestoreDate TEXT NOT NULL,
+                Status TEXT NOT NULL DEFAULT 'Success',
+                RevertZipPath TEXT,
+                RestoredPathsJson TEXT,
+                FileCount INTEGER NOT NULL DEFAULT 0,
+                TotalSizeBytes INTEGER NOT NULL DEFAULT 0,
+                ErrorMessage TEXT,
+                IsCloud INTEGER NOT NULL DEFAULT 0,
+                CloudProvider TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_restore_history_gamename ON restore_history(GameName);
+            CREATE INDEX IF NOT EXISTS idx_restore_history_date ON restore_history(RestoreDate);
+
             CREATE TABLE IF NOT EXISTS settings (
                 Key TEXT PRIMARY KEY,
                 Value TEXT NOT NULL
@@ -233,7 +252,7 @@ public class DatabaseService
         return _historyRepository.UpdateCoverPathAsync(gameName, coverPath);
     }
 
-    public Task DeleteHistoryDetailAsync(long detailId, long gameHistoryId)
+    public Task<bool> DeleteHistoryDetailAsync(long detailId, long gameHistoryId)
     {
         return _historyRepository.DeleteHistoryDetailAsync(detailId, gameHistoryId);
     }
@@ -316,4 +335,106 @@ public class DatabaseService
         var chars = lower.Where(char.IsLetterOrDigit).ToArray();
         return new string(chars);
     }
+
+    // --- Restore History Management ---
+
+    public async Task<long> InsertRestoreHistoryAsync(RestoreHistoryRecord record)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        const string sql = @"
+            INSERT INTO restore_history (
+                GameName, BackupHistoryDetailId, SourcePath, RestoreDate, Status,
+                RevertZipPath, RestoredPathsJson, FileCount, TotalSizeBytes,
+                ErrorMessage, IsCloud, CloudProvider
+            ) VALUES (
+                @GameName, @BackupHistoryDetailId, @SourcePath, @RestoreDate, @Status,
+                @RevertZipPath, @RestoredPathsJson, @FileCount, @TotalSizeBytes,
+                @ErrorMessage, @IsCloud, @CloudProvider
+            );
+            SELECT last_insert_rowid();";
+
+        var id = await connection.ExecuteScalarAsync<long>(sql, new
+        {
+            record.GameName,
+            record.BackupHistoryDetailId,
+            record.SourcePath,
+            RestoreDate = record.RestoreDate.ToString("o"),
+            record.Status,
+            record.RevertZipPath,
+            record.RestoredPathsJson,
+            record.FileCount,
+            record.TotalSizeBytes,
+            record.ErrorMessage,
+            IsCloud = record.IsCloud ? 1 : 0,
+            record.CloudProvider
+        });
+
+        record.Id = id;
+        return id;
+    }
+
+    public async Task<List<RestoreHistoryRecord>> GetRestoreHistoryByGameAsync(string gameName, int limit = 50)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        const string sql = @"
+            SELECT 
+                Id, GameName, BackupHistoryDetailId, SourcePath, RestoreDate, Status,
+                RevertZipPath, RestoredPathsJson, FileCount, TotalSizeBytes,
+                ErrorMessage, IsCloud, CloudProvider
+            FROM restore_history
+            WHERE GameName = @GameName
+            ORDER BY RestoreDate DESC
+            LIMIT @Limit;";
+
+        var rows = await connection.QueryAsync<dynamic>(sql, new { GameName = gameName, Limit = limit });
+        return rows.Select(MapRestoreHistoryRecord).ToList();
+    }
+
+    public async Task<List<RestoreHistoryRecord>> GetAllRestoreHistoryAsync(int limit = 100)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        const string sql = @"
+            SELECT 
+                Id, GameName, BackupHistoryDetailId, SourcePath, RestoreDate, Status,
+                RevertZipPath, RestoredPathsJson, FileCount, TotalSizeBytes,
+                ErrorMessage, IsCloud, CloudProvider
+            FROM restore_history
+            ORDER BY RestoreDate DESC
+            LIMIT @Limit;";
+
+        var rows = await connection.QueryAsync<dynamic>(sql, new { Limit = limit });
+        return rows.Select(MapRestoreHistoryRecord).ToList();
+    }
+
+    public async Task<bool> DeleteRestoreHistoryAsync(long id)
+    {
+        using var connection = _connectionFactory.CreateConnection();
+        var affected = await connection.ExecuteAsync("DELETE FROM restore_history WHERE Id = @Id;", new { Id = id });
+        return affected > 0;
+    }
+
+    private static RestoreHistoryRecord MapRestoreHistoryRecord(dynamic row)
+    {
+        var r = new RestoreHistoryRecord
+        {
+            Id = (long)row.Id,
+            GameName = (string)row.GameName,
+            BackupHistoryDetailId = row.BackupHistoryDetailId != null ? (long?)row.BackupHistoryDetailId : null,
+            SourcePath = (string)(row.SourcePath ?? ""),
+            Status = (string)(row.Status ?? "Success"),
+            RevertZipPath = (string?)row.RevertZipPath,
+            RestoredPathsJson = (string?)row.RestoredPathsJson,
+            FileCount = row.FileCount != null ? (int)(long)row.FileCount : 0,
+            TotalSizeBytes = row.TotalSizeBytes != null ? (long)row.TotalSizeBytes : 0,
+            ErrorMessage = (string?)row.ErrorMessage,
+            IsCloud = row.IsCloud != null && (long)row.IsCloud == 1,
+            CloudProvider = (string?)row.CloudProvider
+        };
+        if (DateTime.TryParse((string)row.RestoreDate, out var dt))
+        {
+            r.RestoreDate = dt;
+        }
+        return r;
+    }
 }
+

@@ -24,6 +24,9 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     private int _pageSize = 10;
     private bool _isSyncingCatalog;
     private string _syncCatalogStatus = string.Empty;
+    private int _syncProgressPercent;
+    private string _syncProgressSubText = string.Empty;
+    private CancellationTokenSource? _syncCts;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -111,6 +114,23 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         set => SetField(ref _syncCatalogStatus, value);
     }
 
+    public int SyncProgressPercent
+    {
+        get => _syncProgressPercent;
+        set => SetField(ref _syncProgressPercent, value);
+    }
+
+    public string SyncProgressSubText
+    {
+        get => _syncProgressSubText;
+        set => SetField(ref _syncProgressSubText, value);
+    }
+
+    public void CancelSync()
+    {
+        _syncCts?.Cancel();
+    }
+
     public ICommand BrowseDatabaseFileCommand { get; }
     public ICommand ApplyDatabaseLocationCommand { get; }
     public ICommand ResetDatabaseLocationCommand { get; }
@@ -122,29 +142,70 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     {
         if (IsSyncingCatalog) return;
         IsSyncingCatalog = true;
+        SyncProgressPercent = 0;
+        SyncProgressSubText = "0%";
         SyncCatalogStatus = "Đang kết nối tới GitHub để tải Ludusavi Manifest...";
+
+        _syncCts = new CancellationTokenSource();
+
+        _dialogService.ShowProgress(
+            "Cập Nhật Danh Mục Game Từ GitHub",
+            "Đang kết nối tới máy chủ GitHub...",
+            0,
+            subText: "0%",
+            onCancel: () => CancelSync());
+
         try
         {
-            var progress = new Progress<string>(msg => SyncCatalogStatus = msg);
-            int count = await _ludusaviService.SyncFromGithubAsync(progress);
+            var progress = new Progress<ManifestSyncProgress>(p =>
+            {
+                SyncProgressPercent = p.Percent;
+                SyncProgressSubText = p.SubText;
+                SyncCatalogStatus = p.Status;
+                _dialogService.UpdateProgress(p.Percent, p.Status, p.SubText);
+            });
+
+            int count = await _ludusaviService.SyncFromGithubAsync(progress, _syncCts.Token);
+            _dialogService.CloseProgress();
+
             if (count > 0)
             {
+                SyncProgressPercent = 100;
+                SyncProgressSubText = $"{count:N0} game";
                 SyncCatalogStatus = $"Cập nhật thành công {count:N0} tựa game vào danh mục!";
                 OnPropertyChanged(nameof(CatalogGamesCount));
                 _dialogService.ShowMessage("Cập Nhật Danh Mục", $"Đã đồng bộ thành công {count:N0} tựa game từ Ludusavi Manifest (GitHub)!", "Success");
             }
             else
             {
-                SyncCatalogStatus = "Không thể tải danh mục từ GitHub hoặc xảy ra lỗi mạng.";
-                _dialogService.ShowMessage("Cập Nhật Danh Mục", "Không thể tải danh mục game. Vui lòng kiểm tra kết nối internet.", "Warning");
+                if (_syncCts.IsCancellationRequested)
+                {
+                    SyncCatalogStatus = "Đã hủy thao tác đồng bộ từ GitHub.";
+                    _dialogService.ShowMessage("Cập Nhật Danh Mục", "Thao tác đồng bộ đã được hủy.", "Information");
+                }
+                else
+                {
+                    SyncCatalogStatus = "Không thể tải danh mục từ GitHub hoặc xảy ra lỗi mạng.";
+                    _dialogService.ShowMessage("Cập Nhật Danh Mục", "Không thể tải danh mục game. Vui lòng kiểm tra kết nối internet.", "Warning");
+                }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            _dialogService.CloseProgress();
+            SyncCatalogStatus = "Đã hủy thao tác đồng bộ từ GitHub.";
+            _dialogService.ShowMessage("Cập Nhật Danh Mục", "Thao tác đồng bộ đã được hủy.", "Information");
         }
         catch (Exception ex)
         {
+            _dialogService.CloseProgress();
             SyncCatalogStatus = $"Lỗi: {ex.Message}";
+            _dialogService.ShowMessage("Lỗi Cập Nhật", $"Đã xảy ra lỗi trong quá trình cập nhật: {ex.Message}", "Error");
         }
         finally
         {
+            _syncCts?.Dispose();
+            _syncCts = null;
             IsSyncingCatalog = false;
         }
     }

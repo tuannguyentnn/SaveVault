@@ -24,6 +24,83 @@ public static class GameCoverService
     public static bool EnableSteamCovers { get; set; } = false;
 
     /// <summary>
+    /// Cho phép can thiệp trạng thái mạng phục vụ Unit Test. Mặc định là null (sử dụng mạng thực tế).
+    /// </summary>
+    public static bool? ForceNetworkAvailable { get; set; } = null;
+
+    /// <summary>
+    /// Kiểm tra kết nối mạng của thiết bị. Nếu không có mạng thì bỏ qua việc tra cứu và tải ảnh online.
+    /// </summary>
+    public static bool IsNetworkAvailable()
+    {
+        if (ForceNetworkAvailable.HasValue) return ForceNetworkAvailable.Value;
+        try
+        {
+            return System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra mảng bytes có phải là định dạng ảnh hợp lệ (JPEG, PNG, WebP, GIF, BMP).
+    /// </summary>
+    public static bool IsValidImageBytes(byte[]? bytes)
+    {
+        if (bytes == null || bytes.Length < 10) return false;
+        if (IsHtmlChallenge(bytes)) return false;
+
+        // JPEG: FF D8 FF
+        if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return true;
+
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        if (bytes.Length >= 8 &&
+            bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 &&
+            bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A) return true;
+
+        // WebP: RIFF .... WEBP
+        if (bytes.Length >= 12 &&
+            bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+            bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50) return true;
+
+        // GIF: GIF87a hoặc GIF89a
+        if (bytes.Length >= 6 &&
+            bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x38) return true;
+
+        // BMP: BM
+        if (bytes.Length >= 2 && bytes[0] == 0x42 && bytes[1] == 0x4D) return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Kiểm tra file ảnh có tồn tại trên đĩa và có nội dung ảnh hợp lệ (không phải 0 byte hay html rác).
+    /// </summary>
+    public static bool IsValidImageFile(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return false;
+
+        try
+        {
+            var info = new FileInfo(filePath);
+            if (info.Length < 10) return false;
+
+            using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var header = new byte[16];
+            int read = stream.Read(header, 0, 16);
+            if (read < 10) return false;
+
+            return IsValidImageBytes(header);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Dịch vụ trình duyệt ngầm WebView2 Headless để vượt qua Cloudflare Challenge khi tra cứu và tải ảnh.
     /// </summary>
     public static IHeadlessBrowserService? HeadlessBrowser { get; set; }
@@ -94,7 +171,7 @@ public static class GameCoverService
     }
 
     /// <summary>
-    /// Xóa toàn bộ file ảnh tạm trong thư mục Temp/covers/.
+    /// Xóa toàn bộ file ảnh tạm trong thư mục Temp/covers/ và loại bỏ các file cover hỏng 0-byte trong Covers/.
     /// Được gọi tại 3 thời điểm: khi mở app, khi thoát app, và sau khi backup hoàn tất.
     /// </summary>
     public static void ClearTempCovers()
@@ -108,6 +185,41 @@ public static class GameCoverService
                 foreach (var f in files)
                 {
                     try { File.Delete(f); } catch { }
+                }
+            }
+            PurgeInvalidCovers();
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// Quét và xóa các file ảnh bị lỗi, 0 byte hoặc không hợp lệ trong thư mục Covers/ và Temp/covers/.
+    /// </summary>
+    public static void PurgeInvalidCovers()
+    {
+        try
+        {
+            var coversDir = GetCoverDirectory();
+            if (Directory.Exists(coversDir))
+            {
+                foreach (var f in Directory.GetFiles(coversDir, "*.jpg"))
+                {
+                    if (!IsValidImageFile(f))
+                    {
+                        try { File.Delete(f); } catch { }
+                    }
+                }
+            }
+
+            var tempDir = GetTempCoverDirectory();
+            if (Directory.Exists(tempDir))
+            {
+                foreach (var f in Directory.GetFiles(tempDir, "*.jpg"))
+                {
+                    if (!IsValidImageFile(f))
+                    {
+                        try { File.Delete(f); } catch { }
+                    }
                 }
             }
         }
@@ -124,13 +236,43 @@ public static class GameCoverService
     }
 
     /// <summary>
-    /// Kiểm tra game đã có file ảnh bìa cục bộ trên máy chưa.
+    /// Kiểm tra game đã có file ảnh bìa cục bộ hợp lệ trên máy chưa.
     /// </summary>
     public static bool HasLocalCover(string gameName)
     {
         if (string.IsNullOrWhiteSpace(gameName)) return false;
         var filePath = GetCoverFilePath(gameName);
-        return File.Exists(filePath);
+        return IsValidImageFile(filePath);
+    }
+
+    /// <summary>
+    /// Xóa toàn bộ ảnh bìa cục bộ và ảnh bìa tạm của game (được gọi khi xóa toàn bộ game hoặc xóa snapshot cuối cùng).
+    /// </summary>
+    public static void DeleteCoverForGame(string gameName)
+    {
+        if (string.IsNullOrWhiteSpace(gameName)) return;
+
+        try
+        {
+            var coverPath = GetCoverFilePath(gameName);
+            if (File.Exists(coverPath))
+            {
+                File.Delete(coverPath);
+            }
+        }
+        catch { }
+
+        try
+        {
+            var tempCoverPath = GetTempCoverFilePath(gameName);
+            if (File.Exists(tempCoverPath))
+            {
+                File.Delete(tempCoverPath);
+            }
+        }
+        catch { }
+
+        _dataUrlCache.TryRemove(gameName, out _);
     }
 
     /// <summary>
@@ -173,10 +315,6 @@ public static class GameCoverService
                 var effectiveSteamAppId = steamAppId ?? extractedSteamAppId;
                 if (string.IsNullOrEmpty(effectiveSteamAppId))
                 {
-                    effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
-                }
-                if (string.IsNullOrEmpty(effectiveSteamAppId))
-                {
                     effectiveSteamAppId = new LudusaviManifestService().FindGame(gameName)?.SteamId;
                 }
                 if (string.IsNullOrEmpty(effectiveSteamAppId))
@@ -211,15 +349,21 @@ public static class GameCoverService
         if (string.IsNullOrWhiteSpace(gameName)) return null;
 
         var localFile = GetCoverFilePath(gameName);
-        if (File.Exists(localFile) && new FileInfo(localFile).Length > 0)
+        if (File.Exists(localFile) && IsValidImageFile(localFile))
         {
             return GetCoverImageUri(localFile);
         }
 
         var targetTempFile = GetTempCoverFilePath(gameName);
-        if (File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
+        if (File.Exists(targetTempFile) && IsValidImageFile(targetTempFile))
         {
             return GetTempCoverImageUri(targetTempFile);
+        }
+
+        // Nếu không có mạng thì không tải hình cover từ online
+        if (!IsNetworkAvailable())
+        {
+            return null;
         }
 
         var effectiveUrl = onlineCoverUrl;
@@ -243,8 +387,9 @@ public static class GameCoverService
         if (!string.IsNullOrEmpty(effectiveUrl) && !effectiveUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
         {
             var downloaded = await DownloadImageAsync(effectiveUrl, targetTempFile, cancellationToken);
-            if (downloaded && File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
+            if (downloaded && File.Exists(targetTempFile) && IsValidImageFile(targetTempFile))
             {
+                ResizeCoverImage(targetTempFile, 450);
                 return GetTempCoverImageUri(targetTempFile);
             }
         }
@@ -255,10 +400,6 @@ public static class GameCoverService
             try
             {
                 var effectiveSteamAppId = steamAppId;
-                if (string.IsNullOrEmpty(effectiveSteamAppId))
-                {
-                    effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
-                }
                 if (string.IsNullOrEmpty(effectiveSteamAppId))
                 {
                     effectiveSteamAppId = new LudusaviManifestService().FindGame(gameName)?.SteamId;
@@ -276,6 +417,7 @@ public static class GameCoverService
                         var downloaded = await DownloadImageAsync(steamLibraryUrl, targetTempFile, cancellationToken);
                         if (downloaded && File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
                         {
+                            ResizeCoverImage(targetTempFile, 450);
                             return GetTempCoverImageUri(targetTempFile);
                         }
                     }
@@ -286,6 +428,7 @@ public static class GameCoverService
                         var downloaded = await DownloadImageAsync(steamHeaderUrl, targetTempFile, cancellationToken);
                         if (downloaded && File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
                         {
+                            ResizeCoverImage(targetTempFile, 450);
                             return GetTempCoverImageUri(targetTempFile);
                         }
                     }
@@ -306,7 +449,7 @@ public static class GameCoverService
     /// </summary>
     public static void ResizeCoverImage(string filePath, int targetWidth = 450)
     {
-        if (!File.Exists(filePath)) return;
+        if (!File.Exists(filePath) || !IsValidImageFile(filePath)) return;
 
         try
         {
@@ -366,9 +509,13 @@ public static class GameCoverService
         if (string.IsNullOrWhiteSpace(gameName)) return null;
 
         var targetFile = GetCoverFilePath(gameName);
-        if (File.Exists(targetFile))
+        if (File.Exists(targetFile) && IsValidImageFile(targetFile))
         {
             return targetFile;
+        }
+        else if (File.Exists(targetFile))
+        {
+            try { File.Delete(targetFile); } catch { }
         }
 
         var coverDir = GetCoverDirectory();
@@ -377,7 +524,7 @@ public static class GameCoverService
         // 1. Ưu tiên copy từ thư mục Temp/covers/ nếu ảnh đã được tải sẵn ở bước search/preview
         string? tempSourceFile = null;
         var defaultTempFile = GetTempCoverFilePath(gameName);
-        if (File.Exists(defaultTempFile))
+        if (File.Exists(defaultTempFile) && IsValidImageFile(defaultTempFile))
         {
             tempSourceFile = defaultTempFile;
         }
@@ -386,18 +533,17 @@ public static class GameCoverService
             var uri = new Uri(onlineCoverUrl);
             var fileName = Path.GetFileName(uri.LocalPath);
             var candidate = Path.Combine(GetTempCoverDirectory(), fileName);
-            if (File.Exists(candidate))
+            if (File.Exists(candidate) && IsValidImageFile(candidate))
             {
                 tempSourceFile = candidate;
             }
         }
 
-        if (!string.IsNullOrEmpty(tempSourceFile) && File.Exists(tempSourceFile))
+        if (!string.IsNullOrEmpty(tempSourceFile) && File.Exists(tempSourceFile) && IsValidImageFile(tempSourceFile))
         {
             try
             {
                 File.Copy(tempSourceFile, targetFile, true);
-                ResizeCoverImage(targetFile, 450);
                 _dataUrlCache.TryRemove(targetFile, out _);
                 return targetFile;
             }
@@ -405,6 +551,12 @@ public static class GameCoverService
             {
                 LoggingService.Warn("Lỗi sao chép ảnh từ Temp/covers/ cho {Game}: {Message}", gameName, ex.Message);
             }
+        }
+
+        // Nếu không có mạng thì không thử tải online
+        if (!IsNetworkAvailable())
+        {
+            return null;
         }
 
         // 2. Nếu là URL mạng ngoài (http/https thực tế không phải tempcovers.local), tải trực tiếp
@@ -437,16 +589,25 @@ public static class GameCoverService
     /// Đảm bảo game có ảnh bìa trên máy:
     /// - Nếu file đã tồn tại: trả về đường dẫn hiện có, không tải lại.
     /// - Nếu chưa có: tra cứu từ PCGamingWiki trước -> Steam sau, tải về máy và resize width 450px.
-    /// - Nếu không tìm thấy: trả về null.
+    /// - Nếu không tìm thấy hoặc offline: trả về null.
     /// </summary>
     public static async Task<string?> EnsureCoverForGameAsync(string gameName, string? steamAppId = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(gameName)) return null;
 
         var targetFile = GetCoverFilePath(gameName);
-        if (File.Exists(targetFile))
+        if (File.Exists(targetFile) && IsValidImageFile(targetFile))
         {
             return targetFile;
+        }
+        else if (File.Exists(targetFile))
+        {
+            try { File.Delete(targetFile); } catch { }
+        }
+
+        if (!IsNetworkAvailable())
+        {
+            return null;
         }
 
         try
@@ -480,10 +641,6 @@ public static class GameCoverService
             if (EnableSteamCovers)
             {
                 var effectiveSteamAppId = steamAppId ?? extractedSteamAppId;
-                if (string.IsNullOrEmpty(effectiveSteamAppId))
-                {
-                    effectiveSteamAppId = new KnownGameCatalogService().FindGame(gameName)?.SteamAppId;
-                }
                 if (string.IsNullOrEmpty(effectiveSteamAppId))
                 {
                     effectiveSteamAppId = new LudusaviManifestService().FindGame(gameName)?.SteamId;
@@ -701,82 +858,95 @@ public static class GameCoverService
 
     private static async Task<bool> DownloadImageAsync(string url, string targetPath, CancellationToken cancellationToken)
     {
+        if (!IsNetworkAvailable()) return false;
+
         var dir = Path.GetDirectoryName(targetPath);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
         {
             Directory.CreateDirectory(dir);
         }
 
-        // 1. Thử tải trước qua HttpClient
         try
         {
-            using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-                if (bytes != null && bytes.Length > 0 && !IsHtmlChallenge(bytes))
-                {
-                    await File.WriteAllBytesAsync(targetPath, bytes, cancellationToken);
-                    return true;
-                }
-            }
-        }
-        catch { /* Tiếp tục thử fallback */ }
-
-        // 2. Thử tải qua WebView2 Headless Browser (vượt Cloudflare TLS fingerprinting trên images.pcgamingwiki.com)
-        if (HeadlessBrowser != null && HeadlessBrowser.IsAvailable)
-        {
+            // 1. Thử tải trước qua HttpClient
             try
             {
-                LoggingService.LogAction("GameCover_Headless_ImageDownload_Triggered", new { Url = url });
-                var bytes = await HeadlessBrowser.FetchImageBytesAsync(url, 12, cancellationToken);
-                if (bytes != null && bytes.Length > 0 && !IsHtmlChallenge(bytes))
+                using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (response.IsSuccessStatusCode)
                 {
-                    await File.WriteAllBytesAsync(targetPath, bytes, cancellationToken);
-                    return true;
+                    var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                    if (bytes != null && bytes.Length > 0 && IsValidImageBytes(bytes))
+                    {
+                        await File.WriteAllBytesAsync(targetPath, bytes, cancellationToken);
+                        return true;
+                    }
+                }
+            }
+            catch { /* Tiếp tục thử fallback */ }
+
+            // 2. Thử tải qua WebView2 Headless Browser (vượt Cloudflare TLS fingerprinting trên images.pcgamingwiki.com)
+            if (HeadlessBrowser != null && HeadlessBrowser.IsAvailable)
+            {
+                try
+                {
+                    LoggingService.LogAction("GameCover_Headless_ImageDownload_Triggered", new { Url = url });
+                    var bytes = await HeadlessBrowser.FetchImageBytesAsync(url, 12, cancellationToken);
+                    if (bytes != null && bytes.Length > 0 && IsValidImageBytes(bytes))
+                    {
+                        await File.WriteAllBytesAsync(targetPath, bytes, cancellationToken);
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LoggingService.Warn("WebView2 tải ảnh bìa thất bại cho {Url}: {Error}", url, ex.Message);
+                }
+            }
+
+            // 3. Fallback: Dùng curl.exe (có sẵn trên Windows 10/11)
+            try
+            {
+                var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
+                var curlPath = Path.Combine(systemDir, "curl.exe");
+                if (!File.Exists(curlPath))
+                {
+                    curlPath = "curl.exe";
+                }
+
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = curlPath,
+                    Arguments = $"-s -f -L --max-time 20 -A \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\" \"{url}\" -o \"{targetPath}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                using var proc = System.Diagnostics.Process.Start(psi);
+                if (proc != null)
+                {
+                    await proc.WaitForExitAsync(cancellationToken);
+                    if (proc.ExitCode == 0 && File.Exists(targetPath) && new FileInfo(targetPath).Length > 0)
+                    {
+                        var fileBytes = await File.ReadAllBytesAsync(targetPath, cancellationToken);
+                        if (IsValidImageBytes(fileBytes))
+                        {
+                            return true;
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                LoggingService.Warn("WebView2 tải ảnh bìa thất bại cho {Url}: {Error}", url, ex.Message);
+                LoggingService.Warn("Curl fallback tải ảnh thất bại cho {Url}: {Error}", url, ex.Message);
             }
         }
-
-        // 3. Fallback: Dùng curl.exe (có sẵn trên Windows 10/11)
-        try
+        catch { }
+        finally
         {
-            var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
-            var curlPath = Path.Combine(systemDir, "curl.exe");
-            if (!File.Exists(curlPath))
+            // Bảo đảm dọn dẹp sạch sẽ, không để lại file rác / 0 byte / file hỏng trên đĩa nếu tải thất bại
+            if (File.Exists(targetPath) && !IsValidImageFile(targetPath))
             {
-                curlPath = "curl.exe";
+                try { File.Delete(targetPath); } catch { }
             }
-
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = curlPath,
-                Arguments = $"-s -f -L --max-time 20 -A \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\" \"{url}\" -o \"{targetPath}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            using var proc = System.Diagnostics.Process.Start(psi);
-            if (proc != null)
-            {
-                await proc.WaitForExitAsync(cancellationToken);
-                if (proc.ExitCode == 0 && File.Exists(targetPath) && new FileInfo(targetPath).Length > 0)
-                {
-                    var fileBytes = await File.ReadAllBytesAsync(targetPath, cancellationToken);
-                    if (!IsHtmlChallenge(fileBytes))
-                    {
-                        return true;
-                    }
-                    try { File.Delete(targetPath); } catch {}
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Warn("Curl fallback tải ảnh thất bại cho {Url}: {Error}", url, ex.Message);
         }
 
         return false;

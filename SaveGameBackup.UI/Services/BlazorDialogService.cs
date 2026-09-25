@@ -159,7 +159,7 @@ public class BlazorDialogService : IBlazorDialogService
 
     public void CloseRestore()
     {
-        if (IsModalRestoring) return;
+        IsModalRestoring = false;
         IsRestoreModalOpen = false;
         Notify(nameof(IsRestoreModalOpen));
         Notify(nameof(IsAnyModalOpen));
@@ -384,7 +384,9 @@ public class BlazorDialogService : IBlazorDialogService
     {
         try
         {
-            CloseConfirm();
+            IsConfirmModalOpen = false;
+            Notify(nameof(IsConfirmModalOpen));
+            Notify(nameof(IsAnyModalOpen));
 
             if (DeleteType == ConfirmDeleteType.Snapshot && _pendingSnapshotConfirmAction != null)
             {

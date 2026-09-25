@@ -286,8 +286,8 @@
                     <span class="truncate">Nhấp chọn một bản snapshot để khôi phục hoặc đồng bộ. Nhấp badge ☁️ để mở xem online.</span>
                 </div>
 
-                <!-- Hàng button khôi phục, sao lưu, đồng bộ với màu sắc rõ nét, nổi bật -->
-                <div class="flex items-center space-x-2.5 flex-shrink-0">
+                <!-- Hàng button khôi phục, sao lưu, đồng bộ -->
+                <div class="flex items-center space-x-2 flex-shrink-0">
                     <button
                         class="btn-success h-[36px] px-4 py-0 leading-[34px] text-[12px] font-bold text-white rounded-lg shadow-md inline-flex items-center justify-center space-x-1.5 transition-all box-border cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none"
                         style="background-color: #059669; border: 1px solid #10B981; color: #FFFFFF;"
@@ -459,9 +459,25 @@
 
     private async Task TriggerBackupCurrentGame()
     {
-        var gameName = (HistoryVM.SelectedGameHistory ?? DialogService.DetailsGameHistory)?.GameName
-                       ?? HistoryVM.SelectedHistoryGameTitle
-                       ?? ActiveDetail?.GameName;
+        var targetDetail = ActiveDetail;
+        if (targetDetail != null)
+        {
+            CloseModal();
+            VM.SelectedTabIndex = 0;
+            await VM.SearchVM.LoadGameFromDetailAsync(targetDetail);
+            return;
+        }
+
+        var selectedHistory = HistoryVM.SelectedGameHistory ?? DialogService.DetailsGameHistory;
+        if (selectedHistory != null)
+        {
+            CloseModal();
+            VM.SelectedTabIndex = 0;
+            await VM.SearchVM.LoadGameFromHistoryAsync(selectedHistory);
+            return;
+        }
+
+        var gameName = HistoryVM.SelectedHistoryGameTitle;
         if (string.IsNullOrEmpty(gameName)) return;
         CloseModal();
         VM.SelectedTabIndex = 0;

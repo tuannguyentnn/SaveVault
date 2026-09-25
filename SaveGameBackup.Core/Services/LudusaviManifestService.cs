@@ -20,6 +20,20 @@ public class LudusaviGameEntry
     public List<string> Aliases { get; set; } = new();
 }
 
+public class ManifestSyncProgress
+{
+    public int Percent { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string SubText { get; set; } = string.Empty;
+
+    public ManifestSyncProgress(int percent, string status, string subText = "")
+    {
+        Percent = percent;
+        Status = status;
+        SubText = subText;
+    }
+}
+
 /// <summary>
 /// Dịch vụ tra cứu cấu hình Save Game từ cơ sở dữ liệu Ludusavi Manifest (Open-source PC Gaming save database).
 /// Hoạt động 100% không phụ thuộc PCGamingWiki, không bị Cloudflare chặn và hỗ trợ đồng bộ từ GitHub Raw.
@@ -148,12 +162,17 @@ public class LudusaviManifestService
         return converted.Trim();
     }
 
-    /// <summary>
-    /// Đồng bộ tải manifest mới nhất từ GitHub Raw và nạp vào bộ nhớ.
-    /// </summary>
-    public async Task<int> SyncFromGithubAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
+    public static string GetLocalManifestPath()
     {
-        progress?.Report("Đang tải dữ liệu Ludusavi Manifest từ GitHub...");
+        return Path.Combine(DatabaseService.GetDefaultProjectRoot(), "manifest.yaml");
+    }
+
+    /// <summary>
+    /// Đồng bộ tải manifest mới nhất từ GitHub Raw và nạp vào bộ nhớ kèm tiến trình thời gian thực.
+    /// </summary>
+    public async Task<int> SyncFromGithubAsync(IProgress<ManifestSyncProgress>? progress = null, CancellationToken cancellationToken = default)
+    {
+        progress?.Report(new ManifestSyncProgress(0, "Đang kết nối tới máy chủ GitHub...", "0%"));
         LoggingService.LogAction("Ludusavi_Sync_Start", new { Url = ManifestGithubUrl });
 
         try
@@ -161,33 +180,110 @@ public class LudusaviManifestService
             using var response = await _httpClient.GetAsync(ManifestGithubUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             response.EnsureSuccessStatusCode();
 
-            progress?.Report("Đang xử lý dữ liệu cấu hình game từ file YAML...");
-            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            using var reader = new StreamReader(stream);
+            var totalBytes = response.Content.Headers.ContentLength;
+            using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var memStream = new MemoryStream();
 
-            int parsedCount = ParseYamlStream(reader);
+            var buffer = new byte[64 * 1024]; // 64 KB chunk
+            long totalRead = 0;
+            int bytesRead;
+
+            progress?.Report(new ManifestSyncProgress(5, "Đang tải dữ liệu Ludusavi Manifest từ GitHub...", "Bắt đầu tải"));
+
+            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+            {
+                await memStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
+                totalRead += bytesRead;
+
+                if (totalBytes.HasValue && totalBytes.Value > 0)
+                {
+                    // Tải chiếm 5% -> 60% tiến trình tổng
+                    int downloadPercent = Math.Clamp((int)(5 + (totalRead * 55.0 / totalBytes.Value)), 5, 60);
+                    string sub = $"{totalRead / (1024.0 * 1024.0):F2} MB / {totalBytes.Value / (1024.0 * 1024.0):F2} MB";
+                    progress?.Report(new ManifestSyncProgress(downloadPercent, "Đang tải dữ liệu Ludusavi Manifest từ GitHub...", sub));
+                }
+                else
+                {
+                    int downloadPercent = Math.Clamp((int)(5 + (totalRead / (120 * 1024))), 5, 60);
+                    string sub = $"{totalRead / (1024.0 * 1024.0):F2} MB";
+                    progress?.Report(new ManifestSyncProgress(downloadPercent, "Đang tải dữ liệu Ludusavi Manifest từ GitHub...", sub));
+                }
+            }
+
+            // Lưu cache cục bộ ra đĩa để khởi động offline lần sau nhanh hơn
+            try
+            {
+                var localFile = GetLocalManifestPath();
+                var dir = Path.GetDirectoryName(localFile);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+                await File.WriteAllBytesAsync(localFile, memStream.ToArray(), cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("Không thể lưu cache manifest.yaml ra đĩa: {Message}", ex.Message);
+            }
+
+            memStream.Position = 0;
+            progress?.Report(new ManifestSyncProgress(65, "Đang phân tích và nạp cấu hình tựa game...", "Chuẩn bị nạp..."));
+
+            using var reader = new StreamReader(memStream);
+            long totalLength = memStream.Length;
+            int parsedCount = ParseYamlStream(reader, totalLength, progress, cancellationToken);
+
             LoggingService.LogAction("Ludusavi_Sync_Success", new { TotalImported = parsedCount });
-            progress?.Report($"Đồng bộ thành công {parsedCount} tựa game từ Ludusavi Manifest!");
+            progress?.Report(new ManifestSyncProgress(100, $"Đồng bộ thành công {parsedCount:N0} tựa game!", $"Tổng cộng {parsedCount:N0} game"));
             return parsedCount;
+        }
+        catch (OperationCanceledException)
+        {
+            LoggingService.LogAction("Ludusavi_Sync_Canceled", new { Url = ManifestGithubUrl });
+            progress?.Report(new ManifestSyncProgress(0, "Đã hủy thao tác đồng bộ từ GitHub.", "Đã hủy"));
+            return 0;
         }
         catch (Exception ex)
         {
             LoggingService.LogAction("Ludusavi_Sync_Failed", new { Message = ex.Message }, level: "Error", ex: ex);
-            progress?.Report($"Đồng bộ thất bại: {ex.Message}");
+            progress?.Report(new ManifestSyncProgress(0, $"Đồng bộ thất bại: {ex.Message}", "Lỗi mạng"));
             return 0;
         }
     }
 
-    private int ParseYamlStream(TextReader reader)
+    public Task<int> SyncFromGithubAsync(IProgress<string>? textProgress, CancellationToken cancellationToken = default)
+    {
+        var progress = textProgress != null ? new Progress<ManifestSyncProgress>(p => textProgress.Report(p.Status)) : null;
+        return SyncFromGithubAsync(progress, cancellationToken);
+    }
+
+    private int ParseYamlStream(
+        TextReader reader,
+        long totalLength = 0,
+        IProgress<ManifestSyncProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         string? line;
         string? currentGame = null;
         string? currentSteamId = null;
         var currentPatterns = new List<string>();
         int count = 0;
+        int linesRead = 0;
 
         while ((line = reader.ReadLine()) != null)
         {
+            linesRead++;
+            if (linesRead % 400 == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (progress != null && totalLength > 0 && reader is StreamReader sr && sr.BaseStream.CanSeek)
+                {
+                    long currentPos = sr.BaseStream.Position;
+                    int percent = Math.Clamp(65 + (int)(currentPos * 34.0 / totalLength), 65, 99);
+                    progress.Report(new ManifestSyncProgress(percent, "Đang phân tích và nạp cấu hình tựa game...", $"Đã nạp {count:N0} game"));
+                }
+            }
+
             // Các dòng cấp cao nhất là tên game (không thụt lề đầu dòng)
             if (!line.StartsWith(" ") && !line.StartsWith("\t") && line.EndsWith(":") && !line.StartsWith("---"))
             {
@@ -252,6 +348,22 @@ public class LudusaviManifestService
         lock (_loadLock)
         {
             if (_isLoaded) return;
+
+            var localFile = GetLocalManifestPath();
+            if (File.Exists(localFile))
+            {
+                try
+                {
+                    using var reader = File.OpenText(localFile);
+                    ParseYamlStream(reader);
+                    _isLoaded = true;
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    LoggingService.Warn("Không thể nạp manifest.yaml cục bộ: {Message}", ex.Message);
+                }
+            }
 
             // Nạp trước các tựa game bom tấn phổ biến nhất để sẵn sàng 100% offline ngay lập tức
             AddOrUpdateGame(new LudusaviGameEntry

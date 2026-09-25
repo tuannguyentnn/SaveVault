@@ -38,6 +38,7 @@ public class MainViewModel : INotifyPropertyChanged
     public SettingsSubViewModel SettingsVM { get; }
     public IDialogService DialogService { get; }
     public INativeDialogService NativeDialog { get; }
+    public DatabaseService DatabaseService => _databaseService;
 
     public MainViewModel(
         DatabaseService? databaseService = null,

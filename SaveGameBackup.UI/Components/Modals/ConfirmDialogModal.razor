@@ -73,26 +73,29 @@
     bool isStep1Valid = true;
     if (deleteType == ConfirmDeleteType.Snapshot) isStep1Valid = canProceedSnapshot;
     else if (deleteType == ConfirmDeleteType.Game) isStep1Valid = canProceedGame;
+
+    var isRevert = title.Contains("Hoàn Tác", StringComparison.OrdinalIgnoreCase) || title.Contains("Revert", StringComparison.OrdinalIgnoreCase);
+    var isGeneral = deleteType == ConfirmDeleteType.General;
 }
 
 @if (isConfirmOpen)
 {
     <div class="modal-backdrop z-50">
-        <div class="modal-content w-full max-w-lg border-2 border-red-500 flex flex-col shadow-2xl bg-[#0F172A]" @onclick:stopPropagation="true">
+        <div class="modal-content w-full max-w-lg border-2 @(isRevert ? "border-amber-500" : "border-red-500") flex flex-col shadow-2xl bg-[#0F172A]" @onclick:stopPropagation="true">
             @if (ConfirmStep == 1)
             {
                 <!-- STEP 1: Modal Xác Nhận Ban Đầu -->
                 <div class="bg-[#1E293B] border-b border-[#334155] px-6 py-4 flex items-center justify-between">
                     <div class="flex items-center space-x-3">
-                        <div class="w-9 h-9 rounded-lg bg-red-600/20 border border-red-500/40 flex items-center justify-center">
-                            <span class="text-red-400 font-bold text-lg">⚠️</span>
+                        <div class="w-9 h-9 rounded-lg @(isRevert ? "bg-amber-600/20 border border-amber-500/40 text-amber-400" : "bg-red-600/20 border border-red-500/40 text-red-400") flex items-center justify-center">
+                            <span class="font-bold text-lg">@(isRevert ? "🔄" : "⚠️")</span>
                         </div>
                         <div>
                             <h3 class="text-[16px] font-bold text-white tracking-wide">
                                 @title
                             </h3>
                             <span class="text-[11px] text-slate-400">
-                                @(deleteType == ConfirmDeleteType.Snapshot ? "Bước 1/2: Chọn vị trí lưu trữ muốn xóa" : (deleteType == ConfirmDeleteType.Game ? "Bước 1/2: Xác thực bảo mật xóa toàn bộ" : "Bước 1/2: Chọn phạm vi dữ liệu cần xóa"))
+                                @(isRevert ? "Xác nhận đưa dữ liệu save game trở lại trạng thái an toàn trước đó" : (isGeneral ? "Xác nhận thao tác quản lý bản lưu" : (deleteType == ConfirmDeleteType.Snapshot ? "Bước 1/2: Chọn vị trí lưu trữ muốn xóa" : "Bước 1/2: Xác thực bảo mật xóa toàn bộ")))
                             </span>
                         </div>
                     </div>
@@ -295,19 +298,57 @@
                         <span>✕ Hủy bỏ</span>
                     </button>
 
-                    <button class="btn-danger py-2 px-6 text-[12.5px] font-bold flex items-center space-x-2 bg-red-600 border-red-500 hover:bg-red-700 text-white rounded-lg shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
-                            disabled="@(isDeleting || !isStep1Valid)"
-                            @onclick="GoToStep2">
-                        @if (isDeleting)
+                    @if (isGeneral)
+                    {
+                        @if (isRevert)
                         {
-                            <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
-                            <span>Đang Xử Lý...</span>
+                            <button class="py-2 px-6 text-[12.5px] font-bold flex items-center space-x-2 bg-amber-600 border border-amber-500 hover:bg-amber-500 text-white rounded-lg shadow-md disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95 transition-all"
+                                    disabled="@isDeleting"
+                                    @onclick="ExecuteConfirm">
+                                @if (isDeleting)
+                                {
+                                    <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
+                                    <span>Đang Xử Lý...</span>
+                                }
+                                else
+                                {
+                                    <span>🔄 Xác Nhận Hoàn Tác</span>
+                                }
+                            </button>
                         }
                         else
                         {
-                            <span>Tiếp Tục ➔</span>
+                            <button class="btn-danger py-2 px-6 text-[12.5px] font-bold flex items-center space-x-2 bg-red-600 border border-red-500 hover:bg-red-700 text-white rounded-lg shadow-md disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95 transition-all"
+                                    disabled="@isDeleting"
+                                    @onclick="ExecuteConfirm">
+                                @if (isDeleting)
+                                {
+                                    <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
+                                    <span>Đang Xóa...</span>
+                                }
+                                else
+                                {
+                                    <span>🗑 Xác Nhận Xóa</span>
+                                }
+                            </button>
                         }
-                    </button>
+                    }
+                    else
+                    {
+                        <button class="btn-danger py-2 px-6 text-[12.5px] font-bold flex items-center space-x-2 bg-red-600 border-red-500 hover:bg-red-700 text-white rounded-lg shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+                                disabled="@(isDeleting || !isStep1Valid)"
+                                @onclick="GoToStep2">
+                            @if (isDeleting)
+                            {
+                                <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
+                                <span>Đang Xử Lý...</span>
+                            }
+                            else
+                            {
+                                <span>Tiếp Tục ➔</span>
+                            }
+                        </button>
+                    }
                 </div>
             }
             else

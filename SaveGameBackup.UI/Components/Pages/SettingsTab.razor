@@ -364,20 +364,54 @@
                 Tích hợp sẵn danh bạ vị trí save game từ dự án <strong class="text-white">Ludusavi Manifest</strong> (mã nguồn mở). Hoạt động 100% offline, không bị ảnh hưởng bởi Cloudflare hay sự cố mạng.
             </div>
 
-            <div class="flex items-center justify-between p-3 bg-[#0F172A] border border-[#2D3748] rounded-lg">
-                <div class="space-y-0.5">
-                    <div class="text-[12px] font-semibold text-white">Đồng bộ danh mục mới nhất từ GitHub</div>
-                    <div class="text-[11px] text-slate-400">
-                        @(string.IsNullOrEmpty(SettingsVM.SyncCatalogStatus) ? "Cập nhật hơn 12.000+ cấu hình game mới nhất từ cộng đồng." : SettingsVM.SyncCatalogStatus)
+            <div class="flex flex-col p-3.5 bg-[#0F172A] border border-[#2D3748] rounded-lg space-y-2.5">
+                <div class="flex items-center justify-between">
+                    <div class="space-y-0.5">
+                        <div class="text-[12px] font-semibold text-white flex items-center space-x-2">
+                            <span>Đồng bộ danh mục mới nhất từ GitHub</span>
+                            @if (SettingsVM.IsSyncingCatalog)
+                            {
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 animate-pulse">
+                                    Đang tải @SettingsVM.SyncProgressPercent%
+                                </span>
+                            }
+                        </div>
+                        <div class="text-[11px] text-slate-400">
+                            @(string.IsNullOrEmpty(SettingsVM.SyncCatalogStatus) ? "Cập nhật hơn 12.000+ cấu hình game mới nhất từ cộng đồng." : SettingsVM.SyncCatalogStatus)
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        @if (SettingsVM.IsSyncingCatalog)
+                        {
+                            <button type="button" class="btn-secondary py-1.5 px-3 text-[12px] flex items-center space-x-1.5 text-red-300 hover:text-white hover:bg-red-600/30 border-red-500/40"
+                                    @onclick="() => SettingsVM.CancelSync()">
+                                <span>✕</span>
+                                <span>Hủy</span>
+                            </button>
+                        }
+                        <button class="btn-backup-primary py-1.5 px-4 text-[12px] flex items-center space-x-2"
+                                disabled="@SettingsVM.IsSyncingCatalog"
+                                @onclick="() => SettingsVM.SyncCatalogCommand.Execute(null)">
+                            <span>@(SettingsVM.IsSyncingCatalog ? "⏳" : "🔄")</span>
+                            <span>@(SettingsVM.IsSyncingCatalog ? "Đang đồng bộ..." : "Cập Nhật Từ GitHub")</span>
+                        </button>
                     </div>
                 </div>
 
-                <button class="btn-backup-primary py-1.5 px-4 text-[12px] flex items-center space-x-2"
-                        disabled="@SettingsVM.IsSyncingCatalog"
-                        @onclick="() => SettingsVM.SyncCatalogCommand.Execute(null)">
-                    <span>@(SettingsVM.IsSyncingCatalog ? "⏳" : "🔄")</span>
-                    <span>@(SettingsVM.IsSyncingCatalog ? "Đang đồng bộ..." : "Cập Nhật Từ GitHub")</span>
-                </button>
+                @if (SettingsVM.IsSyncingCatalog)
+                {
+                    <div class="pt-1.5 space-y-1.5 border-t border-slate-800/60">
+                        <div class="w-full bg-[#1E293B] rounded-full h-2 overflow-hidden border border-slate-700/50">
+                            <div class="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 h-2 rounded-full transition-all duration-200"
+                                 style="width: @(Math.Clamp(SettingsVM.SyncProgressPercent, 0, 100))%;"></div>
+                        </div>
+                        <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono">
+                            <span>@SettingsVM.SyncProgressSubText</span>
+                            <span class="font-bold text-cyan-400">@SettingsVM.SyncProgressPercent%</span>
+                        </div>
+                    </div>
+                }
             </div>
         </div>
     </div>

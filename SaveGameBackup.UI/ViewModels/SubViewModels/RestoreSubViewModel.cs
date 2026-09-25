@@ -334,12 +334,22 @@ public class RestoreSubViewModel : INotifyPropertyChanged
 
     public void ExecuteCloseRestoreModal()
     {
-        if (IsModalRestoring) return;
+        IsModalRestoring = false;
         IsRestoreModalOpen = false;
         ActiveRestoreRecord = null;
         ActiveRestoreDetail = null;
         ActiveRestoreItems.Clear();
+        NotifyDialogRestoreClosed();
         LoggingService.LogAction("Close_Restore_Modal");
+    }
+
+    private void NotifyDialogRestoreClosed()
+    {
+        if (_dialogService is IBlazorDialogService blazorDialog)
+        {
+            blazorDialog.IsModalRestoring = false;
+            blazorDialog.CloseRestore();
+        }
     }
 
     private void ExecuteModalSelectAllRestoreItems()
@@ -390,6 +400,10 @@ public class RestoreSubViewModel : INotifyPropertyChanged
         if (selectedItems.Count == 0) return;
 
         IsModalRestoring = true;
+        if (_dialogService is IBlazorDialogService blazorDialog)
+        {
+            blazorDialog.IsModalRestoring = true;
+        }
         ModalRestoreProgressPercent = 0;
         ModalRestoreProgressMessage = "Đang khởi tạo quá trình khôi phục...";
 
@@ -431,21 +445,31 @@ public class RestoreSubViewModel : INotifyPropertyChanged
                 await _backupService.RestoreAsync(ActiveRestoreRecord, selectedItems, progress);
             }
 
+            IsModalRestoring = false;
             _dialogService.CloseProgress();
             ExecuteCloseRestoreModal();
-            _dialogService.ShowMessage("Khôi Phục Thành Công", $"Đã khôi phục thành công {selectedItems.Count} vị trí save game cho '{gameName}'.", "Success");
-            LoggingService.LogAction("Restore_Execute_Success", new { Game = gameName, RestoredCount = selectedItems.Count });
+
+            _eventBus.Publish(new HistoryChangedEvent());
+
+            var hasRevert = RevertService.HasRevertPoint(gameName);
+            var successMsg = hasRevert
+                ? $"Đã khôi phục thành công {selectedItems.Count} vị trí save game cho '{gameName}'.\n\n(Dữ liệu save cũ đã được lưu dự phòng, bạn có thể bấm 'Hoàn Tác' trong chi tiết game bất cứ lúc nào)."
+                : $"Đã khôi phục thành công {selectedItems.Count} vị trí save game cho '{gameName}'.";
+            _dialogService.ShowMessage("Khôi Phục Thành Công", successMsg, "Success");
+            LoggingService.LogAction("Restore_Execute_Success", new { Game = gameName, RestoredCount = selectedItems.Count, HasRevertPoint = hasRevert });
         }
         catch (Exception ex)
         {
+            IsModalRestoring = false;
             _dialogService.CloseProgress();
             LoggingService.Error(ex, "Lỗi khôi phục {Game}: {Message}", gameName, ex.Message);
             _dialogService.ShowMessage("Lỗi Ngoại Lệ Khôi Phục", ex.Message, "Error", ex.StackTrace);
         }
         finally
         {
-            _dialogService.CloseProgress();
             IsModalRestoring = false;
+            _dialogService.CloseProgress();
+            NotifyDialogRestoreClosed();
         }
     }
 

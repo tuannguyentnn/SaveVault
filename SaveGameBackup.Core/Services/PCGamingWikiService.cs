@@ -125,8 +125,7 @@ public class PCGamingWikiService
             }
             else
             {
-                gameInfo.SteamAppId = new KnownGameCatalogService().FindGame(gameInfo.GameName)?.SteamAppId
-                    ?? new LudusaviManifestService().FindGame(gameInfo.GameName)?.SteamId;
+                gameInfo.SteamAppId = new LudusaviManifestService().FindGame(gameInfo.GameName)?.SteamId;
             }
 
             // Extract Cover image URL (ƯU TIÊN PCGAMINGWIKI TRƯỚC -> STEAM)

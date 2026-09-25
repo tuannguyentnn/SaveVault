@@ -73,6 +73,7 @@ try
     // Test Search Coordinator: Cache-then-PCGamingWiki logic
     var searchCoordinator = new GameSearchCoordinator(db);
     var searchResult = await searchCoordinator.SearchAndDetectGameAsync("Test Adventure");
+    if (searchResult == null) throw new Exception("FAIL: searchResult was null!");
     Console.WriteLine($"  ✓ GameSearchCoordinator successfully retrieved: {searchResult.GameName} (Source: {searchResult.Source})");
 
     // Test 3: PCGamingWiki Online Search
@@ -1043,23 +1044,24 @@ try
     }
     Console.WriteLine($"  ✓ UpdateCoverPathAsync updated and persisted CoverPath OK!");
 
-    // [22] Testing KnownGameCatalogService & Palworld Detection
-    Console.WriteLine("\n[22] Testing KnownGameCatalogService & Palworld Detection");
-    var catalog = new KnownGameCatalogService();
-    var palDef = catalog.FindGame("palworld");
-    if (palDef == null || palDef.GameName != "Palworld")
+    // [22] Testing Palworld Detection with Ludusavi Offline Search
+    Console.WriteLine("\n[22] Testing Palworld Detection with Ludusavi Offline Search");
+    var ludusaviTest = new LudusaviManifestService();
+    var palDef = ludusaviTest.FindGame("palworld");
+    if (palDef == null || palDef.Name != "Palworld")
     {
-        throw new Exception("FAIL: KnownGameCatalogService could not find 'palworld'!");
+        throw new Exception("FAIL: LudusaviManifestService could not find 'palworld'!");
     }
     if (!palDef.SavePatterns.Any(p => p.Contains(@"Pal\Saved\SaveGames")))
     {
         throw new Exception("FAIL: Palworld definition missing Pal\\Saved\\SaveGames pattern!");
     }
-    Console.WriteLine($"  ✓ KnownGameCatalogService verified Palworld definition: AppID={palDef.SteamAppId}, Patterns={palDef.SavePatterns.Length}");
+    Console.WriteLine($"  ✓ LudusaviManifestService verified Palworld definition: AppID={palDef.SteamId}, Patterns={palDef.SavePatterns.Count}");
 
-    // Test SearchCoordinator detecting Palworld on disk
-    var palSearchCoordinator = new GameSearchCoordinator(db, catalogService: catalog);
+    // Test SearchCoordinator detecting Palworld on disk using Ludusavi
+    var palSearchCoordinator = new GameSearchCoordinator(db, ludusaviService: ludusaviTest);
     var palResult = await palSearchCoordinator.SearchAndDetectGameAsync("Palworld");
+    if (palResult == null) throw new Exception("FAIL: palResult was null!");
     Console.WriteLine($"  ✓ GameSearchCoordinator Palworld search result: {palResult.GameName} (Source: {palResult.Source})");
     Console.WriteLine($"    Found on disk: {palResult.IsFoundOnDisk}, Files: {palResult.FileCount}, Size: {palResult.TotalSizeBytes} bytes");
     foreach (var p in palResult.DetectedPathsOnDisk)
@@ -1077,8 +1079,8 @@ try
         Console.WriteLine($"  ✓ Verified: Palworld save folder '{expectedPalPath}' was successfully detected on disk!");
     }
 
-    // [23] Testing LudusaviManifestService (Multi-Tier Search Architecture)
-    Console.WriteLine("\n[23] Testing LudusaviManifestService (Multi-Tier Search Architecture)");
+    // [23] Testing LudusaviManifestService (Offline Search Architecture)
+    Console.WriteLine("\n[23] Testing LudusaviManifestService (Offline Search Architecture)");
     var ludusavi = new LudusaviManifestService();
     if (ludusavi.TotalGamesCount < 10)
     {
@@ -1099,10 +1101,11 @@ try
     }
     Console.WriteLine($"  ✓ LudusaviManifestService lookup verified: {hogwartsInfo.GameName} (Source: {hogwartsInfo.Source}, Patterns: {hogwartsInfo.RawPatterns.Count})");
 
-    // Coordinator with all tiers active
-    var multiTierCoordinator = new GameSearchCoordinator(db, catalogService: catalog, ludusaviService: ludusavi);
+    // Coordinator with Ludusavi offline tier active
+    var multiTierCoordinator = new GameSearchCoordinator(db, ludusaviService: ludusavi);
     var coordinatorHogwarts = await multiTierCoordinator.SearchAndDetectGameAsync("Hogwarts Legacy");
-    Console.WriteLine($"  ✓ Multi-Tier GameSearchCoordinator resolved: {coordinatorHogwarts.GameName} (Source: {coordinatorHogwarts.Source})");
+    if (coordinatorHogwarts == null) throw new Exception("FAIL: coordinatorHogwarts was null!");
+    Console.WriteLine($"  ✓ Offline GameSearchCoordinator resolved: {coordinatorHogwarts.GameName} (Source: {coordinatorHogwarts.Source})");
 
     // [24] Testing New Search Logic: Empty SQLite Cache Initialization, Top 10 Recent Cache, Candidate Chooser & CoverUrl
     Console.WriteLine("\n[24] Testing New Search Logic, Top 10 Recent Cache & Candidate Chooser");
@@ -1224,6 +1227,35 @@ try
     }
     Console.WriteLine($"  ✓ Verified: Game '{topAfterBackup[0].GameName}' was successfully bumped to newest order (#1) upon successful backup!");
 
+    // Verify that subsequent backup of an already-cached game does not overwrite cache
+    var originalCachedGame = await freshDb.GetCachedGameAsync("Backup Cache Verified Game");
+    var secondBackupGame = new GameSaveInfo
+    {
+        GameName = "Backup Cache Verified Game",
+        Source = "Modified Source In 2nd Backup",
+        RawPatterns = new List<string> { Path.Combine(tempTestDir, "extra_path") }
+    };
+    await backupSvcForCache.BackupGameAsync(secondBackupGame, cacheBackupSettings, new List<string> { testSaveDirForCache });
+    var cacheAfterSecondBackup = await freshDb.GetCachedGameAsync("Backup Cache Verified Game");
+    if (cacheAfterSecondBackup?.Source != "Test Source")
+    {
+        throw new Exception($"FAIL: Cache should NOT be overwritten on subsequent backups! Expected source 'Test Source', got '{cacheAfterSecondBackup?.Source}'");
+    }
+    Console.WriteLine("  ✓ Verified: Cache is only written on FIRST backup and preserved on subsequent backups!");
+
+    // Verify BackupHistoryDetail accurately parses all snapshot paths independently
+    var detail6Paths = new BackupHistoryDetail
+    {
+        GameName = "Multi Snapshot RPG",
+        SavePaths = System.Text.Json.JsonSerializer.Serialize(new List<string> { "C:\\Save1", "C:\\Save2", "C:\\Save3", "C:\\Save4", "C:\\Save5", "C:\\Save6" }),
+        BackupDate = DateTime.Now
+    };
+    if (detail6Paths.SavePathsList.Count != 6)
+    {
+        throw new Exception($"FAIL: SavePathsList expected 6 paths, got {detail6Paths.SavePathsList.Count}");
+    }
+    Console.WriteLine($"  ✓ Verified: BackupHistoryDetail SavePathsList accurately parses all {detail6Paths.SavePathsList.Count} paths for independent snapshot restore/backup!");
+
     // ==========================================
     // [25] Testing Temp Cover Management, Steam Priority & Webview2 Local Mapping
     // ==========================================
@@ -1236,6 +1268,8 @@ try
     {
         bmp.Save(dummyTempFile, System.Drawing.Imaging.ImageFormat.Jpeg);
     }
+    // Simulate pre-resizing at temp download time
+    GameCoverService.ResizeCoverImage(dummyTempFile, 450);
 
     var tempUri = GameCoverService.GetTempCoverImageUri(dummyTempFile);
     if (tempUri == null || !tempUri.StartsWith("https://tempcovers.local/"))
@@ -1248,7 +1282,7 @@ try
     }
     Console.WriteLine($"  ✓ Temp cover virtual host mapping: {tempUri} (Non-Base64)");
 
-    // Test DownloadAndProcessCoverAsync copies from Temp/covers/ and resizes to width 450px
+    // Test DownloadAndProcessCoverAsync copies from Temp/covers/ (already 450px) without re-resizing
     var processedCover = await GameCoverService.DownloadAndProcessCoverAsync("Test Game Temp", tempUri);
     if (string.IsNullOrEmpty(processedCover) || !File.Exists(processedCover))
     {
@@ -1261,7 +1295,7 @@ try
             throw new Exception($"FAIL: Expected width 450px, got {processedImg.Width}px");
         }
     }
-    Console.WriteLine($"  ✓ DownloadAndProcessCoverAsync correctly sourced from Temp/covers and resized to 450px");
+    Console.WriteLine($"  ✓ DownloadAndProcessCoverAsync correctly copied from pre-resized Temp/covers (450px)");
 
     GameCoverService.ClearTempCovers();
     if (File.Exists(dummyTempFile))
@@ -1286,11 +1320,422 @@ try
     {
         throw new Exception($"FAIL: DownloadToTempCoverAsync failed to download cover for Final Assault! Got: {realTempUri}");
     }
-    Console.WriteLine($"  ✓ DownloadToTempCoverAsync downloaded Steam cover for Final Assault: {realTempUri}");
+    var downloadedTempPath = GameCoverService.GetTempCoverFilePath("Final Assault");
+    using (var tempImg = System.Drawing.Image.FromFile(downloadedTempPath))
+    {
+        if (tempImg.Width > 450)
+        {
+            throw new Exception($"FAIL: Expected temp cover width <= 450px, got {tempImg.Width}px");
+        }
+    }
+    Console.WriteLine($"  ✓ DownloadToTempCoverAsync verified temp cover width <= 450px: {realTempUri}");
     GameCoverService.ClearTempCovers();
 
+    // Test 26: Testing LudusaviManifestService ManifestSyncProgress & Cancellation
+    Console.WriteLine("\n[26] Testing LudusaviManifestService ManifestSyncProgress & Cancellation");
+    var progressUpdates = new List<ManifestSyncProgress>();
+    var testProgress = new Progress<ManifestSyncProgress>(p => progressUpdates.Add(p));
+    using var cancelledCts = new CancellationTokenSource();
+    cancelledCts.Cancel();
+    var ludusaviService = new LudusaviManifestService();
+    int resultCount = await ludusaviService.SyncFromGithubAsync(testProgress, cancelledCts.Token);
+    if (resultCount != 0)
+    {
+        throw new Exception($"FAIL: Expected 0 on cancellation, got {resultCount}");
+    }
+    var localPath = LudusaviManifestService.GetLocalManifestPath();
+    if (string.IsNullOrWhiteSpace(localPath) || !localPath.EndsWith("manifest.yaml"))
+    {
+        throw new Exception($"FAIL: Unexpected local manifest path: {localPath}");
+    }
+    Console.WriteLine("  ✓ ManifestSyncProgress structure & cancellation handled cleanly!");
+    Console.WriteLine($"  ✓ Local manifest path verified: {localPath}");
+
+    // Test 27: Testing DatabaseService.UpdateCoverPathAsync & GameCoverService
+    Console.WriteLine("\n[27] Testing DatabaseService.UpdateCoverPathAsync & GameCoverService");
+    var test27Game = "CoverPath Test Game";
+    var testCoverPath = GameCoverService.GetCoverFilePath("New Cover 2026");
+    await db.UpdateCoverPathAsync(test27Game, testCoverPath);
+    var updatedHistories = await db.GetGameHistoriesAsync();
+    var foundEntry = updatedHistories.FirstOrDefault(g => g.GameName == test27Game);
+    if (foundEntry == null || foundEntry.CoverPath != testCoverPath)
+    {
+        throw new Exception($"FAIL: UpdateCoverPathAsync did not persist cover path! Expected: {testCoverPath}, Got: {foundEntry?.CoverPath}");
+    }
+    Console.WriteLine($"  ✓ DatabaseService.UpdateCoverPathAsync verified OK: {foundEntry.CoverPath}");
+
+    // Test 28: Offline Search, Cover Handling & No Edge Icon Verification
+    Console.WriteLine("\n[28] Testing Offline Search, Cover Handling & No Edge Icon Verification");
+    try
+    {
+        GameCoverService.ForceNetworkAvailable = false;
+        if (GameCoverService.IsNetworkAvailable())
+        {
+            throw new Exception("FAIL: ForceNetworkAvailable=false should make IsNetworkAvailable return false!");
+        }
+
+        // 1. Offline search: Should skip online and resolve from Ludusavi with OnlineCoverUrl = null
+        var offlineCoordinator = new GameSearchCoordinator(db, ludusaviService: ludusavi);
+        var offlineGame = await offlineCoordinator.SearchAndDetectGameAsync("Hades");
+        if (offlineGame == null)
+        {
+            throw new Exception("FAIL: Offline search for Hades using Ludusavi returned null!");
+        }
+        if (!string.IsNullOrEmpty(offlineGame.OnlineCoverUrl))
+        {
+            throw new Exception($"FAIL: Offline search should not assign OnlineCoverUrl! Got: {offlineGame.OnlineCoverUrl}");
+        }
+        Console.WriteLine($"  ✓ Offline search resolved game '{offlineGame.GameName}' without online cover url!");
+
+        // 2. DownloadToTempCoverAsync offline: Should return null immediately
+        var offlineTempUri = await GameCoverService.DownloadToTempCoverAsync("NonExistentGame123");
+        if (offlineTempUri != null)
+        {
+            throw new Exception($"FAIL: DownloadToTempCoverAsync offline should return null, got: {offlineTempUri}");
+        }
+        Console.WriteLine("  ✓ DownloadToTempCoverAsync returned null immediately when offline!");
+
+        // 3. DownloadAndProcessCoverAsync offline: Should return null immediately
+        var offlineProcessedCover = await GameCoverService.DownloadAndProcessCoverAsync("NonExistentGame123");
+        if (offlineProcessedCover != null)
+        {
+            throw new Exception($"FAIL: DownloadAndProcessCoverAsync offline should return null, got: {offlineProcessedCover}");
+        }
+        Console.WriteLine("  ✓ DownloadAndProcessCoverAsync returned null immediately when offline!");
+
+        // 4. Verify invalid/corrupt image detection & purge
+        var corruptPath = GameCoverService.GetCoverFilePath("Corrupt Test Game");
+        await File.WriteAllBytesAsync(corruptPath, new byte[0]); // 0-byte file
+        if (GameCoverService.IsValidImageFile(corruptPath))
+        {
+            throw new Exception("FAIL: 0-byte file should not be considered valid image!");
+        }
+        if (GameCoverService.HasLocalCover("Corrupt Test Game"))
+        {
+            throw new Exception("FAIL: HasLocalCover should return false for 0-byte file!");
+        }
+        GameCoverService.PurgeInvalidCovers();
+        if (File.Exists(corruptPath))
+        {
+            throw new Exception("FAIL: PurgeInvalidCovers should have deleted the 0-byte file!");
+        }
+        Console.WriteLine("  ✓ 0-byte/corrupt covers correctly rejected and purged!");
+
+        // 5. GameHistoryEntry.CoverImageSrc safety: remote URL while offline must return null
+        var offlineEntry = new GameHistoryEntry
+        {
+            GameName = "Offline Display Game",
+            CoverUrl = "https://cdn.cloudflare.steamstatic.com/steam/apps/12345/header.jpg"
+        };
+        if (offlineEntry.CoverImageSrc != null)
+        {
+            throw new Exception($"FAIL: CoverImageSrc should return null for remote URL when offline to prevent Edge icon! Got: {offlineEntry.CoverImageSrc}");
+        }
+        Console.WriteLine("  ✓ CoverImageSrc returned null for remote URL while offline (prevents Edge broken icon)!");
+    }
+    finally
+    {
+        GameCoverService.ForceNetworkAvailable = null;
+    }
+
+    // [29] Testing Revert Point Safety on Restore, Revert Execution, Clear Revert, and Delete Cover on Last Snapshot / Game Delete
+    Console.WriteLine("\n[29] Testing Revert Point Safety on Restore, Revert Execution, Clear Revert, and Delete Cover");
+
+    var revertGameName = "Revert Safety Test Game";
+    var revertGameDir = Path.Combine(tempTestDir, "RevertGameSave");
+    Directory.CreateDirectory(revertGameDir);
+    var originalSaveFile = Path.Combine(revertGameDir, "save_slot1.dat");
+    await File.WriteAllTextAsync(originalSaveFile, "Original Save Content Before Restore v1.0");
+
+    var obsoleteFile = Path.Combine(revertGameDir, "obsolete_old_save.tmp");
+    await File.WriteAllTextAsync(obsoleteFile, "This old file should be cleared when restoring new backup");
+
+    // 1. Create a backup for this game with new content
+    var newSaveStageDir = Path.Combine(tempTestDir, "NewSaveStage");
+    Directory.CreateDirectory(newSaveStageDir);
+    await File.WriteAllTextAsync(Path.Combine(newSaveStageDir, "save_slot1.dat"), "New Restored Save Content v2.0");
+
+    var revertGameInfo = new GameSaveInfo
+    {
+        GameName = revertGameName,
+        DetectedPathsOnDisk = new List<string> { newSaveStageDir }
+    };
+    await backupService.BackupGameAsync(revertGameInfo, appSettings);
+    var allGameHistories = await db.GetGameHistoriesAsync();
+    var revertGameHistory = allGameHistories.First(g => g.GameName == revertGameName);
+    var revertDetails = await db.GetHistoryDetailsByGameIdAsync(revertGameHistory.Id);
+    var firstDetail = revertDetails.First();
+
+    // 2. Perform RestoreAsync - Destination has original save file
+    var revertRestoreTarget = new RestoreItemTarget
+    {
+        IsSelected = true,
+        RestoreDestinationPath = revertGameDir,
+        SubFolder = string.Empty
+    };
+
+    // Ensure revert folder exists and put a dummy old revert file to verify only 1 revert version is kept
+    var actualRevertFolder = RevertService.GetRevertDirectory(revertGameName, createIfNotExists: true);
+    var dummyOldRevert = Path.Combine(actualRevertFolder, "revert_20200101_000000.zip");
+    await File.WriteAllTextAsync(dummyOldRevert, "fake old revert content");
+
+    await backupService.RestoreAsync(firstDetail, new List<RestoreItemTarget> { revertRestoreTarget });
+
+    // Verify Revert point was created!
+    if (!RevertService.HasRevertPoint(revertGameName))
+    {
+        throw new Exception("FAIL: Revert point was not created before RestoreAsync overwrote destination!");
+    }
+    var latestRevert = RevertService.GetLatestRevertPoint(revertGameName);
+    if (latestRevert == null || !File.Exists(latestRevert.FilePath))
+    {
+        throw new Exception("FAIL: Latest revert point file does not exist on disk!");
+    }
+    var timeStr = Path.GetFileNameWithoutExtension(latestRevert.FileName)["revert_".Length..];
+    if (latestRevert.CreatedAt.ToString("yyyyMMdd_HHmmss") != timeStr)
+    {
+        throw new Exception($"FAIL: Revert CreatedAt ({latestRevert.CreatedAt:yyyyMMdd_HHmmss}) does not match filename ({timeStr})!");
+    }
+    Console.WriteLine($"  ✓ Safety revert point created and timestamp strictly verified: {latestRevert.FileName} ({latestRevert.FormattedDate})");
+
+    // Verify only 1 single revert version is kept and the old one was purged:
+    var allRevertsOnDisk = Directory.GetFiles(actualRevertFolder, "revert_*.zip");
+    if (allRevertsOnDisk.Length != 1)
+    {
+        throw new Exception($"FAIL: Expected exactly 1 revert zip file for {revertGameName}, but found {allRevertsOnDisk.Length}!");
+    }
+    if (File.Exists(dummyOldRevert))
+    {
+        throw new Exception("FAIL: Old revert file was not purged when new revert point was created!");
+    }
+    Console.WriteLine("  ✓ Verified: Only 1 single revert point is preserved; old revert files are automatically deleted!");
+
+    // Verify the save directory wiped old files and now only has the restored content v2.0
+    if (File.Exists(obsoleteFile))
+    {
+        throw new Exception("FAIL: Obsolete old save file was NOT deleted when restoring new backup!");
+    }
+    Console.WriteLine("  ✓ Verified: Old save directory contents were cleanly wiped before restoring new data!");
+
+    var currentContent = await File.ReadAllTextAsync(originalSaveFile);
+    if (currentContent != "New Restored Save Content v2.0")
+    {
+        throw new Exception($"FAIL: Save file was not restored with v2.0! Got: {currentContent}");
+    }
+    Console.WriteLine("  ✓ Restore successfully applied new data into clean save directory!");
+
+    // 3. Test Revert execution:
+    var revertSuccess = await RevertService.RevertGameSaveAsync(revertGameName);
+    if (!revertSuccess)
+    {
+        throw new Exception("FAIL: RevertGameSaveAsync returned false!");
+    }
+    var revertedContent = await File.ReadAllTextAsync(originalSaveFile);
+    if (revertedContent != "Original Save Content Before Restore v1.0")
+    {
+        throw new Exception($"FAIL: Save file was not reverted back to original v1.0! Got: {revertedContent}");
+    }
+    Console.WriteLine("  ✓ Revert successfully restored original save data before the restore!");
+
+    // 4. Test Revert directory deleted upon successful revert:
+    if (RevertService.HasRevertPoint(revertGameName))
+    {
+        throw new Exception("FAIL: HasRevertPoint should be false immediately after successful RevertGameSaveAsync!");
+    }
+    var revertGameDirCheck = RevertService.GetRevertDirectory(revertGameName);
+    if (Directory.Exists(revertGameDirCheck))
+    {
+        throw new Exception("FAIL: Revert directory should have been deleted after successful RevertGameSaveAsync!");
+    }
+    Console.WriteLine("  ✓ Revert directory was automatically deleted upon successful revert!");
+
+    // 5. Test Delete Cover on Last Snapshot Deletion:
+    // Create a 2nd snapshot for this game
+    await backupService.BackupGameAsync(revertGameInfo, appSettings);
+    var twoSnapshots = await db.GetHistoryDetailsByGameIdAsync(revertGameHistory.Id);
+    if (twoSnapshots.Count != 2)
+    {
+        throw new Exception($"FAIL: Expected 2 snapshots for test game, got {twoSnapshots.Count}");
+    }
+
+    // Create valid fake cover files for this game
+    var validJpegHeader = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01 };
+    var localCoverPath = GameCoverService.GetCoverFilePath(revertGameName);
+    var tempCoverPath = GameCoverService.GetTempCoverFilePath(revertGameName);
+    await File.WriteAllBytesAsync(localCoverPath, validJpegHeader);
+    await File.WriteAllBytesAsync(tempCoverPath, validJpegHeader);
+
+    if (!GameCoverService.HasLocalCover(revertGameName))
+    {
+        throw new Exception("FAIL: Game should have local cover before delete tests!");
+    }
+    Console.WriteLine("  ✓ Local cover placed and validated for game!");
+
+    // Delete Snapshot 1: game still has Snapshot 2 -> cover MUST NOT be deleted!
+    await backupService.DeleteSnapshotWithProgressAsync(twoSnapshots[0]);
+    if (!GameCoverService.HasLocalCover(revertGameName))
+    {
+        throw new Exception("FAIL: Cover was prematurely deleted when remaining snapshots still exist!");
+    }
+    Console.WriteLine("  ✓ Cover preserved when non-last snapshot was deleted!");
+
+    // Delete Snapshot 2 (last remaining snapshot): master row deleted -> cover MUST be deleted!
+    await backupService.DeleteSnapshotWithProgressAsync(twoSnapshots[1]);
+    if (GameCoverService.HasLocalCover(revertGameName) || File.Exists(localCoverPath) || File.Exists(tempCoverPath))
+    {
+        throw new Exception("FAIL: Cover should be deleted when the last remaining snapshot is deleted!");
+    }
+    Console.WriteLine("  ✓ Cover automatically deleted from disk when the last snapshot was deleted!");
+
+    // 6. Test Delete Cover and Revert on Entire Game Delete:
+    var entireGameName = "Entire Delete Test Game";
+    var entireGameDir = Path.Combine(tempTestDir, "EntireGameDir");
+    Directory.CreateDirectory(entireGameDir);
+    await File.WriteAllTextAsync(Path.Combine(entireGameDir, "save.dat"), "Entire Game Save");
+    await backupService.BackupGameAsync(new GameSaveInfo
+    {
+        GameName = entireGameName,
+        DetectedPathsOnDisk = new List<string> { entireGameDir }
+    }, appSettings);
+    var entireCoverPath = GameCoverService.GetCoverFilePath(entireGameName);
+    await File.WriteAllBytesAsync(entireCoverPath, validJpegHeader);
+    
+    // Create a dummy revert file
+    var entireRevertDir = RevertService.GetRevertDirectory(entireGameName);
+    Directory.CreateDirectory(entireRevertDir);
+    await File.WriteAllTextAsync(Path.Combine(entireRevertDir, "revert_20260925_000000.zip"), "mock revert zip");
+
+    var allGames = await db.GetGameHistoriesAsync();
+    var entireHistoryEntry = allGames.First(g => g.GameName == entireGameName);
+
+    await backupService.DeleteGameHistoryWithProgressAsync(entireHistoryEntry);
+
+    if (File.Exists(entireCoverPath) || GameCoverService.HasLocalCover(entireGameName))
+    {
+        throw new Exception("FAIL: Cover should be deleted when entire game history is deleted!");
+    }
+    if (RevertService.HasRevertPoint(entireGameName) || Directory.Exists(entireRevertDir))
+    {
+        throw new Exception("FAIL: Revert directory should be deleted when entire game history is deleted!");
+    }
+    Console.WriteLine("  ✓ Cover and Revert folder automatically deleted when entire game was deleted!");
+
+    // [30] Testing Restore History & Atomic Revert Rollback Workflow
+    Console.WriteLine("\n[30] Testing Restore History & Atomic Revert Rollback Workflow");
+
+    // 1. Verify restore_history recorded for previous successful restore (from Test 29)
+    var test29Histories = await db.GetRestoreHistoryByGameAsync(revertGameName);
+    if (test29Histories.Count == 0)
+    {
+        throw new Exception($"FAIL: restore_history was not recorded for successful restore of {revertGameName}!");
+    }
+    var successRecord = test29Histories.First();
+    if (successRecord.Status != "Success")
+    {
+        throw new Exception($"FAIL: Expected Status='Success', got '{successRecord.Status}'");
+    }
+    if (string.IsNullOrEmpty(successRecord.RevertZipPath))
+    {
+        throw new Exception("FAIL: Expected RevertZipPath to be recorded on successful restore!");
+    }
+    Console.WriteLine($"  ✓ restore_history successfully recorded with Status=Success and RevertZipPath: {successRecord.RevertZipPath}");
+
+    // 2. Test Restore Failure with Automatic Revert Rollback (Step 2.2 -> Step 2.2.2)
+    var autoRevertGame = "AutoRevert Test Game";
+    var autoRevertDir = Path.Combine(tempTestDir, "AutoRevertSaveDir");
+    Directory.CreateDirectory(autoRevertDir);
+    var autoRevertOriginalSave = Path.Combine(autoRevertDir, "important_save.sav");
+    await File.WriteAllTextAsync(autoRevertOriginalSave, "Original Valuable Save Data Before Failed Restore");
+
+    // Create a corrupt backup file (not a valid zip)
+    var corruptBackupZip = Path.Combine(tempTestDir, "corrupt_backup.zip");
+    await File.WriteAllTextAsync(corruptBackupZip, "THIS IS NOT A VALID ZIP FILE - CORRUPT DATA");
+
+    var corruptDetail = new BackupHistoryDetail
+    {
+        GameName = autoRevertGame,
+        BackupPath = corruptBackupZip,
+        IsCompressed = true,
+        FileCount = 1,
+        TotalSizeBytes = 50,
+        BackupDate = DateTime.Now
+    };
+
+    var autoRevertTarget = new RestoreItemTarget
+    {
+        IsSelected = true,
+        RestoreDestinationPath = autoRevertDir,
+        SubFolder = string.Empty
+    };
+
+    bool restoreThrew = false;
+    string caughtMsg = "";
+    try
+    {
+        await backupService.RestoreAsync(corruptDetail, new List<RestoreItemTarget> { autoRevertTarget });
+    }
+    catch (Exception ex)
+    {
+        restoreThrew = true;
+        caughtMsg = ex.Message;
+    }
+
+    if (!restoreThrew)
+    {
+        throw new Exception("FAIL: RestoreAsync with corrupt zip was expected to throw exception!");
+    }
+    Console.WriteLine($"  ✓ Restore failed as expected with message: {caughtMsg}");
+
+    // Verify 2.2.2:
+    // a) Original save file content is preserved intact!
+    var preservedContent = await File.ReadAllTextAsync(autoRevertOriginalSave);
+    if (preservedContent != "Original Valuable Save Data Before Failed Restore")
+    {
+        throw new Exception($"FAIL: Original save was not restored back to original state! Got: {preservedContent}");
+    }
+    Console.WriteLine("  ✓ Original save content preserved intact through automatic revert rollback!");
+
+    // b) File revert was deleted! (rule 2.2.2: nếu restore revert oke thì xóa file revert đó đi)
+    if (RevertService.HasRevertPoint(autoRevertGame))
+    {
+        var remainingRevert = RevertService.GetLatestRevertPoint(autoRevertGame);
+        throw new Exception($"FAIL: Revert zip should have been deleted after successful rollback, but found: {remainingRevert?.FilePath}");
+    }
+    Console.WriteLine("  ✓ Revert zip was cleanly deleted after successful auto-revert rollback!");
+
+    // c) Check restore_history status == 'Failed_Reverted'
+    var autoRevertHistories = await db.GetRestoreHistoryByGameAsync(autoRevertGame);
+    if (autoRevertHistories.Count == 0 || autoRevertHistories[0].Status != "Failed_Reverted")
+    {
+        throw new Exception($"FAIL: Expected restore_history with Status='Failed_Reverted', got: {autoRevertHistories.FirstOrDefault()?.Status}");
+    }
+    if (autoRevertHistories[0].RevertZipPath != null)
+    {
+        throw new Exception($"FAIL: RevertZipPath in restore_history should be null after deletion, got: {autoRevertHistories[0].RevertZipPath}");
+    }
+    Console.WriteLine("  ✓ restore_history recorded Status='Failed_Reverted' with RevertZipPath=null!");
+
+    // 3. Test GetAllRestoreHistoryAsync and DeleteRestoreHistoryAsync
+    var allRestoreHistory = await db.GetAllRestoreHistoryAsync();
+    if (allRestoreHistory.Count < 2)
+    {
+        throw new Exception($"FAIL: Expected at least 2 restore history records, got {allRestoreHistory.Count}");
+    }
+    var idToDelete = autoRevertHistories[0].Id;
+    var deletedOk = await db.DeleteRestoreHistoryAsync(idToDelete);
+    if (!deletedOk)
+    {
+        throw new Exception($"FAIL: DeleteRestoreHistoryAsync returned false for Id={idToDelete}");
+    }
+    var reloadedHistories = await db.GetRestoreHistoryByGameAsync(autoRevertGame);
+    if (reloadedHistories.Any(h => h.Id == idToDelete))
+    {
+        throw new Exception($"FAIL: Record Id={idToDelete} still exists after deletion!");
+    }
+    Console.WriteLine("  ✓ GetAllRestoreHistoryAsync and DeleteRestoreHistoryAsync verified OK!");
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 25 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 30 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally

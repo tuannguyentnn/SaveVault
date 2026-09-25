@@ -57,6 +57,29 @@ public class GameSaveInfo
     public string Source { get; set; } = "Unknown";
     public DateTime? LastScanned { get; set; }
     public string? OnlineCoverUrl { get; set; }
+
+    public string? WikiUrl
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(WikiPageTitle))
+            {
+                if (WikiPageTitle.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                    WikiPageTitle.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    return WikiPageTitle;
+                }
+                return $"https://www.pcgamingwiki.com/wiki/{Uri.EscapeDataString(WikiPageTitle.Trim().Replace(' ', '_'))}";
+            }
+
+            if (Source?.Contains("PCGamingWiki", StringComparison.OrdinalIgnoreCase) == true && !string.IsNullOrWhiteSpace(GameName))
+            {
+                return $"https://www.pcgamingwiki.com/wiki/{Uri.EscapeDataString(GameName.Trim().Replace(' ', '_'))}";
+            }
+
+            return null;
+        }
+    }
 }
 
 public class BackupManifestItem
@@ -498,18 +521,22 @@ public class GameHistoryEntry : INotifyPropertyChanged
     {
         get
         {
-            if (!string.IsNullOrEmpty(CoverPath) && File.Exists(CoverPath))
+            if (!string.IsNullOrEmpty(CoverPath) && File.Exists(CoverPath) && SaveGameBackup.Core.Services.GameCoverService.IsValidImageFile(CoverPath))
             {
                 return SaveGameBackup.Core.Services.GameCoverService.GetCoverImageUri(CoverPath);
             }
             var defaultPath = SaveGameBackup.Core.Services.GameCoverService.GetCoverFilePath(GameName);
-            if (File.Exists(defaultPath))
+            if (File.Exists(defaultPath) && SaveGameBackup.Core.Services.GameCoverService.IsValidImageFile(defaultPath))
             {
                 return SaveGameBackup.Core.Services.GameCoverService.GetCoverImageUri(defaultPath);
             }
-            if (!string.IsNullOrEmpty(CoverUrl))
+            if (!string.IsNullOrEmpty(CoverUrl) && 
+                (CoverUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || CoverUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
             {
-                return SaveGameBackup.Core.Services.GameCoverService.GetCoverImageUri(CoverUrl);
+                if (SaveGameBackup.Core.Services.GameCoverService.IsNetworkAvailable())
+                {
+                    return SaveGameBackup.Core.Services.GameCoverService.GetCoverImageUri(CoverUrl);
+                }
             }
             return null;
         }

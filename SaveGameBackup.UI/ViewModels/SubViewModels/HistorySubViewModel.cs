@@ -56,6 +56,9 @@ public class HistorySubViewModel : INotifyPropertyChanged
         DeleteRecordCommand = new RelayCommand(param => ExecuteDeleteRecord(param as BackupRecord));
         OpenRecordFolderCommand = new RelayCommand(param => ExecuteOpenRecordFolder(param as BackupRecord));
         RefreshHistoryCommand = new RelayCommand(async _ => await RefreshHistoryAsync());
+        SyncMissingCoversCommand = new RelayCommand(async _ => await ExecuteSyncMissingCoversAsync(), _ => !IsSyncingCovers);
+        RevertGameSaveCommand = new RelayCommand(async _ => await ExecuteRevertGameSaveAsync(), _ => HasRevertPoint);
+        ClearRevertPointsCommand = new RelayCommand(_ => ExecuteClearRevertPoints(), _ => HasRevertPoint);
 
         _eventBus.Subscribe<BackupCompletedEvent>(async _ =>
         {
@@ -67,6 +70,22 @@ public class HistorySubViewModel : INotifyPropertyChanged
             await RefreshHistoryAsync();
         });
     }
+
+    private bool _isSyncingCovers;
+    public bool IsSyncingCovers
+    {
+        get => _isSyncingCovers;
+        set
+        {
+            if (SetField(ref _isSyncingCovers, value))
+            {
+                (SyncMissingCoversCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    private CancellationTokenSource? _syncCoversCts;
+    public void CancelSyncCovers() => _syncCoversCts?.Cancel();
 
     public GameHistoryEntry? SelectedGameHistory
     {
@@ -104,6 +123,23 @@ public class HistorySubViewModel : INotifyPropertyChanged
         set => SetField(ref _selectedHistoryGameTitle, value);
     }
 
+    private RevertPointInfo? _currentRevertPoint;
+    public RevertPointInfo? CurrentRevertPoint
+    {
+        get => _currentRevertPoint;
+        set
+        {
+            if (SetField(ref _currentRevertPoint, value))
+            {
+                OnPropertyChanged(nameof(HasRevertPoint));
+                (RevertGameSaveCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (ClearRevertPointsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasRevertPoint => CurrentRevertPoint != null;
+
     public ICommand OpenGameDetailsCommand { get; }
     public bool CanCloseModal => true;
     public ICommand CloseModalCommand { get; }
@@ -113,6 +149,9 @@ public class HistorySubViewModel : INotifyPropertyChanged
     public ICommand DeleteRecordCommand { get; }
     public ICommand OpenRecordFolderCommand { get; }
     public ICommand RefreshHistoryCommand { get; }
+    public ICommand SyncMissingCoversCommand { get; }
+    public ICommand RevertGameSaveCommand { get; }
+    public ICommand ClearRevertPointsCommand { get; }
 
     public async Task RefreshHistoryAsync()
     {
@@ -160,33 +199,107 @@ public class HistorySubViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(GroupedBackupHistory));
             OnPropertyChanged(nameof(BackupHistory));
 
-            // Tự động tìm và tải ảnh bìa thật (Real Cover) cho các game trong lịch sử nếu máy chưa có
-            _ = Task.Run(async () =>
-            {
-                foreach (var entry in entries)
-                {
-                    if (string.IsNullOrEmpty(entry.CoverPath) || !File.Exists(entry.CoverPath))
-                    {
-                        var cover = await GameCoverService.EnsureCoverForGameAsync(entry.GameName);
-                        if (!string.IsNullOrEmpty(cover))
-                        {
-                            entry.CoverPath = cover;
-                            entry.CoverUrl = cover;
-                            try
-                            {
-                                await _databaseService.UpdateCoverPathAsync(entry.GameName, cover);
-                            }
-                            catch { /* Ignore */ }
-                        }
-                    }
-                }
-            });
-
             LoggingService.LogAction("History_Refreshed", new { TotalGames = entries.Count, TotalRecords = rawRecords.Count });
         }
         catch (Exception ex)
         {
             LoggingService.Error(ex, "Lỗi khi làm mới lịch sử: {Message}", ex.Message);
+        }
+    }
+
+    public async Task ExecuteSyncMissingCoversAsync()
+    {
+        if (IsSyncingCovers) return;
+
+        if (!GameCoverService.IsNetworkAvailable())
+        {
+            _dialogService.ShowMessage("Không Có Kết Nối Mạng", "Vui lòng kết nối internet để thực hiện đồng bộ ảnh bìa cho các game.", "Warning");
+            return;
+        }
+
+        // 1. Quét tìm danh sách các game chưa có ảnh hợp lệ trên máy
+        var missingGames = GameHistories
+            .Where(g => !GameCoverService.HasLocalCover(g.GameName))
+            .ToList();
+
+        if (missingGames.Count == 0)
+        {
+            _dialogService.ShowMessage("Đồng Bộ Ảnh Game", "Tất cả các tựa game trong lịch sử sao lưu đã có ảnh bìa đầy đủ!", "Information");
+            return;
+        }
+
+        IsSyncingCovers = true;
+        _syncCoversCts = new CancellationTokenSource();
+        int total = missingGames.Count;
+        int successCount = 0;
+
+        _dialogService.ShowProgress(
+            "Đồng Bộ Ảnh Bìa Game",
+            $"Đang chuẩn bị tìm ảnh cho {total} tựa game...",
+            0,
+            subText: $"0/{total}",
+            onCancel: () => CancelSyncCovers());
+
+        try
+        {
+            for (int i = 0; i < total; i++)
+            {
+                if (_syncCoversCts.IsCancellationRequested) break;
+
+                var entry = missingGames[i];
+                int currentPercent = (int)((i * 100.0) / total);
+                _dialogService.UpdateProgress(currentPercent, $"Đang tìm và tải ảnh bìa cho '{entry.GameName}'...", $"{i + 1}/{total}");
+
+                try
+                {
+                    var cover = await GameCoverService.EnsureCoverForGameAsync(entry.GameName, cancellationToken: _syncCoversCts.Token);
+                    if (!string.IsNullOrEmpty(cover) && GameCoverService.IsValidImageFile(cover))
+                    {
+                        entry.CoverPath = cover;
+                        entry.CoverUrl = cover;
+                        await _databaseService.UpdateCoverPathAsync(entry.GameName, cover);
+                        successCount++;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    LoggingService.Warn("Lỗi tải ảnh game '{Game}' trong đồng bộ: {Message}", entry.GameName, ex.Message);
+                }
+            }
+
+            _dialogService.CloseProgress();
+
+            if (_syncCoversCts.IsCancellationRequested)
+            {
+                _dialogService.ShowMessage("Đồng Bộ Ảnh Game", $"Đã dừng đồng bộ theo yêu cầu. Đã hoàn tất {successCount}/{total} tựa game.", "Information");
+            }
+            else
+            {
+                _dialogService.ShowMessage("Đồng Bộ Hoàn Tất", $"Đã đồng bộ thành công {successCount}/{total} ảnh bìa game!", "Success");
+            }
+
+            OnPropertyChanged(nameof(GameHistories));
+        }
+        catch (OperationCanceledException)
+        {
+            _dialogService.CloseProgress();
+            _dialogService.ShowMessage("Đồng Bộ Ảnh Game", $"Đã dừng đồng bộ theo yêu cầu. Đã hoàn tất {successCount}/{total} tựa game.", "Information");
+        }
+        catch (Exception ex)
+        {
+            _dialogService.CloseProgress();
+            LoggingService.Error(ex, "Lỗi xảy ra trong quá trình đồng bộ ảnh game");
+            _dialogService.ShowMessage("Lỗi Đồng Bộ", $"Đã xảy ra lỗi: {ex.Message}", "Error");
+        }
+        finally
+        {
+            _syncCoversCts?.Dispose();
+            _syncCoversCts = null;
+            IsSyncingCovers = false;
         }
     }
 
@@ -206,6 +319,8 @@ public class HistorySubViewModel : INotifyPropertyChanged
         if (entry == null) return;
 
         SelectedHistoryGameTitle = entry.GameName;
+        SelectedGameHistory = entry;
+        RefreshCurrentRevertPoint(entry.GameName);
         CurrentHistoryDetails.Clear();
 
         try
@@ -230,6 +345,87 @@ public class HistorySubViewModel : INotifyPropertyChanged
     {
         IsHistoryDetailsModalOpen = false;
         LoggingService.LogAction("Close_Game_Snapshots_Modal");
+    }
+
+    public void RefreshCurrentRevertPoint(string? gameName = null)
+    {
+        var name = gameName ?? SelectedHistoryGameTitle ?? SelectedGameHistory?.GameName;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            CurrentRevertPoint = null;
+        }
+        else
+        {
+            CurrentRevertPoint = RevertService.GetLatestRevertPoint(name);
+        }
+    }
+
+    public async Task ExecuteRevertGameSaveAsync()
+    {
+        var gameName = SelectedHistoryGameTitle ?? SelectedGameHistory?.GameName;
+        if (string.IsNullOrWhiteSpace(gameName)) return;
+
+        var revertPoint = CurrentRevertPoint ?? RevertService.GetLatestRevertPoint(gameName);
+        if (revertPoint == null)
+        {
+            _dialogService.ShowMessage("Hoàn Tác Save Game", "Không tìm thấy điểm hoàn tác nào khả dụng cho game này.", "Warning");
+            return;
+        }
+
+        _dialogService.ShowConfirm(
+            "Xác Nhận Hoàn Tác (Revert)",
+            $"Bạn có chắc chắn muốn hoàn tác save game '{gameName}' về trạng thái trước lần Restore gần nhất ({revertPoint.FormattedDate})?\n\nToàn bộ dữ liệu save hiện tại của game sẽ được thay thế bằng dữ liệu an toàn này.",
+            revertPoint.FilePath,
+            async () =>
+            {
+                _dialogService.ShowProgress("Đang Hoàn Tác Save Game", "Đang khôi phục lại dữ liệu từ điểm hoàn tác...", 15);
+                var progress = new Progress<BackupProgress>(p =>
+                {
+                    _dialogService.UpdateProgress(p.Percent, p.Message);
+                });
+
+                try
+                {
+                    await RevertService.RevertGameSaveAsync(gameName, revertPoint.FilePath, progress);
+                    _dialogService.CloseProgress();
+                    _dialogService.ShowMessage("Hoàn Tác Thành Công", $"Đã khôi phục thành công dữ liệu save game '{gameName}' về trạng thái trước khi Restore!", "Success");
+                }
+                catch (Exception ex)
+                {
+                    _dialogService.CloseProgress();
+                    LoggingService.Error(ex, "Lỗi khi hoàn tác save game {Game}: {Message}", gameName, ex.Message);
+                    _dialogService.ShowMessage("Lỗi Hoàn Tác", $"Không thể hoàn tác save game: {ex.Message}", "Error");
+                }
+            });
+    }
+
+    public void ExecuteClearRevertPoints()
+    {
+        var gameName = SelectedHistoryGameTitle ?? SelectedGameHistory?.GameName;
+        if (string.IsNullOrWhiteSpace(gameName)) return;
+
+        var revertPoint = CurrentRevertPoint ?? RevertService.GetLatestRevertPoint(gameName);
+        if (revertPoint == null) return;
+
+        _dialogService.ShowConfirm(
+            "Xác Nhận Xóa Bản Hoàn Tác",
+            $"Bạn có chắc chắn muốn xóa bản nén hoàn tác của game '{gameName}' ({revertPoint.DisplaySize})?\n\nSau khi xóa, bạn sẽ giải phóng dung lượng ổ đĩa nhưng không thể tự động hoàn tác lại bản save cũ này được nữa.",
+            revertPoint.FilePath,
+            () =>
+            {
+                try
+                {
+                    RevertService.ClearRevertPoints(gameName);
+                    RefreshCurrentRevertPoint(gameName);
+                    _dialogService.ShowMessage("Đã Dọn Dẹp", $"Đã xóa sạch bản nén hoàn tác của game '{gameName}'.", "Success");
+                }
+                catch (Exception ex)
+                {
+                    LoggingService.Error(ex, "Lỗi khi xóa bản hoàn tác của {Game}: {Message}", gameName, ex.Message);
+                    _dialogService.ShowMessage("Lỗi", $"Không thể xóa bản hoàn tác: {ex.Message}", "Error");
+                }
+                return Task.CompletedTask;
+            });
     }
 
     public void RequestDeleteHistoryDetail(BackupHistoryDetail? detail)

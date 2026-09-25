@@ -13,20 +13,17 @@ public class GameSearchCoordinator
     private readonly DatabaseService _databaseService;
     private readonly PCGamingWikiService _wikiService;
     private readonly PathResolverService _pathResolver;
-    private readonly KnownGameCatalogService _catalogService;
     private readonly LudusaviManifestService _ludusaviService;
 
     public GameSearchCoordinator(
         DatabaseService databaseService,
         PCGamingWikiService? wikiService = null,
         PathResolverService? pathResolver = null,
-        KnownGameCatalogService? catalogService = null,
         LudusaviManifestService? ludusaviService = null)
     {
         _databaseService = databaseService;
         _wikiService = wikiService ?? new PCGamingWikiService();
         _pathResolver = pathResolver ?? new PathResolverService();
-        _catalogService = catalogService ?? new KnownGameCatalogService();
         _ludusaviService = ludusaviService ?? new LudusaviManifestService();
     }
 
@@ -64,76 +61,80 @@ public class GameSearchCoordinator
             gameInfo = cachedGame;
         }
 
-        // Step 2: Nếu chưa có trong SQLite Cache, tìm trên PCGamingWiki
+        // Step 2: Nếu chưa có trong SQLite Cache, tìm trên PCGamingWiki (chỉ khi có mạng)
         if (gameInfo == null)
         {
-            statusProgress?.Report($"Đang tìm kiếm thông tin game '{cleanQuery}' trên PCGamingWiki...");
-            LoggingService.LogAction("Search_Check_Source", new { Query = cleanQuery, Source = "PCGamingWiki" });
-
-            var candidates = await _wikiService.FindPageTitlesAsync(cleanQuery, limit: 5, cancellationToken);
-            string? chosenTitle = null;
-
-            if (candidates.Count == 0)
+            if (!GameCoverService.IsNetworkAvailable())
             {
-                LoggingService.LogAction("Search_Source_Missed", new { Query = cleanQuery, Source = "PCGamingWiki", Reason = "No candidates found" });
+                LoggingService.LogAction("Search_Offline_Mode", new { Query = cleanQuery, Reason = "No network available" });
+                statusProgress?.Report($"Không có kết nối mạng. Đang tìm kiếm trong cơ sở dữ liệu offline (Ludusavi Manifest)...");
             }
             else
             {
-                // Luôn hiển thị dropdownlist cho chọn game kể cả khi chỉ có 1 game
-                if (candidateChooser != null)
+                statusProgress?.Report($"Đang tìm kiếm thông tin game '{cleanQuery}' trên PCGamingWiki...");
+                LoggingService.LogAction("Search_Check_Source", new { Query = cleanQuery, Source = "PCGamingWiki" });
+
+                var candidates = await _wikiService.FindPageTitlesAsync(cleanQuery, limit: 5, cancellationToken);
+                string? chosenTitle = null;
+
+                if (candidates.Count == 0)
                 {
-                    statusProgress?.Report($"Tìm thấy {candidates.Count} tựa game phù hợp trên PCGamingWiki. Đang chờ bạn chọn...");
-                    chosenTitle = await candidateChooser(candidates);
-                    if (string.IsNullOrWhiteSpace(chosenTitle))
-                    {
-                        // Người dùng đã hủy chọn
-                        LoggingService.LogAction("Search_Cancelled_By_User", new { Query = cleanQuery });
-                        statusProgress?.Report("Đã hủy tìm kiếm.");
-                        return null;
-                    }
+                    LoggingService.LogAction("Search_Source_Missed", new { Query = cleanQuery, Source = "PCGamingWiki", Reason = "No candidates found" });
                 }
                 else
                 {
-                    // Mặc định chọn kết quả đầu tiên nếu không có UI chooser
-                    chosenTitle = candidates[0];
-                }
-            }
-
-            if (!string.IsNullOrEmpty(chosenTitle))
-            {
-                statusProgress?.Report($"Đang tải dữ liệu cấu hình save & ảnh cho '{chosenTitle}' từ PCGamingWiki...");
-                var onlineInfo = await _wikiService.FetchPageSaveDataAsync(chosenTitle, cleanQuery, cancellationToken);
-                if (onlineInfo != null && onlineInfo.RawPatterns.Count > 0)
-                {
-                    LoggingService.LogAction("Search_Source_Found", new
+                    // Luôn hiển thị dropdownlist cho chọn game kể cả khi chỉ có 1 game
+                    if (candidateChooser != null)
                     {
-                        Query = cleanQuery,
-                        Source = "PCGamingWiki",
-                        GameName = onlineInfo.GameName,
-                        WikiTitle = onlineInfo.WikiPageTitle,
-                        PatternsCount = onlineInfo.RawPatterns.Count
-                    });
+                        statusProgress?.Report($"Tìm thấy {candidates.Count} tựa game phù hợp trên PCGamingWiki. Đang chờ bạn chọn...");
+                        chosenTitle = await candidateChooser(candidates);
+                        if (string.IsNullOrWhiteSpace(chosenTitle))
+                        {
+                            // Người dùng đã hủy chọn
+                            LoggingService.LogAction("Search_Cancelled_By_User", new { Query = cleanQuery });
+                            statusProgress?.Report("Đã hủy tìm kiếm.");
+                            return null;
+                        }
+                    }
+                    else
+                    {
+                        // Mặc định chọn kết quả đầu tiên nếu không có UI chooser
+                        chosenTitle = candidates[0];
+                    }
+                }
 
-                    gameInfo = onlineInfo;
+                if (!string.IsNullOrEmpty(chosenTitle))
+                {
+                    statusProgress?.Report($"Đang tải dữ liệu cấu hình save & ảnh cho '{chosenTitle}' từ PCGamingWiki...");
+                    var onlineInfo = await _wikiService.FetchPageSaveDataAsync(chosenTitle, cleanQuery, cancellationToken);
+                    if (onlineInfo != null && onlineInfo.RawPatterns.Count > 0)
+                    {
+                        LoggingService.LogAction("Search_Source_Found", new
+                        {
+                            Query = cleanQuery,
+                            Source = "PCGamingWiki",
+                            GameName = onlineInfo.GameName,
+                            WikiTitle = onlineInfo.WikiPageTitle,
+                            PatternsCount = onlineInfo.RawPatterns.Count
+                        });
+
+                        gameInfo = onlineInfo;
+                    }
                 }
             }
         }
 
-        // Step 2.5: Fallback offline khi PCGamingWiki không có hoặc không có mạng
+        // Step 2.5: Fallback offline khi PCGamingWiki không có hoặc không có mạng (Dùng Ludusavi)
         if (gameInfo == null)
         {
-            var catalogGame = _catalogService.CreateGameSaveInfoFromCatalog(cleanQuery);
-            if (catalogGame != null && catalogGame.RawPatterns.Count > 0)
+            var ludusaviGame = _ludusaviService.CreateGameSaveInfo(cleanQuery);
+            if (ludusaviGame != null && ludusaviGame.RawPatterns.Count > 0)
             {
-                gameInfo = catalogGame;
-            }
-            else
-            {
-                var ludusaviGame = _ludusaviService.CreateGameSaveInfo(cleanQuery);
-                if (ludusaviGame != null && ludusaviGame.RawPatterns.Count > 0)
+                if (!GameCoverService.IsNetworkAvailable())
                 {
-                    gameInfo = ludusaviGame;
+                    ludusaviGame.OnlineCoverUrl = null;
                 }
+                gameInfo = ludusaviGame;
             }
         }
 

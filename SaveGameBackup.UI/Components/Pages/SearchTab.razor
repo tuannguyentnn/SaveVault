@@ -138,10 +138,27 @@
                             @if (SearchVM.HasGame && SearchVM.CurrentGame != null &&
                             !string.IsNullOrEmpty(SearchVM.CurrentGame.Source))
                             {
-                                <span
-                                    style="font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background-color: #0A101E; border: 1px solid #1E3A8A; color: #60A5FA;">
-                                    Nguồn: @SearchVM.CurrentGame.Source
-                                </span>
+                                @if (!string.IsNullOrEmpty(SearchVM.CurrentGame.WikiUrl))
+                                {
+                                    <button type="button"
+                                            @onclick="() => SearchVM.OpenWikiPage()"
+                                            title="Nhấp để mở trang web PCGamingWiki (@SearchVM.CurrentGame.WikiUrl)"
+                                            class="inline-flex items-center space-x-1.5 transition-all duration-150 cursor-pointer hover:bg-[#1E293B] hover:border-cyan-500 hover:text-cyan-300 group"
+                                            style="font-size: 10px; font-weight: 700; padding: 2.5px 8px; border-radius: 4px; background-color: #0A101E; border: 1px solid #1E3A8A; color: #60A5FA;">
+                                        <span>Nguồn: @SearchVM.CurrentGame.Source</span>
+                                        <svg class="w-2.5 h-2.5 text-blue-400 group-hover:text-cyan-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" 
+                                             fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span
+                                        style="font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background-color: #0A101E; border: 1px solid #1E3A8A; color: #60A5FA;">
+                                        Nguồn: @SearchVM.CurrentGame.Source
+                                    </span>
+                                }
                             }
                         </div>
                         <button type="button" class="sv-btn-dark sv-btn-sm"

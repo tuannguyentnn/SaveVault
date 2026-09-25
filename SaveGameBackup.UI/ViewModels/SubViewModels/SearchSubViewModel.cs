@@ -318,37 +318,53 @@ public class SearchSubViewModel : INotifyPropertyChanged
                 (SearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
 
-            // Tải ảnh bìa về Temp/covers/ và lấy URI ảo cục bộ https://tempcovers.local/{fileName}
-            // Ưu tiên PCGamingWiki trước -> Steam sau. Hoàn toàn không dùng Base64.
-            try
+            // Nếu không có mạng: hoàn toàn không cần tải hình cover online
+            if (!GameCoverService.IsNetworkAvailable())
             {
-                var tempUri = await GameCoverService.DownloadToTempCoverAsync(
-                    gameInfo.GameName,
-                    gameInfo.OnlineCoverUrl,
-                    gameInfo.SteamAppId,
-                    ct);
-
-                if (epoch != _searchEpoch) return;
-
-                OnlineCoverUrl = tempUri;
-                if (!string.IsNullOrEmpty(tempUri))
+                if (GameCoverService.HasLocalCover(gameInfo.GameName))
                 {
-                    if (string.IsNullOrEmpty(gameInfo.OnlineCoverUrl) || gameInfo.OnlineCoverUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
+                    var localFile = GameCoverService.GetCoverFilePath(gameInfo.GameName);
+                    OnlineCoverUrl = GameCoverService.GetCoverImageUri(localFile);
+                }
+                else
+                {
+                    OnlineCoverUrl = null;
+                    gameInfo.OnlineCoverUrl = null;
+                }
+            }
+            else
+            {
+                // Có mạng: Tải ảnh bìa về Temp/covers/ và lấy URI ảo cục bộ https://tempcovers.local/{fileName}
+                try
+                {
+                    var tempUri = await GameCoverService.DownloadToTempCoverAsync(
+                        gameInfo.GameName,
+                        gameInfo.OnlineCoverUrl,
+                        gameInfo.SteamAppId,
+                        ct);
+
+                    if (epoch != _searchEpoch) return;
+
+                    OnlineCoverUrl = tempUri;
+                    if (!string.IsNullOrEmpty(tempUri))
                     {
-                        var realWebUrl = await GameCoverService.FindOnlineCoverUrlAsync(gameInfo.GameName, gameInfo.SteamAppId, ct);
-                        if (!string.IsNullOrEmpty(realWebUrl) && !realWebUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
+                        if (string.IsNullOrEmpty(gameInfo.OnlineCoverUrl) || gameInfo.OnlineCoverUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
                         {
-                            gameInfo.OnlineCoverUrl = realWebUrl;
+                            var realWebUrl = await GameCoverService.FindOnlineCoverUrlAsync(gameInfo.GameName, gameInfo.SteamAppId, ct);
+                            if (!string.IsNullOrEmpty(realWebUrl) && !realWebUrl.Contains(".local", StringComparison.OrdinalIgnoreCase))
+                            {
+                                gameInfo.OnlineCoverUrl = realWebUrl;
+                            }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                LoggingService.Warn("Lỗi tải ảnh cover tạm cho {Game}: {Message}", gameInfo.GameName, ex.Message);
-                if (epoch == _searchEpoch)
+                catch (Exception ex)
                 {
-                    OnlineCoverUrl = null;
+                    LoggingService.Warn("Lỗi tải ảnh cover tạm cho {Game}: {Message}", gameInfo.GameName, ex.Message);
+                    if (epoch == _searchEpoch)
+                    {
+                        OnlineCoverUrl = null;
+                    }
                 }
             }
 
@@ -534,6 +550,26 @@ public class SearchSubViewModel : INotifyPropertyChanged
         }
     }
 
+    public void OpenWikiPage()
+    {
+        var url = CurrentGame?.WikiUrl;
+        if (string.IsNullOrWhiteSpace(url)) return;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+            LoggingService.LogAction("Open_PCGamingWiki_Web", new { Url = url, Game = CurrentGame?.GameName });
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(ex, "Không thể mở trang PCGamingWiki: {Url}", url);
+        }
+    }
+
     private void ExecuteRemoveDetectedPath(DetectedPathItem? item)
     {
         if (item == null) return;
@@ -588,6 +624,21 @@ public class SearchSubViewModel : INotifyPropertyChanged
             {
                 try
                 {
+                    if (!GameCoverService.IsNetworkAvailable())
+                    {
+                        if (GameCoverService.HasLocalCover(CurrentGame.GameName))
+                        {
+                            var localFile = GameCoverService.GetCoverFilePath(CurrentGame.GameName);
+                            var localUri = GameCoverService.GetCoverImageUri(localFile);
+                            if (CurrentGame != null && CurrentGame.GameName == newName.Trim())
+                            {
+                                OnlineCoverUrl = localUri;
+                                CurrentGame.OnlineCoverUrl = localUri;
+                            }
+                        }
+                        return;
+                    }
+
                     var tempUri = await GameCoverService.DownloadToTempCoverAsync(CurrentGame.GameName);
                     if (CurrentGame != null && CurrentGame.GameName == newName.Trim())
                     {
@@ -598,6 +649,119 @@ public class SearchSubViewModel : INotifyPropertyChanged
                 catch { }
             });
         }
+    }
+
+    /// <summary>
+    /// Nạp dữ liệu cấu hình trực tiếp từ một bản snapshot cụ thể (BackupHistoryDetail) lên giao diện Tab 1.
+    /// Hoạt động 100% offline, không gọi API online, không truy cập Cache, nạp chính xác danh sách SavePathsList của bản đó.
+    /// </summary>
+    public Task LoadGameFromDetailAsync(BackupHistoryDetail detail)
+    {
+        if (detail == null || string.IsNullOrWhiteSpace(detail.GameName)) return Task.CompletedTask;
+
+        ClearPreviousDetectedPaths();
+
+        var gameName = detail.GameName;
+        _searchQuery = gameName;
+        OnPropertyChanged(nameof(SearchQuery));
+        (SearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
+
+        StatusMessage = $"Đang nạp cấu hình bản sao lưu ngày {detail.BackupDate:dd/MM/yyyy HH:mm:ss} cho '{gameName}'...";
+
+        try
+        {
+            var paths = new List<string>(detail.SavePathsList);
+            if (paths.Count == 0 && !string.IsNullOrWhiteSpace(detail.SourcePath))
+            {
+                paths.Add(detail.SourcePath);
+            }
+
+            // 1. Kiểm tra các thư mục/tệp tin thực tế trên đĩa
+            var detectedItems = new List<DetectedPathItem>();
+            foreach (var p in paths)
+            {
+                var item = InspectPath(p);
+                item.PropertyChanged += DetectedPathItem_PropertyChanged;
+                detectedItems.Add(item);
+                DetectedPathItems.Add(item);
+                DetectedPathsList.Add(item.Path);
+                OnlinePatternsList.Add(p);
+            }
+
+            // 2. Nạp ảnh bìa cục bộ (ưu tiên Covers/ -> Temp/covers/)
+            string? coverUri = null;
+            if (!string.IsNullOrEmpty(detail.CoverPath) && File.Exists(detail.CoverPath))
+            {
+                coverUri = GameCoverService.GetCoverImageUri(detail.CoverPath);
+            }
+            else
+            {
+                var localCover = GameCoverService.GetCoverFilePath(gameName);
+                if (File.Exists(localCover))
+                {
+                    coverUri = GameCoverService.GetCoverImageUri(localCover);
+                }
+                else
+                {
+                    var tempCover = GameCoverService.GetTempCoverFilePath(gameName);
+                    if (File.Exists(tempCover))
+                    {
+                        coverUri = GameCoverService.GetTempCoverImageUri(tempCover);
+                    }
+                }
+            }
+
+            OnlineCoverUrl = coverUri;
+
+            // 3. Tạo GameSaveInfo và nạp vào ViewModel
+            var gameInfo = new GameSaveInfo
+            {
+                GameName = gameName,
+                Source = "Chi tiết lịch sử sao lưu",
+                RawPatterns = paths,
+                ResolvedPaths = paths,
+                DetectedPathItems = detectedItems,
+                DetectedPathsOnDisk = detectedItems.Select(i => i.Path).ToList(),
+                TotalSizeBytes = detectedItems.Sum(i => i.TotalSizeBytes),
+                FileCount = detectedItems.Sum(i => i.FileCount),
+                OnlineCoverUrl = coverUri,
+                LastScanned = DateTime.Now
+            };
+
+            CurrentGame = gameInfo;
+            DetectedSizeFormatted = FormatBytes(gameInfo.TotalSizeBytes);
+            DetectedFileCount = gameInfo.FileCount;
+            IsGameFoundOnDisk = DetectedPathItems.Count > 0;
+
+            UpdateSelectedPathsStats();
+
+            if (IsGameFoundOnDisk)
+            {
+                StatusMessage = $"Đã nạp {DetectedPathItems.Count} vị trí lưu từ bản sao lưu {detail.BackupDate:dd/MM/yyyy HH:mm:ss} ({DetectedFileCount} tệp, {DetectedSizeFormatted}). Sẵn sàng sao lưu!";
+            }
+            else
+            {
+                StatusMessage = $"Đã nạp thông tin từ bản sao lưu {detail.BackupDate:dd/MM/yyyy HH:mm:ss}, nhưng chưa thấy file save thực tế trên các ổ đĩa của bạn.";
+            }
+
+            _eventBus.Publish(new GameSelectedForBackupEvent(gameName));
+
+            LoggingService.LogAction("Detail_Snapshot_Loaded_For_Backup", new
+            {
+                GameName = gameName,
+                DetailId = detail.Id,
+                detail.BackupDate,
+                PathsCount = paths.Count,
+                DetectedCount = detectedItems.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi nạp cấu hình từ bản sao lưu: {ex.Message}";
+            LoggingService.Error(ex, "Lỗi nạp game từ snapshot chi tiết cho {Game}: {Message}", gameName, ex.Message);
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -621,7 +785,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
         {
             // 1. Lấy snapshot mới nhất của game từ SQLite
             var details = await _databaseService.GetHistoryDetailsByGameIdAsync(historyEntry.Id);
-            var latestSnapshot = details?.OrderByDescending(s => s.BackupDate).FirstOrDefault();
+            var latestSnapshot = details?.OrderByDescending(s => s.BackupDate).ThenByDescending(s => s.Id).FirstOrDefault();
 
             var paths = new List<string>();
             if (latestSnapshot != null && latestSnapshot.SavePathsList.Count > 0)

@@ -12,7 +12,7 @@ public interface IBackupHistoryRepository
     Task<List<BackupHistoryDetail>> GetHistoryDetailsByGameIdAsync(long gameHistoryId);
     Task UpdateCloudSyncDetailAsync(long detailId, bool isSynced, string provider, string fileId, string fileName, DateTime? syncDate, string? cloudSyncJson = null, string? backupPathJson = null);
     Task UpdateSnapshotLocationsAsync(long detailId, BackupHistoryDetail detail);
-    Task DeleteHistoryDetailAsync(long detailId, long gameHistoryId);
+    Task<bool> DeleteHistoryDetailAsync(long detailId, long gameHistoryId);
     Task DeleteGameHistoryAsync(long gameHistoryId);
     Task<List<BackupRecord>> GetBackupHistoryAsync();
     Task DeleteBackupRecordAsync(long id);
@@ -436,7 +436,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         });
     }
 
-    public async Task DeleteHistoryDetailAsync(long detailId, long gameHistoryId)
+    public async Task<bool> DeleteHistoryDetailAsync(long detailId, long gameHistoryId)
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
         using var transaction = connection.BeginTransaction();
@@ -511,6 +511,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
             }
 
             transaction.Commit();
+            return stats.Count == 0;
         }
         catch
         {

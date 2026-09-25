@@ -7,6 +7,8 @@
 @if (RestoreVM.IsRestoreModalOpen || DialogService.IsRestoreModalOpen)
 {
     var activeDetail = RestoreVM.ActiveRestoreDetail ?? DialogService.ActiveRestoreDetail;
+    var restoreGameName = activeDetail?.GameName ?? RestoreVM.ActiveRestoreRecord?.GameName ?? "";
+    var existingRevert = !string.IsNullOrEmpty(restoreGameName) ? RevertService.GetLatestRevertPoint(restoreGameName) : null;
     var restoreItems = (RestoreVM.ActiveRestoreItems.Count > 0 
         ? RestoreVM.ActiveRestoreItems 
         : (IEnumerable<RestoreItemTarget>)DialogService.ActiveRestoreItems).ToList();
@@ -19,7 +21,7 @@
     var isOneDrive = string.Equals(cloudProvider, "OneDrive", StringComparison.OrdinalIgnoreCase);
 
     <div class="modal-backdrop z-50">
-        <div class="modal-content w-full max-w-3xl border-2 border-emerald-500 flex flex-col max-h-[85vh] shadow-2xl bg-[#0F172A]">
+        <div class="modal-content w-full max-w-4xl border-2 border-emerald-500 flex flex-col max-h-[88vh] shadow-2xl bg-[#0F172A]">
             @if (RestoreStep == 1)
             {
                 <!-- ================= BƯỚC 1: CHỌN MỤC & ĐƯỜNG DẪN ================= -->
@@ -67,6 +69,36 @@
                         ✕
                     </button>
                 </div>
+
+                <!-- Revert Alert Bar nếu game đã từng có bản hoàn tác trước đó -->
+                @if (existingRevert != null)
+                {
+                    <div class="bg-gradient-to-r from-amber-950/60 via-slate-900 to-[#0F172A] border-b border-amber-500/40 px-6 py-2.5 flex items-center justify-between flex-shrink-0">
+                        <div class="flex items-center space-x-2.5 text-[12px] text-amber-200">
+                            <span class="text-base flex-shrink-0">🛡️</span>
+                            <div>
+                                <span class="font-bold text-amber-300">Đã có Điểm Hoàn Tác (Revert Point) an toàn:</span>
+                                <span class="font-mono text-white ml-1">@existingRevert.FormattedDate</span>
+                                <span class="text-amber-300 font-mono font-semibold ml-1">(@existingRevert.DisplaySize)</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button class="h-[28px] px-3 text-[11px] font-bold text-white rounded bg-amber-600 hover:bg-amber-500 border border-amber-400 transition-all flex items-center space-x-1 cursor-pointer shadow-sm active:scale-95"
+                                    disabled="@RestoreVM.IsModalRestoring"
+                                    @onclick="() => ExecuteRevertFromRestoreModal(restoreGameName, existingRevert)">
+                                <span>🔄</span>
+                                <span>Hoàn Tác Save Cũ Này</span>
+                            </button>
+                            <button class="h-[28px] px-2.5 text-[11px] font-medium text-slate-300 rounded bg-slate-800 hover:bg-red-950/40 hover:text-red-300 border border-slate-600 hover:border-red-500/50 transition-all flex items-center space-x-1 cursor-pointer shadow-sm active:scale-95"
+                                    disabled="@RestoreVM.IsModalRestoring"
+                                    @onclick="() => ExecuteClearRevertFromRestoreModal(restoreGameName, existingRevert)"
+                                    title="Xóa bản nén hoàn tác này để giải phóng dung lượng đĩa">
+                                <span>🧹</span>
+                                <span>Xóa Revert</span>
+                            </button>
+                        </div>
+                    </div>
+                }
 
                 <!-- Instruction & Toolbar (Image 4.JPG) -->
                 <div class="bg-[#0F172A] border-b border-[#1E293B] px-6 py-3 flex items-center justify-between flex-shrink-0">
@@ -298,19 +330,21 @@
                         <span>⬅ Quay Lại</span>
                     </button>
 
-                    <button class="btn-success py-2 px-6 text-[12.5px] font-bold flex items-center space-x-2 bg-emerald-600 border-emerald-500 hover:bg-emerald-700 text-white rounded-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                            disabled="@RestoreVM.IsModalRestoring"
-                            @onclick="ConfirmRestore">
-                        @if (RestoreVM.IsModalRestoring)
-                        {
-                            <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
-                            <span>Đang Khôi Phục...</span>
-                        }
-                        else
-                        {
-                            <span>⚡ Xác Nhận Khôi Phục</span>
-                        }
-                    </button>
+                    <div class="flex items-center space-x-2.5">
+                        <button class="btn-success py-2 px-6 text-[12.5px] font-bold flex items-center space-x-2 bg-emerald-600 border-emerald-500 hover:bg-emerald-700 text-white rounded-lg shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled="@RestoreVM.IsModalRestoring"
+                                @onclick="ConfirmRestore">
+                            @if (RestoreVM.IsModalRestoring)
+                            {
+                                <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
+                                <span>Đang Khôi Phục...</span>
+                            }
+                            else
+                            {
+                                <span>⚡ Xác Nhận Khôi Phục</span>
+                            }
+                        </button>
+                    </div>
                 </div>
             }
         </div>
@@ -356,15 +390,96 @@
 
     private async Task ConfirmRestore()
     {
-        await RestoreVM.ExecuteModalRestoreConfirmAsync();
-        RestoreStep = 1;
+        try
+        {
+            await RestoreVM.ExecuteModalRestoreConfirmAsync();
+        }
+        finally
+        {
+            CloseModal();
+        }
+    }
+
+    private void ExecuteRevertFromRestoreModal(string gameName, RevertPointInfo revertPoint)
+    {
+        if (string.IsNullOrWhiteSpace(gameName) || revertPoint == null) return;
+
+        DialogService.ShowConfirm(
+            "Xác Nhận Hoàn Tác (Revert)",
+            $"Bạn có chắc chắn muốn hoàn tác save game '{gameName}' về trạng thái trước lần Restore gần nhất ({revertPoint.FormattedDate})?\n\nToàn bộ dữ liệu save hiện tại của game sẽ được thay thế bằng dữ liệu an toàn này.",
+            revertPoint.FilePath,
+            async () =>
+            {
+                DialogService.ShowProgress("Đang Hoàn Tác Save Game", "Đang khôi phục lại dữ liệu từ điểm hoàn tác...", 15);
+                var progress = new Progress<BackupProgress>(p =>
+                {
+                    DialogService.UpdateProgress(p.Percent, p.Message);
+                });
+
+                try
+                {
+                    await RevertService.RevertGameSaveAsync(gameName, revertPoint.FilePath, progress);
+
+                    try
+                    {
+                        var dbRecord = new RestoreHistoryRecord
+                        {
+                            GameName = gameName,
+                            SourcePath = revertPoint.FilePath,
+                            RestoreDate = DateTime.Now,
+                            Status = "Reverted",
+                            RevertZipPath = null,
+                            TotalSizeBytes = revertPoint.TotalSizeBytes,
+                            ErrorMessage = "Người dùng thực hiện hoàn tác thủ công từ điểm hoàn tác (Revert Point)."
+                        };
+                        await VM.DatabaseService.InsertRestoreHistoryAsync(dbRecord);
+                    }
+                    catch { }
+
+                    DialogService.CloseProgress();
+                    CloseModal();
+                    DialogService.ShowMessage("Hoàn Tác Thành Công", $"Đã khôi phục thành công dữ liệu save game '{gameName}' về trạng thái trước khi Restore!", "Success");
+                }
+                catch (Exception ex)
+                {
+                    DialogService.CloseProgress();
+                    LoggingService.Error(ex, "Lỗi khi hoàn tác save game {Game}: {Message}", gameName, ex.Message);
+                    DialogService.ShowMessage("Lỗi Hoàn Tác", $"Không thể hoàn tác save game: {ex.Message}", "Error");
+                }
+            });
+    }
+
+    private void ExecuteClearRevertFromRestoreModal(string gameName, RevertPointInfo revertPoint)
+    {
+        if (string.IsNullOrWhiteSpace(gameName) || revertPoint == null) return;
+
+        DialogService.ShowConfirm(
+            "Xác Nhận Xóa Bản Hoàn Tác",
+            $"Bạn có chắc chắn muốn xóa bản nén hoàn tác của game '{gameName}' ({revertPoint.DisplaySize})?\n\nSau khi xóa, bạn sẽ giải phóng dung lượng ổ đĩa nhưng không thể tự động hoàn tác lại bản save cũ này được nữa.",
+            revertPoint.FilePath,
+            () =>
+            {
+                try
+                {
+                    RevertService.ClearRevertPoints(gameName);
+                    DialogService.ShowMessage("Đã Dọn Dẹp", $"Đã xóa sạch bản nén hoàn tác của game '{gameName}'.", "Success");
+                    InvokeAsync(StateHasChanged);
+                }
+                catch (Exception ex)
+                {
+                    LoggingService.Error(ex, "Lỗi khi xóa bản hoàn tác của {Game}: {Message}", gameName, ex.Message);
+                    DialogService.ShowMessage("Lỗi", $"Không thể xóa bản hoàn tác: {ex.Message}", "Error");
+                }
+                return Task.CompletedTask;
+            });
     }
 
     private void CloseModal()
     {
         RestoreStep = 1;
-        RestoreVM.CloseRestoreModalCommand.Execute(null);
+        RestoreVM.ExecuteCloseRestoreModal();
         DialogService.CloseRestore();
+        _ = InvokeAsync(StateHasChanged);
     }
 
     public void Dispose()
