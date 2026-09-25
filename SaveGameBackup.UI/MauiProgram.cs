@@ -52,6 +52,8 @@ public static class MauiProgram
         builder.Services.AddSingleton<SettingsSubViewModel>();
         builder.Services.AddSingleton<MainViewModel>();
 
-        return builder.Build();
+        var app = builder.Build();
+        GameCoverService.HeadlessBrowser = app.Services.GetService<IHeadlessBrowserService>();
+        return app;
     }
 }

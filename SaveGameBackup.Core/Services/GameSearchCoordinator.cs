@@ -62,7 +62,6 @@ public class GameSearchCoordinator
             });
 
             gameInfo = cachedGame;
-            await _databaseService.TouchGameCacheAsync(cleanQuery);
         }
 
         // Step 2: Nếu chưa có trong SQLite Cache, tìm trên PCGamingWiki
@@ -116,9 +115,6 @@ public class GameSearchCoordinator
                     });
 
                     gameInfo = onlineInfo;
-
-                    // Lưu ngay vào SQLite Cache
-                    await _databaseService.SaveGameCacheAsync(gameInfo);
                 }
             }
         }
@@ -130,7 +126,6 @@ public class GameSearchCoordinator
             if (catalogGame != null && catalogGame.RawPatterns.Count > 0)
             {
                 gameInfo = catalogGame;
-                await _databaseService.SaveGameCacheAsync(gameInfo);
             }
             else
             {
@@ -138,7 +133,6 @@ public class GameSearchCoordinator
                 if (ludusaviGame != null && ludusaviGame.RawPatterns.Count > 0)
                 {
                     gameInfo = ludusaviGame;
-                    await _databaseService.SaveGameCacheAsync(gameInfo);
                 }
             }
         }
@@ -186,12 +180,6 @@ public class GameSearchCoordinator
         gameInfo.TotalSizeBytes = detectedItems.Sum(i => i.TotalSizeBytes);
         gameInfo.FileCount = detectedItems.Sum(i => i.FileCount);
         gameInfo.LastScanned = DateTime.Now;
-
-        // Lưu cập nhật vào SQLite Cache nếu chưa phải từ cache
-        if (gameInfo.Source != "SQLite Cache")
-        {
-            await _databaseService.SaveGameCacheAsync(gameInfo);
-        }
 
         LoggingService.LogAction("Search_Game_Completed", new
         {

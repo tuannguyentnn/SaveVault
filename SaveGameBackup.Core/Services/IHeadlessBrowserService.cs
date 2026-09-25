@@ -21,5 +21,14 @@ public interface IHeadlessBrowserService
     /// <param name="timeoutSeconds">Thời gian chờ tối đa (mặc định 6 giây)</param>
     /// <param name="cancellationToken">Token hủy tác vụ</param>
     /// <returns>Nội dung chuỗi JSON hoặc HTML trích xuất từ trang</returns>
-    Task<string?> FetchPageContentAsync(string url, int timeoutSeconds = 6, CancellationToken cancellationToken = default);
+    Task<string?> FetchPageContentAsync(string url, int timeoutSeconds = 12, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tải dữ liệu nhị phân ảnh (byte[]) bằng engine Chromium sau khi giải quyết xong Cloudflare Challenge.
+    /// </summary>
+    /// <param name="url">URL ảnh cần tải</param>
+    /// <param name="timeoutSeconds">Thời gian chờ tối đa (mặc định 12 giây)</param>
+    /// <param name="cancellationToken">Token hủy tác vụ</param>
+    /// <returns>Mảng byte của ảnh hoặc null nếu thất bại</returns>
+    Task<byte[]?> FetchImageBytesAsync(string url, int timeoutSeconds = 12, CancellationToken cancellationToken = default);
 }

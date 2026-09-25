@@ -80,7 +80,25 @@
         </div>
 
         <!-- Card 2: Thông tin & Vị trí Save Game (LUÔN HIỆN, KHÔNG BAO GIỜ ẨN - Image 2 / 0.JPG) -->
-        <div class="sv-card">
+        <div class="sv-card relative min-h-[360px]" style="position: relative; min-height: 360px;">
+            @if (SearchVM.IsSearching && !SearchVM.IsGameDropdownOpen)
+            {
+                <div class="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 text-center select-none"
+                     style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; border-radius: 9px; background: rgba(7, 11, 20, 0.88); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border: 1px solid rgba(56, 189, 248, 0.35);">
+                    <div class="relative w-12 h-12 mb-3 flex-shrink-0">
+                        <div class="absolute inset-0 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin"></div>
+                        <div class="absolute inset-1.5 rounded-full border-2 border-blue-500/20 border-b-blue-400 animate-spin" style="animation-direction: reverse; animation-duration: 1.2s;"></div>
+                        <div class="absolute inset-0 flex items-center justify-center text-sm">🔍</div>
+                    </div>
+                    <div class="text-[13.5px] font-bold text-cyan-300 mb-1.5 tracking-wide">
+                        Đang tìm kiếm &amp; nạp thông tin save game...
+                    </div>
+                    <div class="text-[11.5px] text-slate-300 font-mono max-w-lg line-clamp-2 px-3 leading-relaxed">
+                        @(string.IsNullOrEmpty(SearchVM.StatusMessage) ? "Đang kết nối hệ thống PCGamingWiki & quét ổ đĩa..." : SearchVM.StatusMessage)
+                    </div>
+                </div>
+            }
+
             <div class="flex gap-4 items-start">
                 <!-- Cột trái: Cover ảnh game (Width 200px - Luôn hiện, không bao giờ ẩn) -->
                 <div class="sv-cover-col w-[200px] flex-shrink-0">

@@ -162,7 +162,8 @@ public class PCGamingWikiService
             var match = Regex.Match(wikitext, @"cover\s*=\s*([^\r\n\|\}]+)", RegexOptions.IgnoreCase);
             if (match.Success)
             {
-                var coverFileName = match.Groups[1].Value.Trim();
+                var coverFileName = match.Groups[1].Value.Trim().Trim('[', ']');
+                if (coverFileName.Contains('|')) coverFileName = coverFileName.Split('|')[0].Trim();
                 if (!string.IsNullOrEmpty(coverFileName))
                 {
                     var fileTitle = coverFileName.StartsWith("File:", StringComparison.OrdinalIgnoreCase)
@@ -290,7 +291,7 @@ public class PCGamingWikiService
         if (_headlessBrowser != null && _headlessBrowser.IsAvailable)
         {
             LoggingService.LogAction("PCGamingWiki_Cloudflare_Bypass_Triggered", new { Url = url });
-            return await _headlessBrowser.FetchPageContentAsync(url, 6, cancellationToken);
+            return await _headlessBrowser.FetchPageContentAsync(url, 12, cancellationToken);
         }
 
         return null;

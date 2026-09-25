@@ -307,10 +307,22 @@ public class BackupService
             CoverPath = coverPath
         };
 
-        progress?.Report(new BackupProgress { Percent = 100, Message = "Sao lưu hoàn tất thành công!" });
+        // CHỈ THÊM VÀO CACHE KHI BACKUP THÀNH CÔNG
+        try
+        {
+            if (!string.IsNullOrEmpty(coverPath) && string.IsNullOrEmpty(gameInfo.OnlineCoverUrl))
+            {
+                gameInfo.OnlineCoverUrl = coverPath;
+            }
+            await _databaseService.SaveGameCacheAsync(gameInfo);
+            LoggingService.LogAction("Game_Cached_On_Backup_Success", new { Game = gameInfo.GameName });
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Lỗi lưu cache game sau khi backup thành công cho {Game}: {Message}", gameInfo.GameName, ex.Message);
+        }
 
-        // Xóa sạch toàn bộ data ảnh tạm trong Temp/covers/ sau khi backup hoàn tất
-        GameCoverService.ClearTempCovers();
+        progress?.Report(new BackupProgress { Percent = 100, Message = "Sao lưu hoàn tất thành công!" });
 
         return record;
     }

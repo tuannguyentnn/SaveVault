@@ -1178,6 +1178,52 @@ try
     }
     Console.WriteLine($"  ✓ SQLite Cache Hit verified OK! Game: {cachedHit.GameName}, Cover: {cachedHit.OnlineCoverUrl}");
 
+    // Verify that searching a cached game does NOT bump its order
+    var orderBeforeSearch = await freshDb.GetRecentCachedGamesAsync(10);
+    var firstBeforeSearch = orderBeforeSearch[0].GameName;
+    var olderGameInCache = orderBeforeSearch[5].GameName;
+    await coordinatorWithChooser.SearchAndDetectGameAsync(olderGameInCache);
+    var orderAfterSearch = await freshDb.GetRecentCachedGamesAsync(10);
+    if (orderAfterSearch[0].GameName != firstBeforeSearch)
+    {
+        throw new Exception($"FAIL: Searching '{olderGameInCache}' bumped it to the top! Expected top to remain '{firstBeforeSearch}', got '{orderAfterSearch[0].GameName}'");
+    }
+    Console.WriteLine($"  ✓ Verified: Searching cached game '{olderGameInCache}' did NOT change cache order (Top remained '{firstBeforeSearch}')!");
+
+    // Verify that searching an uncached game does NOT add it to SQLite cache
+    var uncachedSearchGame = "Hades II NonCached Test";
+    await coordinatorWithChooser.SearchAndDetectGameAsync(uncachedSearchGame);
+    var shouldBeNullInCache = await freshDb.GetCachedGameAsync(uncachedSearchGame);
+    if (shouldBeNullInCache != null)
+    {
+        throw new Exception($"FAIL: Searching game '{uncachedSearchGame}' should NOT add it to cache before backup!");
+    }
+    Console.WriteLine("  ✓ Verified: Searching an uncached game does NOT add it to SQLite Cache!");
+
+    // Verify that successful backup DOES add the game to SQLite cache and bumps it to 1st place (newest order)
+    var backupTestGame = new GameSaveInfo
+    {
+        GameName = "Backup Cache Verified Game",
+        Source = "Test Source",
+        RawPatterns = new List<string> { tempTestDir }
+    };
+    var testSaveDirForCache = Path.Combine(tempTestDir, "SaveForCacheTest");
+    Directory.CreateDirectory(testSaveDirForCache);
+    File.WriteAllText(Path.Combine(testSaveDirForCache, "slot_cache.sav"), "dummy save");
+    var backupSvcForCache = new BackupService(freshDb);
+    var cacheBackupSettings = new AppSettings
+    {
+        BackupRootDirectory = Path.Combine(tempTestDir, "CacheBackups"),
+        CreateTimestampSubfolder = false
+    };
+    await backupSvcForCache.BackupGameAsync(backupTestGame, cacheBackupSettings, new List<string> { testSaveDirForCache });
+    var topAfterBackup = await freshDb.GetRecentCachedGamesAsync(1);
+    if (topAfterBackup.Count == 0 || topAfterBackup[0].GameName != "Backup Cache Verified Game")
+    {
+        throw new Exception("FAIL: Game was NOT bumped to 1st place in cache after successful backup!");
+    }
+    Console.WriteLine($"  ✓ Verified: Game '{topAfterBackup[0].GameName}' was successfully bumped to newest order (#1) upon successful backup!");
+
     // ==========================================
     // [25] Testing Temp Cover Management, Steam Priority & Webview2 Local Mapping
     // ==========================================

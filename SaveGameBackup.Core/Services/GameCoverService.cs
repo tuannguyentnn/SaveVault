@@ -23,6 +23,11 @@ public static class GameCoverService
     /// </summary>
     public static bool EnableSteamCovers { get; set; } = false;
 
+    /// <summary>
+    /// Dịch vụ trình duyệt ngầm WebView2 Headless để vượt qua Cloudflare Challenge khi tra cứu và tải ảnh.
+    /// </summary>
+    public static IHeadlessBrowserService? HeadlessBrowser { get; set; }
+
     static GameCoverService()
     {
         _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
@@ -579,13 +584,51 @@ public static class GameCoverService
         });
     }
 
+    private static async Task<string?> GetWebStringWithFallbackAsync(string url, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var resp = await _httpClient.GetStringAsync(url, cancellationToken);
+            if (!string.IsNullOrEmpty(resp) &&
+                !resp.Contains("Just a moment...", StringComparison.OrdinalIgnoreCase) &&
+                !resp.Contains("cf-chl", StringComparison.OrdinalIgnoreCase))
+            {
+                return resp;
+            }
+        }
+        catch
+        {
+            // Bị 403 Forbidden hoặc lỗi mạng
+        }
+
+        if (HeadlessBrowser != null && HeadlessBrowser.IsAvailable)
+        {
+            LoggingService.LogAction("GameCover_Headless_Bypass_Triggered", new { Url = url });
+            return await HeadlessBrowser.FetchPageContentAsync(url, 12, cancellationToken);
+        }
+
+        return null;
+    }
+
+    private static bool IsHtmlChallenge(byte[]? bytes)
+    {
+        if (bytes == null || bytes.Length < 15) return false;
+        var len = Math.Min(bytes.Length, 150);
+        var preview = System.Text.Encoding.UTF8.GetString(bytes, 0, len);
+        return preview.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase) ||
+               preview.StartsWith("<html", StringComparison.OrdinalIgnoreCase) ||
+               preview.Contains("Just a moment", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static async Task<(string? CoverUrl, string? SteamAppId)> FetchPCGamingWikiCoverAndSteamIdAsync(string gameName, CancellationToken cancellationToken)
     {
         try
         {
             // Bước 1: Tìm trang wiki theo tên game qua OpenSearch
             var searchUrl = $"https://www.pcgamingwiki.com/w/api.php?action=opensearch&search={Uri.EscapeDataString(gameName)}&limit=3&format=json";
-            var searchResp = await _httpClient.GetStringAsync(searchUrl, cancellationToken);
+            var searchResp = await GetWebStringWithFallbackAsync(searchUrl, cancellationToken);
+            if (string.IsNullOrEmpty(searchResp) || searchResp.StartsWith("<")) return (null, null);
+
             using var searchDoc = JsonDocument.Parse(searchResp);
             var searchRoot = searchDoc.RootElement;
             if (searchRoot.ValueKind != JsonValueKind.Array || searchRoot.GetArrayLength() < 2) return (null, null);
@@ -597,7 +640,9 @@ public static class GameCoverService
 
             // Bước 2: Lấy wikitext của trang để tìm trường cover và steam app id (thêm &redirects=1 để xử lý trang chuyển hướng)
             var parseUrl = $"https://www.pcgamingwiki.com/w/api.php?action=parse&page={Uri.EscapeDataString(pageTitle)}&prop=wikitext&format=json&redirects=1";
-            var parseResp = await _httpClient.GetStringAsync(parseUrl, cancellationToken);
+            var parseResp = await GetWebStringWithFallbackAsync(parseUrl, cancellationToken);
+            if (string.IsNullOrEmpty(parseResp) || parseResp.StartsWith("<")) return (null, null);
+
             using var parseDoc = JsonDocument.Parse(parseResp);
             if (!parseDoc.RootElement.TryGetProperty("parse", out var parseEl)) return (null, null);
             if (!parseEl.TryGetProperty("wikitext", out var wtEl)) return (null, null);
@@ -616,7 +661,8 @@ public static class GameCoverService
             var match = Regex.Match(wikitext, @"cover\s*=\s*([^\r\n\|\}]+)", RegexOptions.IgnoreCase);
             if (!match.Success) return (null, steamId);
 
-            var coverFileName = match.Groups[1].Value.Trim();
+            var coverFileName = match.Groups[1].Value.Trim().Trim('[', ']');
+            if (coverFileName.Contains('|')) coverFileName = coverFileName.Split('|')[0].Trim();
             if (string.IsNullOrEmpty(coverFileName)) return (null, steamId);
 
             // Bước 3: Gọi MediaWiki imageinfo API để lấy direct link tải ảnh thật
@@ -625,7 +671,9 @@ public static class GameCoverService
                 : $"File:{coverFileName}";
 
             var imageInfoUrl = $"https://www.pcgamingwiki.com/w/api.php?action=query&titles={Uri.EscapeDataString(fileTitle)}&prop=imageinfo&iiprop=url&format=json&redirects=1";
-            var imageInfoResp = await _httpClient.GetStringAsync(imageInfoUrl, cancellationToken);
+            var imageInfoResp = await GetWebStringWithFallbackAsync(imageInfoUrl, cancellationToken);
+            if (string.IsNullOrEmpty(imageInfoResp) || imageInfoResp.StartsWith("<")) return (null, steamId);
+
             using var imageDoc = JsonDocument.Parse(imageInfoResp);
             if (imageDoc.RootElement.TryGetProperty("query", out var queryEl) &&
                 queryEl.TryGetProperty("pages", out var pagesEl))
@@ -653,29 +701,48 @@ public static class GameCoverService
 
     private static async Task<bool> DownloadImageAsync(string url, string targetPath, CancellationToken cancellationToken)
     {
+        var dir = Path.GetDirectoryName(targetPath);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+        {
+            Directory.CreateDirectory(dir);
+        }
+
         // 1. Thử tải trước qua HttpClient
         try
         {
             using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
-                var dir = Path.GetDirectoryName(targetPath);
-                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                {
-                    Directory.CreateDirectory(dir);
-                }
-
                 var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-                if (bytes != null && bytes.Length > 0)
+                if (bytes != null && bytes.Length > 0 && !IsHtmlChallenge(bytes))
                 {
                     await File.WriteAllBytesAsync(targetPath, bytes, cancellationToken);
                     return true;
                 }
             }
         }
-        catch { /* Tiếp tục thử curl fallback */ }
+        catch { /* Tiếp tục thử fallback */ }
 
-        // 2. Fallback: Dùng curl.exe (có sẵn trên Windows 10/11) để bypass Cloudflare TLS fingerprinting trên images.pcgamingwiki.com
+        // 2. Thử tải qua WebView2 Headless Browser (vượt Cloudflare TLS fingerprinting trên images.pcgamingwiki.com)
+        if (HeadlessBrowser != null && HeadlessBrowser.IsAvailable)
+        {
+            try
+            {
+                LoggingService.LogAction("GameCover_Headless_ImageDownload_Triggered", new { Url = url });
+                var bytes = await HeadlessBrowser.FetchImageBytesAsync(url, 12, cancellationToken);
+                if (bytes != null && bytes.Length > 0 && !IsHtmlChallenge(bytes))
+                {
+                    await File.WriteAllBytesAsync(targetPath, bytes, cancellationToken);
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("WebView2 tải ảnh bìa thất bại cho {Url}: {Error}", url, ex.Message);
+            }
+        }
+
+        // 3. Fallback: Dùng curl.exe (có sẵn trên Windows 10/11)
         try
         {
             var systemDir = Environment.GetFolderPath(Environment.SpecialFolder.System);
@@ -683,12 +750,6 @@ public static class GameCoverService
             if (!File.Exists(curlPath))
             {
                 curlPath = "curl.exe";
-            }
-
-            var dir = Path.GetDirectoryName(targetPath);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
             }
 
             var psi = new System.Diagnostics.ProcessStartInfo
@@ -704,7 +765,12 @@ public static class GameCoverService
                 await proc.WaitForExitAsync(cancellationToken);
                 if (proc.ExitCode == 0 && File.Exists(targetPath) && new FileInfo(targetPath).Length > 0)
                 {
-                    return true;
+                    var fileBytes = await File.ReadAllBytesAsync(targetPath, cancellationToken);
+                    if (!IsHtmlChallenge(fileBytes))
+                    {
+                        return true;
+                    }
+                    try { File.Delete(targetPath); } catch {}
                 }
             }
         }

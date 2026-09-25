@@ -98,6 +98,12 @@ public class SearchSubViewModel : INotifyPropertyChanged
         SelectCandidateCommand = new RelayCommand(param => ExecuteSelectCandidate(param as string));
         CancelCandidateModalCommand = new RelayCommand(_ => ExecuteCancelCandidate());
 
+        // Lắng nghe sự kiện Backup thành công để tự động nạp lại 10 game gợi ý từ cache
+        _eventBus.Subscribe<BackupCompletedEvent>(async _ =>
+        {
+            await LoadRecentCacheSuggestionsAsync();
+        });
+
         // Nạp danh sách gợi ý từ SQLite Cache gần nhất
         _ = LoadRecentCacheSuggestionsAsync();
     }
@@ -335,7 +341,6 @@ public class SearchSubViewModel : INotifyPropertyChanged
                             gameInfo.OnlineCoverUrl = realWebUrl;
                         }
                     }
-                    await _databaseService.SaveGameCacheAsync(gameInfo);
                 }
             }
             catch (Exception ex)
