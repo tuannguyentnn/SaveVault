@@ -3,490 +3,733 @@
 @inject INativeDialogService NativeDialog
 @implements IDisposable
 
-<div class="h-full flex flex-col p-5 space-y-4 overflow-y-auto">
-    <!-- Header Card -->
-    <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-4 shadow-lg flex items-center justify-between">
-        <div class="flex items-center space-x-3">
-            <div class="w-9 h-9 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center">
-                <span class="text-blue-400 font-bold text-base">⚙️</span>
+<div class="h-full flex flex-col p-5 space-y-4 overflow-hidden relative select-none">
+    <!-- Floating Success Toast Notification -->
+    @if (ShowSavedToast)
+    {
+        <div class="toast-notification toast-float flex items-center space-x-3 bg-emerald-950/95 border border-emerald-500/60 text-white px-5 py-3 rounded-xl shadow-2xl backdrop-blur-md">
+            <div class="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center flex-shrink-0">
+                <span class="text-emerald-400 font-bold text-sm">✓</span>
             </div>
             <div>
-                <h2 class="text-[15px] font-bold text-white tracking-wide">CÀI ĐẶT HỆ THỐNG & CLOUD SYNC</h2>
-                <div class="text-[11px] text-slate-400">
-                    Cấu hình đường dẫn lưu trữ, kết nối Cloud REST API (Google Drive & OneDrive), và vị trí database SQLite.
+                <div class="text-[12.5px] font-bold text-emerald-300">Đã lưu cài đặt thành công!</div>
+                <div class="text-[11px] text-slate-300">Cấu hình lưu trữ và thông tin Cloud API đã được ghi nhận.</div>
+            </div>
+        </div>
+    }
+
+    <!-- Header Card -->
+    <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-4 shadow-lg flex items-center justify-between flex-shrink-0">
+        <div class="flex items-center space-x-3.5">
+            <div class="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center shadow-inner">
+                <span class="text-blue-400 font-bold text-lg">⚙️</span>
+            </div>
+            <div>
+                <div class="flex items-center space-x-2">
+                    <h2 class="text-[15px] font-bold text-white tracking-wide">CÀI ĐẶT HỆ THỐNG &amp; ĐỒNG BỘ</h2>
+                    <span class="px-2 py-0.5 text-[10px] font-semibold bg-blue-950/80 text-blue-300 border border-blue-500/30 rounded-md">SaveVault Core</span>
+                </div>
+                <div class="text-[11.5px] text-slate-400 mt-0.5">
+                    Quản lý thư mục lưu trữ, tài khoản Cloud REST API, SQLite database và nhật ký hoạt động.
                 </div>
             </div>
         </div>
 
-        <button class="btn-backup-primary py-2 px-5 text-[13px]"
+        <button type="button"
+                class="btn-backup-primary py-2 px-5 text-[12.5px] flex items-center space-x-2 shadow-lg hover:shadow-emerald-500/20 transition-all cursor-pointer"
                 @onclick="SaveAllSettings">
-            💾 Lưu Tất Cả Cài Đặt
+            <span>💾</span>
+            <span>Lưu Tất Cả Cài Đặt</span>
         </button>
     </div>
 
-    <!-- Section 1: Thư Mục Lưu Trữ Sao Lưu (Image 8.JPG) -->
-    <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg">
-        <div class="flex items-center space-x-2 mb-3">
-            <span class="text-blue-400 font-bold">📁</span>
-            <h3 class="text-[14px] font-bold text-white uppercase tracking-wide">THƯ MỤC GỐC LƯU TRỮ CÁC BẢN SAO LƯU</h3>
-        </div>
+    <!-- Segmented Sub-Navigation Pills -->
+    <div class="flex items-center space-x-2 p-1.5 bg-[#131C2E] border border-[#1E293B] rounded-xl flex-shrink-0">
+        <button type="button"
+                class="subtab-pill @(ActiveSubTab == 0 ? "active" : "")"
+                @onclick="() => ActiveSubTab = 0">
+            <span>📁</span>
+            <span>Lưu Trữ &amp; Sao Lưu</span>
+        </button>
 
-        <div class="space-y-3">
-            <div>
-                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Đường dẫn thư mục sao lưu mặc định:</label>
-                <div class="flex items-center space-x-2">
-                    <input type="text"
-                           class="input-dark font-mono text-[12px] py-2 px-3 flex-1 bg-[#0F172A] border-[#334155] text-slate-200"
-                           @bind="SettingsVM.BackupDestinationRoot" />
-                    <button class="btn-secondary py-2 px-4 text-[12px] flex-shrink-0"
-                            @onclick="() => SettingsVM.BrowseBackupDirectoryCommand.Execute(null)">
-                        📁 Duyệt...
-                    </button>
-                </div>
-            </div>
+        <button type="button"
+                class="subtab-pill @(ActiveSubTab == 1 ? "active" : "")"
+                @onclick="() => ActiveSubTab = 1">
+            <span>☁️</span>
+            <span>Đồng Bộ Đám Mây</span>
+            @if (CloudVM.IsGoogleDriveLoggedIn || CloudVM.IsOneDriveLoggedIn)
+            {
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5"></span>
+            }
+        </button>
 
-            <div class="flex items-center space-x-6 pt-1">
-                <label class="flex items-center space-x-2 cursor-pointer">
-                    <input type="checkbox"
-                           class="checkbox-custom"
-                           @bind="SettingsVM.CreateTimestampSubfolder" />
-                    <span class="text-[12px] text-slate-200 font-medium">Tạo thư mục con theo ngày giờ (Timestamp)</span>
-                </label>
-                <label class="flex items-center space-x-2 cursor-pointer">
-                    <input type="checkbox"
-                           class="checkbox-custom"
-                           @bind="SettingsVM.AutoCompressZip" />
-                    <span class="text-[12px] text-slate-200 font-medium">Tự động nén thành file .ZIP (Khuyên dùng)</span>
-                </label>
-            </div>
+        <button type="button"
+                class="subtab-pill @(ActiveSubTab == 2 ? "active" : "")"
+                @onclick="() => ActiveSubTab = 2">
+            <span>⚡</span>
+            <span>Cơ Sở Dữ Liệu &amp; Game</span>
+            <span class="px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700">@SettingsVM.CatalogGamesCount</span>
+        </button>
 
-            <div class="pt-3 border-t border-[#1E293B] flex items-center justify-between">
-                <div>
-                    <label class="block text-[11.5px] text-slate-300 font-semibold mb-0.5">Số dòng trên mỗi trang (Phân trang bảng dữ liệu):</label>
-                    <span class="text-[11px] text-slate-500">Áp dụng cho bảng Lịch sử sao lưu và bảng Chi tiết các bản lưu (Snapshot)</span>
-                </div>
-                <div class="w-52">
-                    <select class="input-dark py-1.5 px-3 text-[12px] bg-[#0F172A] border-[#334155] text-slate-200 cursor-pointer"
-                            @bind="SettingsVM.PageSize">
-                        <option value="5">5 dòng / trang</option>
-                        <option value="10">10 dòng / trang (Mặc định)</option>
-                        <option value="15">15 dòng / trang</option>
-                        <option value="20">20 dòng / trang</option>
-                        <option value="25">25 dòng / trang</option>
-                        <option value="50">50 dòng / trang</option>
-                    </select>
-                </div>
-            </div>
+        <button type="button"
+                class="subtab-pill @(ActiveSubTab == 3 ? "active" : "")"
+                @onclick="() => ActiveSubTab = 3">
+            <span>📋</span>
+            <span>Nhật Ký &amp; Hệ Thống</span>
+            @if (ErrCount > 0)
+            {
+                <span class="px-1.5 py-0.2 rounded text-[10px] bg-red-950 text-red-400 border border-red-700">@ErrCount lỗi</span>
+            }
+        </button>
 
-            <!-- Cơ chế Phân trang: SQL Pagination vs RAM Pagination -->
-            <div class="pt-3 border-t border-[#1E293B] flex items-center justify-between">
-                <div>
-                    <div class="flex items-center space-x-2">
-                        <label class="text-[11.5px] text-slate-300 font-semibold">Cơ chế phân trang (Pagination Engine):</label>
-                        <span class="px-1.5 py-0.5 text-[9.5px] font-bold rounded @(SettingsVM.UseSqlPagination ? "bg-cyan-950/80 text-cyan-300 border border-cyan-500/40" : "bg-amber-950/80 text-amber-300 border border-amber-500/40")">
-                            @(SettingsVM.UseSqlPagination ? "⚡ SQL-level (Tối ưu)" : "💾 In-Memory RAM (Cũ)")
-                        </span>
-                    </div>
-                    <span class="text-[11px] text-slate-500 block mt-0.5">
-                        @(SettingsVM.UseSqlPagination 
-                            ? "SQL Pagination: Truy vấn trực tiếp phân trang từ SQLite bằng LIMIT/OFFSET (Tối ưu RAM tối đa, tốc độ cực nhanh với hàng ngàn bản lưu)." 
-                            : "RAM Pagination: Nạp toàn bộ lịch sử game vào bộ nhớ RAM rồi phân trang trên giao diện (Cơ chế hoạt động cũ).")
-                    </span>
-                </div>
-                <div class="inline-flex rounded-lg p-0.5 bg-[#0F172A] border border-[#334155] flex-shrink-0">
-                    <button type="button"
-                            class="px-3 py-1.5 text-[11.5px] font-semibold rounded-md transition-all flex items-center space-x-1.5 @(SettingsVM.UseSqlPagination ? "bg-cyan-600 text-white shadow" : "text-slate-400 hover:text-slate-200")"
-                            @onclick="() => SettingsVM.UseSqlPagination = true"
-                            title="Sử dụng phân trang trực tiếp từ SQLite Database (Khuyên dùng)">
-                        <span>⚡</span>
-                        <span>SQL Pagination</span>
-                    </button>
-                    <button type="button"
-                            class="px-3 py-1.5 text-[11.5px] font-semibold rounded-md transition-all flex items-center space-x-1.5 @(!SettingsVM.UseSqlPagination ? "bg-blue-600 text-white shadow" : "text-slate-400 hover:text-slate-200")"
-                            @onclick="() => SettingsVM.UseSqlPagination = false"
-                            title="Sử dụng nạp toàn bộ vào RAM rồi phân trang (Cơ chế cũ)">
-                        <span>💾</span>
-                        <span>RAM Pagination</span>
-                    </button>
-                </div>
-            </div>
-        </div>
+        <div class="h-4 w-px bg-slate-700/60 mx-1"></div>
+
+        <button type="button"
+                class="subtab-pill @(ActiveSubTab == 4 ? "active" : "")"
+                @onclick="() => ActiveSubTab = 4"
+                title="Hiển thị tất cả các phân khu cấu hình trong một trang cuộn">
+            <span>📑</span>
+            <span>Xem Tất Cả</span>
+        </button>
     </div>
 
-    <!-- Section 2: Cấu Hình Cloud Sync REST API (Image 8.JPG) -->
-    <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg">
-        <div class="flex items-center justify-between mb-4">
-            <div class="flex items-center space-x-2">
-                <span class="text-cyan-400 font-bold">☁️</span>
-                <h3 class="text-[14px] font-bold text-white uppercase tracking-wide">CẤU HÌNH ĐỒNG BỘ CLOUD (REST API OAuth PKCE)</h3>
-            </div>
-            <span class="text-[11px] text-slate-400">
-                Toàn bộ Client ID / Secret được mã hóa AES-256 trong <code class="text-slate-300 font-mono">app_config.json</code>
-            </span>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <!-- Google Drive Box -->
-            <div class="bg-[#0F172A] border border-[#2D3748] rounded-xl p-4 flex flex-col justify-between">
-                <div class="space-y-3">
+    <!-- Main Viewport Area -->
+    <div class="flex-1 overflow-y-auto space-y-4 pr-1">
+        <!-- ==================== SUB-TAB 0: LƯU TRỮ & SAO LƯU ==================== -->
+        @if (ActiveSubTab == 0 || ActiveSubTab == 4)
+        {
+            <div class="space-y-4">
+                <!-- Thư mục gốc lưu trữ -->
+                <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
                     <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
-                        <div class="flex items-center space-x-2">
-                            <span class="text-[18px]">📁</span>
-                            <span class="font-bold text-white text-[13px]">Google Drive REST API</span>
+                        <div class="flex items-center space-x-2.5">
+                            <span class="text-blue-400 text-lg">📁</span>
+                            <div>
+                                <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">THƯ MỤC GỐC LƯU TRỮ CÁC BẢN SAO LƯU</h3>
+                                <div class="text-[11px] text-slate-400">Vị trí mặc định trên máy để cất giữ các file zip hoặc thư mục save game</div>
+                            </div>
                         </div>
-                        <span class="badge-count text-[10px] @(CloudVM.IsGoogleDriveLoggedIn ? "bg-emerald-600/30 text-emerald-400 border border-emerald-500/30" : "bg-slate-700/50 text-slate-400")">
-                            @(CloudVM.IsGoogleDriveLoggedIn ? (string.IsNullOrEmpty(CloudVM.GoogleDriveAccountEmail) ? "✓ Đã kết nối" : $"✓ {CloudVM.GoogleDriveAccountEmail}") : "Chưa kết nối")
-                        </span>
+                        <button type="button"
+                                class="btn-secondary py-1.5 px-3 text-[11px] flex items-center space-x-1.5 text-slate-300 hover:text-white"
+                                @onclick="OpenBackupFolder">
+                            <span>📂</span>
+                            <span>Mở Trong Explorer</span>
+                        </button>
                     </div>
 
-                    @if (!CloudVM.UseCustomGoogleDriveApi)
-                    {
-                        <!-- Chế độ Tự Động 1-Click -->
-                        <div class="p-3 bg-gradient-to-r from-emerald-950/40 to-slate-900/60 border border-emerald-500/30 rounded-lg space-y-1.5">
-                            <div class="flex items-center space-x-2 text-emerald-400 font-bold text-[12px]">
-                                <span>⚡</span>
-                                <span>Chế Độ Tự Động (Khuyên dùng)</span>
-                            </div>
-                            <p class="text-[11px] text-slate-300 leading-relaxed">
-                                Tích hợp cấu hình chuẩn cho Desktop App. Người dùng không cần tạo Google Cloud Project hay điền Client ID phức tạp.
-                            </p>
+                    <div class="space-y-2">
+                        <label class="block text-[11px] text-slate-400 font-semibold">Đường dẫn thư mục sao lưu:</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="text"
+                                   class="input-dark font-mono text-[12px] py-2 px-3 flex-1 bg-[#0F172A] border-[#334155] text-slate-200"
+                                   @bind="SettingsVM.BackupDestinationRoot" />
+                            <button type="button"
+                                    class="btn-secondary py-2 px-4 text-[12px] flex-shrink-0 flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
+                                    @onclick="() => SettingsVM.BrowseBackupDirectoryCommand.Execute(null)">
+                                <span>📁</span>
+                                <span>Duyệt Thư Mục...</span>
+                            </button>
                         </div>
-                    }
-                    else
-                    {
-                        <!-- Chế độ Tùy Chỉnh Cho Developer -->
-                        <div class="space-y-3 text-[12px] bg-[#131C2E] p-3 rounded-lg border border-[#334155]">
-                            <div class="flex items-center justify-between">
-                                <div class="text-[11px] text-amber-400 font-semibold flex items-center space-x-1">
-                                    <span>⚙️</span>
-                                    <span>Đang dùng Google Cloud API riêng</span>
+                    </div>
+                </div>
+
+                <!-- Tùy chọn nén & đặt tên -->
+                <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
+                    <div class="flex items-center space-x-2.5 pb-3 border-b border-[#1E293B]">
+                        <span class="text-emerald-400 text-lg">⚙️</span>
+                        <div>
+                            <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">TÙY CHỌN NÉN VÀ ĐẶT TÊN BẢN LƯU</h3>
+                            <div class="text-[11px] text-slate-400">Tối ưu dung lượng đĩa cứng và phân loại lịch sử sao lưu</div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Toggle ZIP -->
+                        <div class="p-4 bg-[#0F172A] border border-[#2D3748] rounded-xl flex items-start justify-between space-x-3">
+                            <div class="space-y-1">
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-[13px] font-bold text-white">Tự động nén thành file .ZIP</span>
+                                    <span class="px-1.5 py-0.5 text-[9.5px] font-bold rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40">Khuyên dùng</span>
                                 </div>
-                                <button class="btn-secondary text-[10px] py-0.5 px-2 text-sky-300 hover:text-white border-sky-500/40 flex items-center space-x-1"
+                                <div class="text-[11px] text-slate-400 leading-relaxed">
+                                    Tiết kiệm tới 80% dung lượng ổ đĩa, tăng tốc độ sao chép và đồng bộ đám mây nhanh hơn nhiều lần.
+                                </div>
+                            </div>
+                            <label class="switch-toggle mt-1">
+                                <input type="checkbox" @bind="SettingsVM.AutoCompressZip" />
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- Toggle Timestamp -->
+                        <div class="p-4 bg-[#0F172A] border border-[#2D3748] rounded-xl flex items-start justify-between space-x-3">
+                            <div class="space-y-1">
+                                <div class="text-[13px] font-bold text-white">Tạo thư mục con theo ngày giờ (Timestamp)</div>
+                                <div class="text-[11px] text-slate-400 leading-relaxed">
+                                    Tự động gom các bản lưu theo định dạng ngày giờ (YYYY-MM-DD_HH-mm-ss) tránh xung đột và ghi đè file.
+                                </div>
+                            </div>
+                            <label class="switch-toggle mt-1">
+                                <input type="checkbox" @bind="SettingsVM.CreateTimestampSubfolder" />
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Phân trang bảng dữ liệu -->
+                    <div class="p-4 bg-[#0F172A] border border-[#2D3748] rounded-xl flex items-center justify-between">
+                        <div class="space-y-0.5">
+                            <div class="text-[12.5px] font-bold text-white">Số dòng hiển thị trên mỗi trang bảng dữ liệu</div>
+                            <div class="text-[11px] text-slate-400">Áp dụng cho bảng Lịch sử sao lưu và bảng Chi tiết các bản lưu (Snapshot)</div>
+                        </div>
+                        <div class="w-56">
+                            <select class="input-dark py-1.5 px-3 text-[12px] bg-[#0A0F1D] border-[#334155] text-slate-200 cursor-pointer"
+                                    @bind="SettingsVM.PageSize">
+                                <option value="5">5 dòng / trang</option>
+                                <option value="10">10 dòng / trang (Mặc định)</option>
+                                <option value="15">15 dòng / trang</option>
+                                <option value="20">20 dòng / trang</option>
+                                <option value="25">25 dòng / trang</option>
+                                <option value="50">50 dòng / trang</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- ==================== SUB-TAB 1: ĐỒNG BỘ ĐÁM MÂY ==================== -->
+        @if (ActiveSubTab == 1 || ActiveSubTab == 4)
+        {
+            <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                    <div class="flex items-center space-x-2.5">
+                        <span class="text-cyan-400 text-lg">☁️</span>
+                        <div>
+                            <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">CẤU HÌNH ĐỒNG BỘ CLOUD (REST API OAuth PKCE)</h3>
+                            <div class="text-[11px] text-slate-400">Kết nối Google Drive và OneDrive để tự động upload bản sao lưu lên đám mây</div>
+                        </div>
+                    </div>
+                    <div class="text-[10.5px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2.5 py-1 rounded-md">
+                        🔒 AES-256 Encrypted Token Storage
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <!-- ================= GOOGLE DRIVE CARD ================= -->
+                    <div class="bg-[#0F172A] border border-[#2D3748] rounded-xl p-4 flex flex-col justify-between space-y-4 hover:border-slate-600 transition-all">
+                        <div class="space-y-3.5">
+                            <!-- Card Header -->
+                            <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                                <div class="flex items-center space-x-2.5">
+                                    <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-base">
+                                        📁
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-white text-[13px]">Google Drive REST API</div>
+                                        <div class="text-[10.5px] text-slate-400">Chuẩn OAuth 2.0 PKCE Public Client</div>
+                                    </div>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-full text-[10.5px] font-semibold @(CloudVM.IsGoogleDriveLoggedIn ? "bg-emerald-950/80 text-emerald-300 border border-emerald-500/50" : "bg-slate-800 text-slate-400 border border-slate-700")">
+                                    @(CloudVM.IsGoogleDriveLoggedIn ? (string.IsNullOrEmpty(CloudVM.GoogleDriveAccountEmail) ? "✓ Đã kết nối" : $"✓ {CloudVM.GoogleDriveAccountEmail}") : "○ Chưa kết nối")
+                                </span>
+                            </div>
+
+                            @if (!CloudVM.UseCustomGoogleDriveApi)
+                            {
+                                <!-- Chế độ Tự Động 1-Click -->
+                                <div class="p-3.5 bg-gradient-to-br from-emerald-950/30 to-[#0A0F1D] border border-emerald-500/30 rounded-xl space-y-2">
+                                    <div class="flex items-center space-x-2 text-emerald-400 font-bold text-[12px]">
+                                        <span>⚡</span>
+                                        <span>Chế Độ Tự Động 1-Click (Khuyên dùng)</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-300 leading-relaxed">
+                                        Đã cấu hình sẵn cho ứng dụng desktop SaveVault. Nhấn nút <b>Đăng Nhập OAuth</b> bên dưới để liên kết ngay tài khoản cá nhân.
+                                    </p>
+                                </div>
+                            }
+                            else
+                            {
+                                <!-- Chế độ Tùy Chỉnh Cho Developer -->
+                                <div class="space-y-3 text-[12px] bg-[#131C2E] p-3.5 rounded-xl border border-[#334155]">
+                                    <div class="flex items-center justify-between">
+                                        <div class="text-[11.5px] text-amber-400 font-semibold flex items-center space-x-1.5">
+                                            <span>⚙️</span>
+                                            <span>Đang dùng Google Cloud API riêng</span>
+                                        </div>
+                                        <button type="button"
+                                                class="btn-secondary text-[10.5px] py-1 px-2.5 text-sky-300 hover:text-white border-sky-500/40 flex items-center space-x-1"
+                                                @onclick="() => CloudVM.OpenGoogleCloudConsoleGuideCommand.Execute(null)">
+                                            <span>📖</span>
+                                            <span>Mở Cẩm Nang A-Z</span>
+                                        </button>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <div>
+                                            <label class="block text-slate-400 text-[11px] font-semibold mb-1">Google OAuth Client ID:</label>
+                                            <input type="text"
+                                                   class="input-dark font-mono text-[11px] py-1.5 px-3 bg-[#0A0F1D] border-[#334155] text-slate-200"
+                                                   placeholder="xxxx.apps.googleusercontent.com"
+                                                   @bind="CloudVM.GoogleDriveClientId" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-slate-400 text-[11px] font-semibold mb-1">Google Client Secret:</label>
+                                            <div class="relative">
+                                                <input type="@(ShowGSecret ? "text" : "password")"
+                                                       class="input-dark font-mono text-[11px] py-1.5 px-3 pr-8 bg-[#0A0F1D] border-[#334155] text-slate-200"
+                                                       placeholder="GOCSPX-xxxx"
+                                                       @bind="CloudVM.GoogleDriveClientSecret" />
+                                                <button type="button"
+                                                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
+                                                        @onclick="() => ShowGSecret = !ShowGSecret">
+                                                    @(ShowGSecret ? "🙈" : "👁️")
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="pt-1">
+                                            <button type="button"
+                                                    class="btn-blue text-[11px] py-1 px-3"
+                                                    @onclick="() => CloudVM.SaveCloudApiSettingsCommand.Execute(null)">
+                                                💾 Lưu Cấu Hình API
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            <!-- Switch Developer Mode -->
+                            <div class="flex items-center justify-between pt-1">
+                                <span class="text-[11.5px] text-slate-400">Tùy chỉnh Google Cloud API riêng (Dành cho Dev)</span>
+                                <label class="switch-toggle">
+                                    <input type="checkbox" @bind="CloudVM.UseCustomGoogleDriveApi" />
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Card Footer Actions -->
+                        <div class="flex items-center justify-between pt-3 border-t border-[#1E293B]">
+                            @if (CloudVM.UseCustomGoogleDriveApi)
+                            {
+                                <button type="button"
+                                        class="btn-secondary text-[11px] py-1 px-2.5 text-sky-300 hover:text-white border-sky-500/40 flex items-center space-x-1"
                                         @onclick="() => CloudVM.OpenGoogleCloudConsoleGuideCommand.Execute(null)">
                                     <span>📖</span>
-                                    <span>Mở Cẩm Nang A-Z</span>
+                                    <span>Xem Hướng Dẫn</span>
                                 </button>
-                            </div>
+                            }
+                            else
+                            {
+                                <span class="text-[11px] text-slate-500 font-mono">1-Click OAuth 2.0</span>
+                            }
 
-                            <!-- Dòng text hướng dẫn mở guide -->
-                            <div class="p-2 bg-sky-950/30 border border-sky-500/30 rounded text-[11px] text-sky-200 leading-relaxed flex items-start space-x-1.5">
-                                <span class="text-[13px] leading-none">💡</span>
-                                <span>
-                                    Chưa có Client ID & Secret? Nhấn nút <b>"Mở Cẩm Nang A-Z"</b> ở trên để xem hướng dẫn từng bước kèm hình ảnh chụp thực tế.
+                            <div>
+                                @if (CloudVM.IsGoogleDriveLoggedIn)
+                                {
+                                    <button type="button"
+                                            class="btn-danger text-[11.5px] py-1.5 px-4 font-semibold shadow hover:bg-red-700"
+                                            @onclick="() => DisconnectCloud(0)">
+                                        🔓 Ngắt Kết Nối
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button"
+                                            class="btn-blue text-[11.5px] py-1.5 px-4 font-semibold shadow hover:bg-blue-600"
+                                            @onclick="() => ConnectCloud(0)">
+                                        🔗 Đăng Nhập OAuth
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ================= ONEDRIVE CARD ================= -->
+                    <div class="bg-[#0F172A] border border-[#2D3748] rounded-xl p-4 flex flex-col justify-between space-y-4 hover:border-slate-600 transition-all">
+                        <div class="space-y-3.5">
+                            <!-- Card Header -->
+                            <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                                <div class="flex items-center space-x-2.5">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-base">
+                                        ☁️
+                                    </div>
+                                    <div>
+                                        <div class="font-bold text-white text-[13px]">Microsoft OneDrive (Graph API)</div>
+                                        <div class="text-[10.5px] text-slate-400">Microsoft Identity PKCE Public Client</div>
+                                    </div>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-full text-[10.5px] font-semibold @(CloudVM.IsOneDriveLoggedIn ? "bg-emerald-950/80 text-emerald-300 border border-emerald-500/50" : "bg-slate-800 text-slate-400 border border-slate-700")">
+                                    @(CloudVM.IsOneDriveLoggedIn ? (string.IsNullOrEmpty(CloudVM.OneDriveAccountEmail) ? "✓ Đã kết nối" : $"✓ {CloudVM.OneDriveAccountEmail}") : "○ Chưa kết nối")
                                 </span>
                             </div>
 
-                            <div>
-                                <label class="block text-slate-400 text-[11px] font-semibold mb-1">Google OAuth Client ID:</label>
-                                <input type="text"
-                                       class="input-dark font-mono text-[11px] py-1.5 px-3 bg-[#0A0F1D] border-[#334155] text-slate-200"
-                                       placeholder="xxxx.apps.googleusercontent.com"
-                                       @bind="CloudVM.GoogleDriveClientId" />
-                            </div>
-                            <div>
-                                <label class="block text-slate-400 text-[11px] font-semibold mb-1">Google Client Secret:</label>
-                                <div class="relative">
-                                    <input type="@(ShowGSecret ? "text" : "password")"
-                                           class="input-dark font-mono text-[11px] py-1.5 px-3 pr-8 bg-[#0A0F1D] border-[#334155] text-slate-200"
-                                           placeholder="GOCSPX-xxxx"
-                                           @bind="CloudVM.GoogleDriveClientSecret" />
-                                    <button class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
-                                            @onclick="() => ShowGSecret = !ShowGSecret">
-                                        @(ShowGSecret ? "🙈" : "👁️")
-                                    </button>
+                            @if (!CloudVM.UseCustomOneDriveApi)
+                            {
+                                <!-- Chế độ Tự Động 1-Click -->
+                                <div class="p-3.5 bg-gradient-to-br from-blue-950/30 to-[#0A0F1D] border border-blue-500/30 rounded-xl space-y-2">
+                                    <div class="flex items-center space-x-2 text-blue-400 font-bold text-[12px]">
+                                        <span>⚡</span>
+                                        <span>Chế Độ Tự Động 1-Click (Khuyên dùng)</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-300 leading-relaxed">
+                                        Sử dụng Microsoft PKCE Public Client. Kết nối trực tiếp vào tài khoản OneDrive cá nhân chỉ với 1 cú click an toàn.
+                                    </p>
                                 </div>
-                            </div>
-                            <div class="flex items-center pt-2">
-                                <button class="btn-blue text-[11px] py-1 px-2.5"
-                                        @onclick="() => CloudVM.SaveCloudApiSettingsCommand.Execute(null)">
-                                    💾 Lưu Cấu Hình
-                                </button>
+                            }
+                            else
+                            {
+                                <!-- Chế độ Tùy Chỉnh Cho Developer -->
+                                <div class="space-y-3 text-[12px] bg-[#131C2E] p-3.5 rounded-xl border border-[#334155]">
+                                    <div class="text-[11.5px] text-amber-400 font-semibold flex items-center space-x-1.5">
+                                        <span>⚙️</span>
+                                        <span>Đang dùng Azure Client ID riêng</span>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <div>
+                                            <label class="block text-slate-400 text-[11px] font-semibold mb-1">Azure App Client ID:</label>
+                                            <input type="text"
+                                                   class="input-dark font-mono text-[11px] py-1.5 px-3 bg-[#0A0F1D] border-[#334155] text-slate-200"
+                                                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                                   @bind="CloudVM.OneDriveClientId" />
+                                        </div>
+                                        <div class="text-[10.5px] text-slate-500">
+                                            OneDrive sử dụng chuẩn OAuth 2.0 PKCE Public Client (không cần Client Secret).
+                                        </div>
+                                        <div class="flex items-center justify-between pt-1">
+                                            <button type="button"
+                                                    class="btn-blue text-[11px] py-1 px-3"
+                                                    @onclick="() => CloudVM.SaveCloudApiSettingsCommand.Execute(null)">
+                                                💾 Lưu Cấu Hình
+                                            </button>
+                                            <button type="button"
+                                                    class="btn-secondary text-[11px] py-1 px-2.5 text-slate-400 hover:text-white"
+                                                    @onclick="() => CloudVM.ResetOneDriveApiToDefault()">
+                                                ↩ Về Mặc Định
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
+                            <!-- Switch Developer Mode -->
+                            <div class="flex items-center justify-between pt-1">
+                                <span class="text-[11.5px] text-slate-400">Tùy chỉnh Azure App Client ID riêng (Dành cho Dev)</span>
+                                <label class="switch-toggle">
+                                    <input type="checkbox" @bind="CloudVM.UseCustomOneDriveApi" />
+                                    <span class="switch-slider"></span>
+                                </label>
                             </div>
                         </div>
-                    }
 
-                    <div class="pt-1">
-                        <label class="flex items-center space-x-2 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer select-none">
-                            <input type="checkbox" class="checkbox-custom" @bind="CloudVM.UseCustomGoogleDriveApi" />
-                            <span>Tùy chỉnh Google Cloud API riêng (Dành cho Developer)</span>
-                        </label>
-                    </div>
-                </div>
+                        <!-- Card Footer Actions -->
+                        <div class="flex items-center justify-between pt-3 border-t border-[#1E293B]">
+                            @if (CloudVM.UseCustomOneDriveApi)
+                            {
+                                <button type="button"
+                                        class="btn-secondary text-[11px] py-1 px-2.5 text-slate-400 hover:text-white"
+                                        @onclick="() => CloudVM.OpenAzurePortalGuideCommand.Execute(null)">
+                                    Hướng dẫn Azure App
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="text-[11px] text-slate-500 font-mono">1-Click PKCE</span>
+                            }
 
-                <div class="flex items-center justify-between pt-4 mt-3 border-t border-[#1E293B]">
-                    @if (CloudVM.UseCustomGoogleDriveApi)
-                    {
-                        <button class="btn-secondary text-[11px] py-1 px-2.5 text-sky-300 hover:text-white border-sky-500/40 flex items-center space-x-1.5"
-                                @onclick="() => CloudVM.OpenGoogleCloudConsoleGuideCommand.Execute(null)"
-                                title="Mở cẩm nang hướng dẫn A-Z chi tiết kèm ảnh chụp thực tế">
-                            <span>📖</span>
-                            <span>Mở Cẩm Nang Hướng Dẫn (A-Z)</span>
-                        </button>
-                    }
-                    else
-                    {
-                        <span class="text-[11px] text-slate-500 font-mono">1-Click OAuth 2.0</span>
-                    }
-
-                    <div class="flex items-center space-x-2">
-                        @if (CloudVM.IsGoogleDriveLoggedIn)
-                        {
-                            <button class="btn-danger text-[11px] py-1 px-3"
-                                    @onclick="() => DisconnectCloud(0)">
-                                Ngắt Kết Nối
-                            </button>
-                        }
-                        else
-                        {
-                            <button class="btn-blue text-[11px] py-1 px-3"
-                                    @onclick="() => ConnectCloud(0)">
-                                🔗 Đăng Nhập OAuth
-                            </button>
-                        }
+                            <div>
+                                @if (CloudVM.IsOneDriveLoggedIn)
+                                {
+                                    <button type="button"
+                                            class="btn-danger text-[11.5px] py-1.5 px-4 font-semibold shadow hover:bg-red-700"
+                                            @onclick="() => DisconnectCloud(1)">
+                                        🔓 Ngắt Kết Nối
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button"
+                                            class="btn-blue text-[11.5px] py-1.5 px-4 font-semibold shadow hover:bg-blue-600"
+                                            @onclick="() => ConnectCloud(1)">
+                                        🔗 Đăng Nhập OAuth
+                                    </button>
+                                }
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
+        }
 
-            <!-- Microsoft OneDrive Box -->
-            <div class="bg-[#0F172A] border border-[#2D3748] rounded-xl p-4 flex flex-col justify-between">
-                <div class="space-y-3">
+        <!-- ==================== SUB-TAB 2: DATABASE & GAME MANIFEST ==================== -->
+        @if (ActiveSubTab == 2 || ActiveSubTab == 4)
+        {
+            <div class="space-y-4">
+                <!-- Cơ sở dữ liệu SQLite -->
+                <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
                     <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
-                        <div class="flex items-center space-x-2">
-                            <span class="text-[18px]">☁️</span>
-                            <span class="font-bold text-white text-[13px]">Microsoft OneDrive (Graph API)</span>
+                        <div class="flex items-center space-x-2.5">
+                            <span class="text-emerald-400 text-lg">🗄️</span>
+                            <div>
+                                <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">CƠ SỞ DỮ LIỆU SQLITE (SaveVault.db)</h3>
+                                <div class="text-[11px] text-slate-400">Lưu trữ master-detail lịch sử sao lưu (Dapper + SQLite) và game cache offline</div>
+                            </div>
                         </div>
-                        <span class="badge-count text-[10px] @(CloudVM.IsOneDriveLoggedIn ? "bg-emerald-600/30 text-emerald-400 border border-emerald-500/30" : "bg-slate-700/50 text-slate-400")">
-                            @(CloudVM.IsOneDriveLoggedIn ? (string.IsNullOrEmpty(CloudVM.OneDriveAccountEmail) ? "✓ Đã kết nối" : $"✓ {CloudVM.OneDriveAccountEmail}") : "Chưa kết nối")
+                        <span class="px-2.5 py-1 text-[10.5px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 rounded-full flex items-center space-x-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            <span>Đang Hoạt Động</span>
                         </span>
                     </div>
 
-                    @if (!CloudVM.UseCustomOneDriveApi)
-                    {
-                        <!-- Chế độ Tự Động 1-Click -->
-                        <div class="p-3 bg-gradient-to-r from-blue-950/40 to-slate-900/60 border border-blue-500/30 rounded-lg space-y-1.5">
-                            <div class="flex items-center space-x-2 text-blue-400 font-bold text-[12px]">
-                                <span>⚡</span>
-                                <span>Chế Độ Tự Động (Khuyên dùng)</span>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-[11px] text-slate-400 font-semibold mb-1">Vị trí file cơ sở dữ liệu hiện tại:</label>
+                            <input type="text"
+                                   class="input-dark font-mono text-[12px] py-2 px-3 bg-[#0F172A] border-[#334155] text-slate-200"
+                                   @bind="SettingsVM.DatabaseLocation" />
+                        </div>
+
+                        <div class="flex items-center justify-between flex-wrap gap-2 pt-1">
+                            <div class="flex items-center space-x-2">
+                                <button type="button"
+                                        class="btn-secondary py-1.5 px-3.5 text-[12px] flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
+                                        @onclick="() => SettingsVM.BrowseDatabaseFileCommand.Execute(null)">
+                                    <span>📂</span>
+                                    <span>Duyệt File...</span>
+                                </button>
+                                <button type="button"
+                                        class="btn-blue py-1.5 px-4 text-[12px] font-semibold"
+                                        @onclick="() => SettingsVM.ApplyDatabaseLocationCommand.Execute(null)">
+                                    <span>Áp Dụng Vị Trí Mới</span>
+                                </button>
+                                <button type="button"
+                                        class="btn-secondary py-1.5 px-3 text-[12px] text-slate-400 hover:text-white"
+                                        @onclick="() => SettingsVM.ResetDatabaseLocationCommand.Execute(null)">
+                                    <span>Khôi Phục Mặc Định</span>
+                                </button>
+                            </div>
+
+                            <button type="button"
+                                    class="btn-secondary py-1.5 px-3 text-[11.5px] text-slate-300 hover:text-white flex items-center space-x-1.5"
+                                    @onclick="OpenDatabaseFolder">
+                                <span>📁</span>
+                                <span>Mở Thư Mục Chứa DB</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cơ chế Phân trang: SQL Pagination vs RAM Pagination -->
+                <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
+                    <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                        <div class="flex items-center space-x-2.5">
+                            <span class="text-cyan-400 text-lg">⚡</span>
+                            <div>
+                                <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">CƠ CHẾ PHÂN TRANG (PAGINATION ENGINE)</h3>
+                                <div class="text-[11px] text-slate-400">Tối ưu hóa hiệu năng truy vấn và mức tiêu thụ bộ nhớ RAM</div>
+                            </div>
+                        </div>
+                        <span class="px-2.5 py-0.5 text-[10px] font-bold rounded @(SettingsVM.UseSqlPagination ? "bg-cyan-950/80 text-cyan-300 border border-cyan-500/40" : "bg-amber-950/80 text-amber-300 border border-amber-500/40")">
+                            @(SettingsVM.UseSqlPagination ? "⚡ SQL-level (Tối ưu RAM)" : "💾 In-Memory RAM (Cũ)")
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="p-4 rounded-xl border transition-all cursor-pointer @(SettingsVM.UseSqlPagination ? "bg-cyan-950/20 border-cyan-500/50 shadow-md" : "bg-[#0F172A] border-[#2D3748] opacity-70 hover:opacity-100")"
+                             @onclick="() => SettingsVM.UseSqlPagination = true">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-cyan-400 font-bold text-base">⚡</span>
+                                    <span class="font-bold text-[13px] text-white">SQL Pagination</span>
+                                </div>
+                                <span class="px-1.5 py-0.5 text-[9.5px] font-bold rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40">Khuyên dùng</span>
                             </div>
                             <p class="text-[11px] text-slate-300 leading-relaxed">
-                                Sử dụng Microsoft PKCE Public Client. Kết nối trực tiếp vào tài khoản OneDrive cá nhân chỉ với 1 cú click.
+                                Sử dụng mệnh đề <code class="text-cyan-300 font-mono">LIMIT / OFFSET</code> truy vấn trực tiếp từ SQLite. Tiết kiệm RAM tối đa, tốc độ cực nhanh kể cả với hàng ngàn bản lưu.
                             </p>
                         </div>
-                    }
-                    else
-                    {
-                        <!-- Chế độ Tùy Chỉnh Cho Developer -->
-                        <div class="space-y-3 text-[12px] bg-[#131C2E] p-3 rounded-lg border border-[#334155]">
-                            <div class="text-[11px] text-amber-400 font-semibold flex items-center space-x-1">
-                                <span>⚙️</span>
-                                <span>Đang dùng Azure Client ID riêng</span>
+
+                        <div class="p-4 rounded-xl border transition-all cursor-pointer @(!SettingsVM.UseSqlPagination ? "bg-blue-950/20 border-blue-500/50 shadow-md" : "bg-[#0F172A] border-[#2D3748] opacity-70 hover:opacity-100")"
+                             @onclick="() => SettingsVM.UseSqlPagination = false">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-blue-400 font-bold text-base">💾</span>
+                                    <span class="font-bold text-[13px] text-white">RAM Pagination</span>
+                                </div>
+                                <span class="px-1.5 py-0.5 text-[9.5px] font-semibold rounded bg-slate-800 text-slate-400 border border-slate-700">Cơ chế cũ</span>
                             </div>
+                            <p class="text-[11px] text-slate-300 leading-relaxed">
+                                Nạp toàn bộ danh sách lịch sử sao lưu vào bộ nhớ RAM của ứng dụng rồi phân trang trên giao diện. Phù hợp khi cần tương thích đặc biệt.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Danh bạ Game & Ludusavi Manifest -->
+                <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
+                    <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                        <div class="flex items-center space-x-2.5">
+                            <span class="text-amber-400 text-lg">🎮</span>
                             <div>
-                                <label class="block text-slate-400 text-[11px] font-semibold mb-1">Azure App Client ID:</label>
-                                <input type="text"
-                                       class="input-dark font-mono text-[11px] py-1.5 px-3 bg-[#0A0F1D] border-[#334155] text-slate-200"
-                                       placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                                       @bind="CloudVM.OneDriveClientId" />
+                                <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">CƠ SỞ DỮ LIỆU GAME (LUDUSAVI MANIFEST)</h3>
+                                <div class="text-[11px] text-slate-400">Danh bạ vị trí thư mục save game tự động từ cộng đồng mã nguồn mở GitHub</div>
                             </div>
-                            <div class="text-[11px] text-slate-500">
-                                OneDrive sử dụng chuẩn OAuth 2.0 PKCE Public Client (không cần Client Secret).
+                        </div>
+                        <span class="px-3 py-1 text-[11px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1.5">
+                            <span>🎮</span>
+                            <span>@SettingsVM.CatalogGamesCount tựa game sẵn sàng</span>
+                        </span>
+                    </div>
+
+                    <div class="p-4 bg-[#0F172A] border border-[#2D3748] rounded-xl space-y-3">
+                        <div class="flex items-center justify-between flex-wrap gap-2">
+                            <div class="space-y-0.5">
+                                <div class="text-[12.5px] font-bold text-white flex items-center space-x-2">
+                                    <span>Đồng bộ danh mục tựa game mới nhất</span>
+                                    @if (SettingsVM.IsSyncingCatalog)
+                                    {
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 animate-pulse">
+                                            Đang tải @SettingsVM.SyncProgressPercent%
+                                        </span>
+                                    }
+                                </div>
+                                <div class="text-[11px] text-slate-400">
+                                    @(string.IsNullOrEmpty(SettingsVM.SyncCatalogStatus) ? "Cập nhật hơn 12.000+ cấu hình đường dẫn game từ dự án Ludusavi." : SettingsVM.SyncCatalogStatus)
+                                </div>
                             </div>
-                            <div class="flex items-center justify-between pt-2">
-                                <button class="btn-blue text-[11px] py-1 px-2.5"
-                                        @onclick="() => CloudVM.SaveCloudApiSettingsCommand.Execute(null)">
-                                    💾 Lưu Cấu Hình
+
+                            <div class="flex items-center space-x-2">
+                                @if (SettingsVM.IsSyncingCatalog)
+                                {
+                                    <button type="button"
+                                            class="btn-secondary py-1.5 px-3 text-[12px] flex items-center space-x-1.5 text-red-300 hover:text-white hover:bg-red-600/30 border-red-500/40"
+                                            @onclick="() => SettingsVM.CancelSync()">
+                                        <span>✕</span>
+                                        <span>Hủy</span>
+                                    </button>
+                                }
+                                <button type="button"
+                                        class="btn-backup-primary py-1.5 px-4 text-[12px] flex items-center space-x-2 cursor-pointer shadow"
+                                        disabled="@SettingsVM.IsSyncingCatalog"
+                                        @onclick="() => SettingsVM.SyncCatalogCommand.Execute(null)">
+                                    <span>@(SettingsVM.IsSyncingCatalog ? "⏳" : "🔄")</span>
+                                    <span>@(SettingsVM.IsSyncingCatalog ? "Đang đồng bộ..." : "Cập Nhật Từ GitHub")</span>
                                 </button>
-                                <button class="btn-secondary text-[11px] py-1 px-2 text-slate-400 hover:text-white"
-                                        @onclick="() => CloudVM.ResetOneDriveApiToDefault()">
-                                    ↩ Về Mặc Định
-                                </button>
                             </div>
                         </div>
-                    }
 
-                    <div class="pt-1">
-                        <label class="flex items-center space-x-2 text-[11px] text-slate-400 hover:text-slate-200 cursor-pointer select-none">
-                            <input type="checkbox" class="checkbox-custom" @bind="CloudVM.UseCustomOneDriveApi" />
-                            <span>Tùy chỉnh Azure App Client ID riêng (Dành cho Developer)</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-between pt-4 mt-3 border-t border-[#1E293B]">
-                    @if (CloudVM.UseCustomOneDriveApi)
-                    {
-                        <button class="btn-secondary text-[11px] py-1 px-2 text-slate-400 hover:text-white"
-                                @onclick="() => CloudVM.OpenAzurePortalGuideCommand.Execute(null)">
-                            Hướng dẫn Azure App
-                        </button>
-                    }
-                    else
-                    {
-                        <span class="text-[11px] text-slate-500 font-mono">1-Click PKCE</span>
-                    }
-
-                    <div class="flex items-center space-x-2">
-                        @if (CloudVM.IsOneDriveLoggedIn)
-                        {
-                            <button class="btn-danger text-[11px] py-1 px-3"
-                                    @onclick="() => DisconnectCloud(1)">
-                                Ngắt Kết Nối
-                            </button>
-                        }
-                        else
-                        {
-                            <button class="btn-blue text-[11px] py-1 px-3"
-                                    @onclick="() => ConnectCloud(1)">
-                                🔗 Đăng Nhập OAuth
-                            </button>
-                        }
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Section 3: Cơ Sở Dữ Liệu SQLite (Image 8.JPG) -->
-    <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg">
-        <div class="flex items-center space-x-2 mb-3">
-            <span class="text-emerald-400 font-bold">🗄️</span>
-            <h3 class="text-[14px] font-bold text-white uppercase tracking-wide">CƠ SỞ DỮ LIỆU SQLITE (SaveVault.db)</h3>
-        </div>
-
-        <div class="space-y-3">
-            <div>
-                <label class="block text-[11px] text-slate-400 font-semibold mb-1">Vị trí file cơ sở dữ liệu hiện tại:</label>
-                <div class="flex items-center space-x-2">
-                    <input type="text"
-                           class="input-dark font-mono text-[12px] py-2 px-3 flex-1 bg-[#0F172A] border-[#334155] text-slate-200"
-                           @bind="SettingsVM.DatabaseLocation" />
-                    <button class="btn-secondary py-2 px-3 text-[12px] flex-shrink-0"
-                            @onclick="() => SettingsVM.BrowseDatabaseFileCommand.Execute(null)">
-                        📂 Duyệt...
-                    </button>
-                    <button class="btn-blue py-2 px-3 text-[12px] flex-shrink-0"
-                            @onclick="() => SettingsVM.ApplyDatabaseLocationCommand.Execute(null)">
-                        Áp Dụng
-                    </button>
-                    <button class="btn-secondary py-2 px-3 text-[12px] flex-shrink-0 text-slate-400 hover:text-white"
-                            @onclick="() => SettingsVM.ResetDatabaseLocationCommand.Execute(null)">
-                        Khôi Phục Mặc Định
-                    </button>
-                </div>
-            </div>
-            <div class="text-[11px] text-slate-400">
-                Lưu trữ master-detail lịch sử sao lưu (Dapper + SQLite) và game cache offline.
-            </div>
-        </div>
-    </div>
-
-    <!-- Section 3.5: Cơ Sở Dữ Liệu Game & Ludusavi Manifest -->
-    <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg">
-        <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center space-x-2">
-                <span class="text-amber-400 font-bold">🎮</span>
-                <h3 class="text-[14px] font-bold text-white uppercase tracking-wide">CƠ SỞ DỮ LIỆU GAME (LUDUSAVI MANIFEST)</h3>
-            </div>
-            <span class="badge-count text-[11px] bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                @SettingsVM.CatalogGamesCount tựa game sẵn sàng
-            </span>
-        </div>
-
-        <div class="space-y-3">
-            <div class="text-[12px] text-slate-300 leading-relaxed">
-                Tích hợp sẵn danh bạ vị trí save game từ dự án <strong class="text-white">Ludusavi Manifest</strong> (mã nguồn mở). Hoạt động 100% offline, không bị ảnh hưởng bởi Cloudflare hay sự cố mạng.
-            </div>
-
-            <div class="flex flex-col p-3.5 bg-[#0F172A] border border-[#2D3748] rounded-lg space-y-2.5">
-                <div class="flex items-center justify-between">
-                    <div class="space-y-0.5">
-                        <div class="text-[12px] font-semibold text-white flex items-center space-x-2">
-                            <span>Đồng bộ danh mục mới nhất từ GitHub</span>
-                            @if (SettingsVM.IsSyncingCatalog)
-                            {
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 animate-pulse">
-                                    Đang tải @SettingsVM.SyncProgressPercent%
-                                </span>
-                            }
-                        </div>
-                        <div class="text-[11px] text-slate-400">
-                            @(string.IsNullOrEmpty(SettingsVM.SyncCatalogStatus) ? "Cập nhật hơn 12.000+ cấu hình game mới nhất từ cộng đồng." : SettingsVM.SyncCatalogStatus)
-                        </div>
-                    </div>
-
-                    <div class="flex items-center space-x-2">
                         @if (SettingsVM.IsSyncingCatalog)
                         {
-                            <button type="button" class="btn-secondary py-1.5 px-3 text-[12px] flex items-center space-x-1.5 text-red-300 hover:text-white hover:bg-red-600/30 border-red-500/40"
-                                    @onclick="() => SettingsVM.CancelSync()">
-                                <span>✕</span>
-                                <span>Hủy</span>
-                            </button>
+                            <div class="pt-2 space-y-2 border-t border-slate-800">
+                                <div class="w-full bg-[#1E293B] rounded-full h-2.5 overflow-hidden border border-slate-700/50">
+                                    <div class="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 h-2.5 rounded-full transition-all duration-300"
+                                         style="width: @(Math.Clamp(SettingsVM.SyncProgressPercent, 0, 100))%;"></div>
+                                </div>
+                                <div class="flex justify-between items-center text-[10.5px] text-slate-400 font-mono">
+                                    <span>@SettingsVM.SyncProgressSubText</span>
+                                    <span class="font-bold text-cyan-400">@SettingsVM.SyncProgressPercent%</span>
+                                </div>
+                            </div>
                         }
-                        <button class="btn-backup-primary py-1.5 px-4 text-[12px] flex items-center space-x-2"
-                                disabled="@SettingsVM.IsSyncingCatalog"
-                                @onclick="() => SettingsVM.SyncCatalogCommand.Execute(null)">
-                            <span>@(SettingsVM.IsSyncingCatalog ? "⏳" : "🔄")</span>
-                            <span>@(SettingsVM.IsSyncingCatalog ? "Đang đồng bộ..." : "Cập Nhật Từ GitHub")</span>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- ==================== SUB-TAB 3: NHẬT KÝ HOẠT ĐỘNG ==================== -->
+        @if (ActiveSubTab == 3 || ActiveSubTab == 4)
+        {
+            <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
+                <!-- Log Header -->
+                <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                    <div class="flex items-center space-x-2.5">
+                        <span class="text-slate-400 text-lg">📋</span>
+                        <div>
+                            <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">NHẬT KÝ HOẠT ĐỘNG (ACTION LOGS CONSOLE)</h3>
+                            <div class="text-[11px] text-slate-400">Ghi lại toàn bộ hành động sao lưu, khôi phục, đồng bộ đám mây và lỗi hệ thống</div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <button type="button"
+                                class="btn-secondary text-[11px] py-1.5 px-3 flex items-center space-x-1.5 text-slate-300 hover:text-white"
+                                @onclick="LoadRecentLogs">
+                            <span>🔄</span>
+                            <span>Làm Mới</span>
+                        </button>
+                        <button type="button"
+                                class="btn-secondary text-[11px] py-1.5 px-3 flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
+                                @onclick="OpenLogsFolder">
+                            <span>📂</span>
+                            <span>Mở Thư Mục Logs</span>
+                        </button>
+                        <button type="button"
+                                class="btn-secondary text-[11px] py-1.5 px-2.5 text-slate-400 hover:text-red-300"
+                                @onclick="() => RecentLogs.Clear()"
+                                title="Xóa tạm thời hiển thị log trên màn hình">
+                            <span>🗑️</span>
                         </button>
                     </div>
                 </div>
 
-                @if (SettingsVM.IsSyncingCatalog)
-                {
-                    <div class="pt-1.5 space-y-1.5 border-t border-slate-800/60">
-                        <div class="w-full bg-[#1E293B] rounded-full h-2 overflow-hidden border border-slate-700/50">
-                            <div class="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 h-2 rounded-full transition-all duration-200"
-                                 style="width: @(Math.Clamp(SettingsVM.SyncProgressPercent, 0, 100))%;"></div>
-                        </div>
-                        <div class="flex justify-between items-center text-[10px] text-slate-400 font-mono">
-                            <span>@SettingsVM.SyncProgressSubText</span>
-                            <span class="font-bold text-cyan-400">@SettingsVM.SyncProgressPercent%</span>
-                        </div>
+                <!-- Log Filter Bar -->
+                <div class="flex items-center justify-between flex-wrap gap-2 p-2.5 bg-[#0F172A] border border-[#2D3748] rounded-xl">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-[11px] text-slate-400 font-semibold">Lọc mức độ:</span>
+                        <button type="button"
+                                class="px-2.5 py-1 rounded text-[10.5px] font-semibold transition-all cursor-pointer @(SelectedLogLevelFilter == "ALL" ? "bg-blue-600 text-white shadow" : "bg-[#1E293B] text-slate-400 hover:text-white")"
+                                @onclick='() => SelectedLogLevelFilter = "ALL"'>
+                            Tất cả (@RecentLogs.Count)
+                        </button>
+                        <button type="button"
+                                class="px-2.5 py-1 rounded text-[10.5px] font-semibold transition-all cursor-pointer @(SelectedLogLevelFilter == "INFO" ? "bg-emerald-600 text-white shadow" : "bg-[#1E293B] text-emerald-400 hover:text-white")"
+                                @onclick='() => SelectedLogLevelFilter = "INFO"'>
+                            INFO (@InfoCount)
+                        </button>
+                        <button type="button"
+                                class="px-2.5 py-1 rounded text-[10.5px] font-semibold transition-all cursor-pointer @(SelectedLogLevelFilter == "WARN" ? "bg-amber-600 text-white shadow" : "bg-[#1E293B] text-amber-400 hover:text-white")"
+                                @onclick='() => SelectedLogLevelFilter = "WARN"'>
+                            WARN (@WarnCount)
+                        </button>
+                        <button type="button"
+                                class="px-2.5 py-1 rounded text-[10.5px] font-semibold transition-all cursor-pointer @(SelectedLogLevelFilter == "ERR" ? "bg-red-600 text-white shadow" : "bg-[#1E293B] text-red-400 hover:text-white")"
+                                @onclick='() => SelectedLogLevelFilter = "ERR"'>
+                            ERR (@ErrCount)
+                        </button>
                     </div>
-                }
-            </div>
-        </div>
-    </div>
 
-    <!-- Section 4: Nhật Ký Hoạt Động (Action Logs) -->
-    <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg">
-        <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center space-x-2">
-                <span class="text-slate-400 font-bold">📋</span>
-                <h3 class="text-[14px] font-bold text-white uppercase tracking-wide">NHẬT KÝ HOẠT ĐỘNG (ACTION LOGS)</h3>
-            </div>
-            <div class="flex items-center space-x-2">
-                <button class="btn-secondary text-[11px] py-1 px-2.5 flex items-center space-x-1"
-                        @onclick="LoadRecentLogs">
-                    <span>🔄</span>
-                    <span>Làm Mới</span>
-                </button>
-                <button class="btn-secondary text-[11px] py-1 px-2.5 flex items-center space-x-1"
-                        @onclick="OpenLogsFolder">
-                    <span>📂</span>
-                    <span>Mở Thư Mục Logs</span>
-                </button>
-            </div>
-        </div>
-
-        <div class="bg-[#0F172A] border border-[#2D3748] rounded-lg p-3 font-mono text-[11px] text-slate-300 max-h-[160px] overflow-y-auto space-y-1.5">
-            @if (RecentLogs.Count == 0)
-            {
-                <div class="text-slate-500 italic py-2 text-center">Chưa có bản ghi hoạt động nào hoặc thư mục nhật ký trống.</div>
-            }
-            else
-            {
-                @foreach (var log in RecentLogs)
-                {
-                    <div class="flex items-start space-x-2 py-0.5 border-b border-[#1E293B]/40 last:border-0">
-                        <span class="text-slate-500 shrink-0 select-none">[@log.Timestamp.ToString("HH:mm:ss")]</span>
-                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 @log.BadgeClass">@log.ShortLevel</span>
-                        <span class="text-slate-200 break-all leading-relaxed">@log.Message</span>
+                    <div class="w-64">
+                        <input type="text"
+                               class="input-dark text-[11px] py-1 px-3 bg-[#0A0F1D] border-[#334155] text-slate-200"
+                               placeholder="🔍 Tìm kiếm trong nhật ký..."
+                               @bind="SearchLogKeyword"
+                               @bind:event="oninput" />
                     </div>
-                }
-            }
-        </div>
+                </div>
+
+                <!-- Log Console Box -->
+                <div class="bg-[#0A0F1D] border border-[#2D3748] rounded-xl p-3 font-mono text-[11px] text-slate-300 min-h-[220px] max-h-[380px] overflow-y-auto space-y-1.5 shadow-inner">
+                    @if (!FilteredLogs.Any())
+                    {
+                        <div class="text-slate-500 italic py-8 text-center flex flex-col items-center justify-center space-y-2">
+                            <span class="text-2xl">📋</span>
+                            <span>Không tìm thấy bản ghi nhật ký phù hợp với bộ lọc.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var log in FilteredLogs)
+                        {
+                            <div class="flex items-start space-x-2 py-1 px-1.5 rounded hover:bg-slate-800/50 border-b border-[#1E293B]/30 last:border-0 transition-colors">
+                                <span class="text-slate-500 shrink-0 select-none text-[10.5px]">[@log.Timestamp.ToString("HH:mm:ss")]</span>
+                                <span class="px-1.5 py-0.2 rounded text-[9.5px] font-bold shrink-0 @log.BadgeClass">@log.ShortLevel</span>
+                                <span class="text-slate-200 break-all leading-relaxed">@log.Message</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        }
     </div>
 </div>
 
@@ -494,8 +737,33 @@
     private SettingsSubViewModel SettingsVM => VM.SettingsVM;
     private CloudSubViewModel CloudVM => VM.CloudVM;
 
+    private int ActiveSubTab { get; set; } = 0;
     private bool ShowGSecret { get; set; }
+    private bool ShowSavedToast { get; set; }
+    private string SelectedLogLevelFilter { get; set; } = "ALL";
+    private string SearchLogKeyword { get; set; } = string.Empty;
     private List<LogEntryItem> RecentLogs { get; set; } = new();
+
+    private IEnumerable<LogEntryItem> FilteredLogs
+    {
+        get
+        {
+            var list = RecentLogs.AsEnumerable();
+            if (SelectedLogLevelFilter != "ALL")
+            {
+                list = list.Where(l => l.ShortLevel.Equals(SelectedLogLevelFilter, StringComparison.OrdinalIgnoreCase));
+            }
+            if (!string.IsNullOrWhiteSpace(SearchLogKeyword))
+            {
+                list = list.Where(l => l.Message.Contains(SearchLogKeyword, StringComparison.OrdinalIgnoreCase));
+            }
+            return list;
+        }
+    }
+
+    private int InfoCount => RecentLogs.Count(l => l.ShortLevel == "INFO");
+    private int WarnCount => RecentLogs.Count(l => l.ShortLevel == "WARN");
+    private int ErrCount => RecentLogs.Count(l => l.ShortLevel == "ERR");
 
     protected override void OnInitialized()
     {
@@ -513,6 +781,16 @@
     {
         await SettingsVM.ExecuteSaveSettingsAsync();
         await CloudVM.ExecuteSaveCloudApiSettingsAsync();
+
+        ShowSavedToast = true;
+        StateHasChanged();
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(3000);
+            ShowSavedToast = false;
+            await InvokeAsync(StateHasChanged);
+        });
     }
 
     private async Task ConnectCloud(int providerIndex)
@@ -548,6 +826,31 @@
         NativeDialog.OpenFolderInExplorer(logsDir);
     }
 
+    private void OpenBackupFolder()
+    {
+        if (!string.IsNullOrWhiteSpace(SettingsVM.BackupDestinationRoot) && Directory.Exists(SettingsVM.BackupDestinationRoot))
+        {
+            NativeDialog.OpenFolderInExplorer(SettingsVM.BackupDestinationRoot);
+        }
+    }
+
+    private void OpenDatabaseFolder()
+    {
+        var dbPath = SettingsVM.DatabaseLocation;
+        if (File.Exists(dbPath))
+        {
+            NativeDialog.OpenFileInExplorer(dbPath);
+        }
+        else
+        {
+            var dir = Path.GetDirectoryName(dbPath);
+            if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+            {
+                NativeDialog.OpenFolderInExplorer(dir);
+            }
+        }
+    }
+
     private void LoadRecentLogs()
     {
         try
@@ -580,7 +883,7 @@
                         lines.Add(line);
                 }
 
-                var latestLines = lines.TakeLast(30).Reverse();
+                var latestLines = lines.TakeLast(50).Reverse();
 
                 foreach (var rawLine in latestLines)
                 {

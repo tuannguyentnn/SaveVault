@@ -19,6 +19,11 @@ public static class GameCoverService
     private static readonly HttpClient _httpClient;
 
     /// <summary>
+    /// Chiều rộng mặc định khi resize ảnh bìa tải về (width = 200px).
+    /// </summary>
+    public const int DefaultCoverTargetWidth = 200;
+
+    /// <summary>
     /// Cờ bật/tắt tìm ảnh data từ Steam. Mặc định là false (tạm thời ẩn tìm ảnh data từ Steam theo yêu cầu).
     /// </summary>
     public static bool EnableSteamCovers { get; set; } = false;
@@ -389,7 +394,7 @@ public static class GameCoverService
             var downloaded = await DownloadImageAsync(effectiveUrl, targetTempFile, cancellationToken);
             if (downloaded && File.Exists(targetTempFile) && IsValidImageFile(targetTempFile))
             {
-                ResizeCoverImage(targetTempFile, 450);
+                ResizeCoverImage(targetTempFile, DefaultCoverTargetWidth);
                 return GetTempCoverImageUri(targetTempFile);
             }
         }
@@ -417,7 +422,7 @@ public static class GameCoverService
                         var downloaded = await DownloadImageAsync(steamLibraryUrl, targetTempFile, cancellationToken);
                         if (downloaded && File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
                         {
-                            ResizeCoverImage(targetTempFile, 450);
+                            ResizeCoverImage(targetTempFile, DefaultCoverTargetWidth);
                             return GetTempCoverImageUri(targetTempFile);
                         }
                     }
@@ -428,7 +433,7 @@ public static class GameCoverService
                         var downloaded = await DownloadImageAsync(steamHeaderUrl, targetTempFile, cancellationToken);
                         if (downloaded && File.Exists(targetTempFile) && new FileInfo(targetTempFile).Length > 0)
                         {
-                            ResizeCoverImage(targetTempFile, 450);
+                            ResizeCoverImage(targetTempFile, DefaultCoverTargetWidth);
                             return GetTempCoverImageUri(targetTempFile);
                         }
                     }
@@ -444,10 +449,10 @@ public static class GameCoverService
     }
 
     /// <summary>
-    /// Tự động resize ảnh về chiều rộng chuẩn (mặc định width = 450px),
+    /// Tự động resize ảnh về chiều rộng chuẩn (mặc định width = 200px),
     /// chiều cao co dãn tự nhiên theo tỉ lệ gốc để không bị méo.
     /// </summary>
-    public static void ResizeCoverImage(string filePath, int targetWidth = 450)
+    public static void ResizeCoverImage(string filePath, int targetWidth = DefaultCoverTargetWidth)
     {
         if (!File.Exists(filePath) || !IsValidImageFile(filePath)) return;
 
@@ -497,7 +502,7 @@ public static class GameCoverService
 
     /// <summary>
     /// Tải ảnh bìa (ưu tiên từ onlineCoverUrl đã tìm thấy trước đó),
-    /// sau đó resize chuẩn hóa chiều rộng về 450px và lưu vào thư mục Covers.
+    /// sau đó resize chuẩn hóa chiều rộng về 200px và lưu vào thư mục Covers.
     /// Trả về đường dẫn file ảnh cục bộ trên máy.
     /// </summary>
     public static async Task<string?> DownloadAndProcessCoverAsync(
@@ -570,7 +575,7 @@ public static class GameCoverService
             {
                 if (await DownloadImageAsync(onlineCoverUrl, targetFile, cancellationToken))
                 {
-                    ResizeCoverImage(targetFile, 450);
+                    ResizeCoverImage(targetFile, DefaultCoverTargetWidth);
                     _dataUrlCache.TryRemove(targetFile, out _);
                     return targetFile;
                 }
@@ -588,7 +593,7 @@ public static class GameCoverService
     /// <summary>
     /// Đảm bảo game có ảnh bìa trên máy:
     /// - Nếu file đã tồn tại: trả về đường dẫn hiện có, không tải lại.
-    /// - Nếu chưa có: tra cứu từ PCGamingWiki trước -> Steam sau, tải về máy và resize width 450px.
+    /// - Nếu chưa có: tra cứu từ PCGamingWiki trước -> Steam sau, tải về máy và resize width 200px.
     /// - Nếu không tìm thấy hoặc offline: trả về null.
     /// </summary>
     public static async Task<string?> EnsureCoverForGameAsync(string gameName, string? steamAppId = null, CancellationToken cancellationToken = default)
@@ -631,7 +636,7 @@ public static class GameCoverService
                 var success = await DownloadImageAsync(pcgwCoverUrl, targetFile, cancellationToken);
                 if (success)
                 {
-                    ResizeCoverImage(targetFile, 450);
+                    ResizeCoverImage(targetFile, DefaultCoverTargetWidth);
                     _dataUrlCache.TryRemove(targetFile, out _);
                     return targetFile;
                 }
@@ -655,7 +660,7 @@ public static class GameCoverService
                     var steamLibraryUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/library_600x900.jpg";
                     if (await DownloadImageAsync(steamLibraryUrl, targetFile, cancellationToken))
                     {
-                        ResizeCoverImage(targetFile, 450);
+                        ResizeCoverImage(targetFile, DefaultCoverTargetWidth);
                         _dataUrlCache.TryRemove(targetFile, out _);
                         return targetFile;
                     }
@@ -664,7 +669,7 @@ public static class GameCoverService
                     var steamHeaderUrl = $"https://shared.steamstatic.com/store_item_assets/steam/apps/{effectiveSteamAppId}/header.jpg";
                     if (await DownloadImageAsync(steamHeaderUrl, targetFile, cancellationToken))
                     {
-                        ResizeCoverImage(targetFile, 450);
+                        ResizeCoverImage(targetFile, DefaultCoverTargetWidth);
                         _dataUrlCache.TryRemove(targetFile, out _);
                         return targetFile;
                     }

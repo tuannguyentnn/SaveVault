@@ -240,7 +240,7 @@ public class BackupService
             ? pathsToBackup[0]
             : string.Join(" | ", pathsToBackup);
 
-        // Báo tiến trình tải và chuẩn hóa ảnh bìa game (width = 450px)
+        // Báo tiến trình tải và chuẩn hóa ảnh bìa game (width = 200px)
         progress?.Report(new BackupProgress 
         { 
             Percent = 94, 

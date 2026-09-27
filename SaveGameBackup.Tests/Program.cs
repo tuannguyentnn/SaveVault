@@ -992,8 +992,8 @@ try
         throw new Exception("FAIL: Real cover for Cyberpunk 2077 was not downloaded!");
     }
 
-    // Test 21: CoverPath Persistence, Resize width 450px & WebView2 Virtual Host URI
-    Console.WriteLine("\n[21] Testing CoverPath Persistence, Resize width 450px & WebView2 Virtual Host URI");
+    // Test 21: CoverPath Persistence, Resize width 200px & WebView2 Virtual Host URI
+    Console.WriteLine("\n[21] Testing CoverPath Persistence, Resize width 200px & WebView2 Virtual Host URI");
     var uri = GameCoverService.GetCoverImageUri(testGameCoverPath);
     if (string.IsNullOrEmpty(uri) || !uri.StartsWith("https://covers.local/"))
     {
@@ -1001,18 +1001,18 @@ try
     }
     Console.WriteLine($"  ✓ GetCoverImageUri returned direct URI without Base64: {uri}");
 
-    // Test ResizeCoverImage to 450px
+    // Test ResizeCoverImage to 200px
     var resizeTestPath = Path.Combine(coversDir, "resize_test.jpg");
     using (var bmp = new System.Drawing.Bitmap(800, 600))
     {
         bmp.Save(resizeTestPath, System.Drawing.Imaging.ImageFormat.Jpeg);
     }
-    GameCoverService.ResizeCoverImage(resizeTestPath, 450);
+    GameCoverService.ResizeCoverImage(resizeTestPath, 200);
     using (var resizedBmp = System.Drawing.Image.FromFile(resizeTestPath))
     {
-        if (resizedBmp.Width != 450)
+        if (resizedBmp.Width != 200)
         {
-            throw new Exception($"FAIL: ResizeCoverImage expected width 450, got: {resizedBmp.Width}");
+            throw new Exception($"FAIL: ResizeCoverImage expected width 200, got: {resizedBmp.Width}");
         }
         Console.WriteLine($"  ✓ ResizeCoverImage verified: width is exactly {resizedBmp.Width}px (proportional height: {resizedBmp.Height}px)");
     }
@@ -1278,7 +1278,7 @@ try
         bmp.Save(dummyTempFile, System.Drawing.Imaging.ImageFormat.Jpeg);
     }
     // Simulate pre-resizing at temp download time
-    GameCoverService.ResizeCoverImage(dummyTempFile, 450);
+    GameCoverService.ResizeCoverImage(dummyTempFile, 200);
 
     var tempUri = GameCoverService.GetTempCoverImageUri(dummyTempFile);
     if (tempUri == null || !tempUri.StartsWith("https://tempcovers.local/"))
@@ -1291,7 +1291,7 @@ try
     }
     Console.WriteLine($"  ✓ Temp cover virtual host mapping: {tempUri} (Non-Base64)");
 
-    // Test DownloadAndProcessCoverAsync copies from Temp/covers/ (already 450px) without re-resizing
+    // Test DownloadAndProcessCoverAsync copies from Temp/covers/ (already 200px) without re-resizing
     var processedCover = await GameCoverService.DownloadAndProcessCoverAsync("Test Game Temp", tempUri);
     if (string.IsNullOrEmpty(processedCover) || !File.Exists(processedCover))
     {
@@ -1299,12 +1299,12 @@ try
     }
     using (var processedImg = System.Drawing.Image.FromFile(processedCover))
     {
-        if (processedImg.Width != 450)
+        if (processedImg.Width != 200)
         {
-            throw new Exception($"FAIL: Expected width 450px, got {processedImg.Width}px");
+            throw new Exception($"FAIL: Expected width 200px, got {processedImg.Width}px");
         }
     }
-    Console.WriteLine($"  ✓ DownloadAndProcessCoverAsync correctly copied from pre-resized Temp/covers (450px)");
+    Console.WriteLine($"  ✓ DownloadAndProcessCoverAsync correctly copied from pre-resized Temp/covers (200px)");
 
     GameCoverService.ClearTempCovers();
     if (File.Exists(dummyTempFile))
@@ -1332,12 +1332,12 @@ try
     var downloadedTempPath = GameCoverService.GetTempCoverFilePath("Final Assault");
     using (var tempImg = System.Drawing.Image.FromFile(downloadedTempPath))
     {
-        if (tempImg.Width > 450)
+        if (tempImg.Width > 200)
         {
-            throw new Exception($"FAIL: Expected temp cover width <= 450px, got {tempImg.Width}px");
+            throw new Exception($"FAIL: Expected temp cover width <= 200px, got {tempImg.Width}px");
         }
     }
-    Console.WriteLine($"  ✓ DownloadToTempCoverAsync verified temp cover width <= 450px: {realTempUri}");
+    Console.WriteLine($"  ✓ DownloadToTempCoverAsync verified temp cover width <= 200px: {realTempUri}");
     GameCoverService.ClearTempCovers();
 
     // Test 26: Testing LudusaviManifestService ManifestSyncProgress & Cancellation
