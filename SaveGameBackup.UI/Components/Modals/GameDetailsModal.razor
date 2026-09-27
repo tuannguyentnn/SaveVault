@@ -334,9 +334,21 @@
     private bool _lastIsOpen = false;
 
     // Sorting & Pagination States (Configurable PageSize)
-    private string DetailSortColumn { get; set; } = "Date";
-    private bool DetailSortAscending { get; set; } = false; // Default newest first
-    private int CurrentDetailPage { get; set; } = 1;
+    private string DetailSortColumn
+    {
+        get => HistoryVM.DetailSortColumn;
+        set => HistoryVM.DetailSortColumn = value;
+    }
+    private bool DetailSortAscending
+    {
+        get => HistoryVM.DetailSortAscending;
+        set => HistoryVM.DetailSortAscending = value;
+    }
+    private int CurrentDetailPage
+    {
+        get => HistoryVM.CurrentDetailPage;
+        set => HistoryVM.CurrentDetailPage = value;
+    }
     private int DetailPageSize => Math.Max(1, AppConfigService.GetConfig().PageSize);
 
     private int TotalDetailItems => HistoryVM.UseSqlPagination ? HistoryVM.PagedTotalSnapshots : GetAllDetails().Count();
