@@ -36,6 +36,7 @@ public class MainViewModel : INotifyPropertyChanged
     public RestoreSubViewModel RestoreVM { get; }
     public CloudSubViewModel CloudVM { get; }
     public SettingsSubViewModel SettingsVM { get; }
+    public UpdateSubViewModel UpdateVM { get; }
     public IDialogService DialogService { get; }
     public INativeDialogService NativeDialog { get; }
     public DatabaseService DatabaseService => _databaseService;
@@ -64,6 +65,7 @@ public class MainViewModel : INotifyPropertyChanged
         RestoreVM = new RestoreSubViewModel(_backupService, _cloudManager, _databaseService, DialogService, _eventBus, NativeDialog);
         CloudVM = new CloudSubViewModel(_cloudManager, _backupService, _databaseService, DialogService, _eventBus);
         SettingsVM = new SettingsSubViewModel(_databaseService, DialogService, _eventBus, NativeDialog);
+        UpdateVM = new UpdateSubViewModel(new UpdateService(), CheckIfBusyBeforeUpdate, DialogService, _eventBus);
 
         // Lắng nghe sự kiện chuyển tab từ Mediator
         _eventBus.Subscribe<RequestNavigateTabEvent>(e => SelectedTabIndex = e.TabIndex);
@@ -77,6 +79,7 @@ public class MainViewModel : INotifyPropertyChanged
         HistoryVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
         RestoreVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
         CloudVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
+        UpdateVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
 
         // Đăng ký chuyển tiếp PropertyChanged từ các Sub-VMs để binding cũ tiếp tục hoạt động
         ForwardPropertyChanged(SearchVM);
@@ -85,6 +88,7 @@ public class MainViewModel : INotifyPropertyChanged
         ForwardPropertyChanged(RestoreVM);
         ForwardPropertyChanged(CloudVM);
         ForwardPropertyChanged(SettingsVM);
+        ForwardPropertyChanged(UpdateVM);
         ForwardPropertyChanged(DialogService);
 
         CloseModalCommand = new RelayCommand(_ => ExecuteCloseModal());
@@ -145,7 +149,42 @@ public class MainViewModel : INotifyPropertyChanged
         RestoreVM.IsRestoreModalOpen ||
         RestoreVM.IsRestoreSourceModalOpen ||
         CloudVM.IsSyncCloudSelectModalOpen ||
-        SearchVM.IsGameSelectModalOpen;
+        SearchVM.IsGameSelectModalOpen ||
+        (UpdateVM?.IsUpdateModalOpen == true);
+
+    /// <summary>
+    /// Thẩm định xem hệ thống có đang bận thực hiện tác vụ quan trọng nào không (sao lưu, khôi phục, đồng bộ đám mây, v.v.).
+    /// </summary>
+    public (bool isBusy, string reason) CheckIfBusyBeforeUpdate()
+    {
+        if (BackupVM.IsBackingUp)
+        {
+            return (true, "Đang diễn ra tiến trình sao lưu save game. Hãy đợi sao lưu hoàn tất trước khi cập nhật.");
+        }
+        if (RestoreVM.IsModalRestoring)
+        {
+            return (true, "Đang diễn ra tiến trình khôi phục bản lưu game. Hãy đợi khôi phục hoàn tất trước khi cập nhật.");
+        }
+        if (CloudVM.IsCloudSyncing)
+        {
+            var p = !string.IsNullOrWhiteSpace(CloudVM.CloudSyncProgressText) ? CloudVM.CloudSyncProgressText : $"{CloudVM.CloudSyncProgressPercent}%";
+            return (true, $"Đang đồng bộ dữ liệu lên đám mây ({p}). Hãy đợi đồng bộ hoàn tất trước khi cập nhật.");
+        }
+        if (SettingsVM.IsSyncingCatalog)
+        {
+            return (true, $"Đang cập nhật danh bạ Ludusavi Manifest từ GitHub ({SettingsVM.SyncProgressPercent}%). Hãy đợi tải xong trước khi cập nhật.");
+        }
+        if (HistoryVM.IsSyncingCovers)
+        {
+            return (true, "Đang tải ảnh bìa game về máy. Hãy đợi tác vụ hoàn tất trước khi cập nhật.");
+        }
+        if (SearchVM.IsSearching)
+        {
+            return (true, "Đang tìm kiếm thông tin game. Hãy đợi tìm kiếm xong trước khi cập nhật.");
+        }
+
+        return (false, string.Empty);
+    }
 
     // --- CHUYỂN TIẾP CÁC THUỘC TÍNH TỪ SUB-VIEWMODELS (Bảo toàn 100% XAML Bindings) ---
 

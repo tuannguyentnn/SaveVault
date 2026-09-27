@@ -35,12 +35,22 @@
             </div>
         </div>
 
-        <button type="button"
-                class="btn-backup-primary py-2 px-5 text-[12.5px] flex items-center space-x-2 shadow-lg hover:shadow-emerald-500/20 transition-all cursor-pointer"
-                @onclick="SaveAllSettings">
-            <span>💾</span>
-            <span>Lưu Tất Cả Cài Đặt</span>
-        </button>
+        <div class="flex items-center space-x-2.5">
+            <button type="button"
+                    class="btn-secondary py-2 px-3.5 text-[12px] flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
+                    disabled="@UpdateVM.IsCheckingForUpdate"
+                    @onclick="() => UpdateVM.CheckForUpdateCommand.Execute(null)">
+                <span>@(UpdateVM.IsCheckingForUpdate ? "⏳" : "🔄")</span>
+                <span>@(UpdateVM.IsCheckingForUpdate ? "Đang kiểm tra..." : "Kiểm Tra Cập Nhật")</span>
+            </button>
+
+            <button type="button"
+                    class="btn-backup-primary py-2 px-5 text-[12.5px] flex items-center space-x-2 shadow-lg hover:shadow-emerald-500/20 transition-all cursor-pointer"
+                    @onclick="SaveAllSettings">
+                <span>💾</span>
+                <span>Lưu Tất Cả Cài Đặt</span>
+            </button>
+        </div>
     </div>
 
     <!-- Segmented Sub-Navigation Pills -->
@@ -729,6 +739,43 @@
                     }
                 </div>
             </div>
+
+            <!-- Card Phiên Bản & Cập Nhật Hệ Thống -->
+            <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-3.5">
+                <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                    <div class="flex items-center space-x-2.5">
+                        <span class="text-cyan-400 text-lg">🚀</span>
+                        <div>
+                            <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">PHIÊN BẢN &amp; CẬP NHẬT ỨNG DỤNG</h3>
+                            <div class="text-[11px] text-slate-400">Kiểm tra và nâng cấp trực tiếp từ repository bản build publish</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span class="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
+                            v@(UpdateVM.CurrentVersion)
+                        </span>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between flex-wrap gap-2 p-3 bg-[#0F172A] border border-[#2D3748] rounded-xl">
+                    <div class="space-y-0.5">
+                        <div class="text-[12px] font-semibold text-white">Trạng thái cập nhật hệ thống:</div>
+                        <div class="text-[11px] text-slate-400">
+                            @(string.IsNullOrEmpty(UpdateVM.StatusMessage) ? "Ứng dụng tự động kiểm tra bản build publish mới mỗi khi khởi động." : UpdateVM.StatusMessage)
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <button type="button"
+                                class="btn-secondary py-1.5 px-3.5 text-[12px] flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
+                                disabled="@UpdateVM.IsCheckingForUpdate"
+                                @onclick="() => UpdateVM.CheckForUpdateCommand.Execute(null)">
+                            <span>@(UpdateVM.IsCheckingForUpdate ? "⏳" : "🔄")</span>
+                            <span>@(UpdateVM.IsCheckingForUpdate ? "Đang kiểm tra..." : "Kiểm Tra Bản Mới")</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
         }
     </div>
 </div>
@@ -736,6 +783,7 @@
 @code {
     private SettingsSubViewModel SettingsVM => VM.SettingsVM;
     private CloudSubViewModel CloudVM => VM.CloudVM;
+    private UpdateSubViewModel UpdateVM => VM.UpdateVM;
 
     private int ActiveSubTab { get; set; } = 0;
     private bool ShowGSecret { get; set; }
@@ -769,6 +817,7 @@
     {
         SettingsVM.PropertyChanged += OnStateChanged;
         CloudVM.PropertyChanged += OnStateChanged;
+        UpdateVM.PropertyChanged += OnStateChanged;
         LoadRecentLogs();
     }
 
@@ -930,6 +979,7 @@
     {
         SettingsVM.PropertyChanged -= OnStateChanged;
         CloudVM.PropertyChanged -= OnStateChanged;
+        UpdateVM.PropertyChanged -= OnStateChanged;
     }
 
     private record LogEntryItem(DateTime Timestamp, string Level, string Message)

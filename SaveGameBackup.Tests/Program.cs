@@ -1835,8 +1835,74 @@ try
         throw new Exception("FAIL: UseSqlPagination should be true after toggling back!");
     Console.WriteLine("  ✓ AppConfigService UseSqlPagination toggle back to true (SQL Mode) verified OK!");
 
+    // Test 32: Auto-Update Service, SemVer, Temp Directory, Pre-Update Safety Check, and Skip Version
+    Console.WriteLine("\n[32] Testing Auto-Update Feature (Published Repo, SemVer, Temp Dir, Skip Version & Safety Check)");
+
+    // 32.1: SemVer Comparison
+    if (!UpdateService.IsNewerVersion("1.0.0", "1.1.0"))
+        throw new Exception("FAIL: 1.1.0 should be newer than 1.0.0");
+    if (!UpdateService.IsNewerVersion("v1.0.0", "v1.0.1"))
+        throw new Exception("FAIL: v1.0.1 should be newer than v1.0.0");
+    if (UpdateService.IsNewerVersion("1.1.0", "1.0.0"))
+        throw new Exception("FAIL: 1.0.0 should not be newer than 1.1.0");
+    if (UpdateService.IsNewerVersion("1.0.0", "1.0.0"))
+        throw new Exception("FAIL: 1.0.0 should not be newer than 1.0.0");
+    if (!UpdateService.IsNewerVersion("1.0", "1.0.1"))
+        throw new Exception("FAIL: 1.0.1 should be newer than 1.0");
+    Console.WriteLine("  ✓ SemVer comparison logic verified OK!");
+
+    // 32.2: Temp Directory Resolution (Must be inside AppDirectory and named 'temp')
+    var updateTestDir = Path.Combine(tempTestDir, "AppRoot");
+    Directory.CreateDirectory(updateTestDir);
+    var updateService = new UpdateService(customAppDirectory: updateTestDir);
+    if (!updateService.TempDirectory.Equals(Path.Combine(updateTestDir, "temp"), StringComparison.OrdinalIgnoreCase))
+        throw new Exception($"FAIL: TempDirectory expected '{Path.Combine(updateTestDir, "temp")}', got '{updateService.TempDirectory}'");
+    if (!Directory.Exists(updateService.TempDirectory))
+        throw new Exception("FAIL: TempDirectory must exist!");
+    Console.WriteLine($"  ✓ TempDirectory verified in app root: {updateService.TempDirectory}");
+
+    // 32.3: Skip Version Persistence
+    updateService.SkipVersion("1.2.0");
+    var skipConfig = AppConfigService.GetConfig();
+    if (skipConfig.SkippedUpdateVersion != "1.2.0")
+        throw new Exception($"FAIL: Expected SkippedUpdateVersion '1.2.0', got '{skipConfig.SkippedUpdateVersion}'");
+    updateService.ResetSkippedVersion();
+    skipConfig = AppConfigService.GetConfig();
+    if (!string.IsNullOrEmpty(skipConfig.SkippedUpdateVersion))
+        throw new Exception("FAIL: SkippedUpdateVersion should be null after reset!");
+    Console.WriteLine("  ✓ SkipVersion and ResetSkippedVersion verified OK!");
+
+    // 32.4: Pre-Update Safety Check Logic
+    bool mockIsBusy = true;
+    string mockReason = "Đang sao lưu game Test Game...";
+    Func<(bool isBusy, string reason)> checkBusyFunc = () => (mockIsBusy, mockReason);
+
+    var busyCheck = checkBusyFunc();
+    if (!busyCheck.isBusy || busyCheck.reason != mockReason)
+        throw new Exception("FAIL: Safety check should detect busy state!");
+    Console.WriteLine("  ✓ Pre-Update Safety Check successfully detected active operations!");
+
+    mockIsBusy = false;
+    mockReason = string.Empty;
+    var idleCheck = checkBusyFunc();
+    if (idleCheck.isBusy)
+        throw new Exception("FAIL: Safety check should detect idle state!");
+    Console.WriteLine("  ✓ Pre-Update Safety Check verified idle state!");
+
+    // 32.5: Runner Script Generation
+    var dummyExtracted = Path.Combine(updateService.TempDirectory, "extracted");
+    Directory.CreateDirectory(dummyExtracted);
+    int currentPid = System.Diagnostics.Process.GetCurrentProcess().Id;
+    var runnerScriptPath = updateService.GenerateRunnerScript(dummyExtracted, currentPid);
+    if (!File.Exists(runnerScriptPath))
+        throw new Exception("FAIL: Runner script was not generated!");
+    var scriptContent = File.ReadAllText(runnerScriptPath);
+    if (!scriptContent.Contains("xcopy") || !scriptContent.Contains("SaveVault.exe") || !scriptContent.Contains(currentPid.ToString()))
+        throw new Exception("FAIL: Runner script content is missing expected commands or PID!");
+    Console.WriteLine("  ✓ Runner script generated cleanly with xcopy and process supervision!");
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 31 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 32 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally

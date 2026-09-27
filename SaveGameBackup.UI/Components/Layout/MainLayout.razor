@@ -101,6 +101,15 @@
         VM.SearchVM.PropertyChanged += OnStateChanged;
         VM.HistoryVM.PropertyChanged += OnStateChanged;
         VM.CloudVM.PropertyChanged += OnStateChanged;
+        VM.UpdateVM.PropertyChanged += OnStateChanged;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _ = VM.UpdateVM.CheckForUpdateOnStartupAsync();
+        }
     }
 
     private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
@@ -123,5 +132,6 @@
         VM.SearchVM.PropertyChanged -= OnStateChanged;
         VM.HistoryVM.PropertyChanged -= OnStateChanged;
         VM.CloudVM.PropertyChanged -= OnStateChanged;
+        VM.UpdateVM.PropertyChanged -= OnStateChanged;
     }
 }
