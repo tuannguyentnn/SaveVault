@@ -37,14 +37,6 @@
 
         <div class="flex items-center space-x-2.5">
             <button type="button"
-                    class="btn-secondary py-2 px-3.5 text-[12px] flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
-                    disabled="@UpdateVM.IsCheckingForUpdate"
-                    @onclick="() => UpdateVM.CheckForUpdateCommand.Execute(null)">
-                <span>@(UpdateVM.IsCheckingForUpdate ? "⏳" : "🔄")</span>
-                <span>@(UpdateVM.IsCheckingForUpdate ? "Đang kiểm tra..." : "Kiểm Tra Cập Nhật")</span>
-            </button>
-
-            <button type="button"
                     class="btn-backup-primary py-2 px-5 text-[12.5px] flex items-center space-x-2 shadow-lg hover:shadow-emerald-500/20 transition-all cursor-pointer"
                     @onclick="SaveAllSettings">
                 <span>💾</span>
@@ -84,27 +76,18 @@
         <button type="button"
                 class="subtab-pill @(ActiveSubTab == 3 ? "active" : "")"
                 @onclick="() => ActiveSubTab = 3">
-            <span>📋</span>
-            <span>Nhật Ký &amp; Hệ Thống</span>
+            <span>🚀</span>
+            <span>Cập Nhật &amp; Logs</span>
             @if (ErrCount > 0)
             {
                 <span class="px-1.5 py-0.2 rounded text-[10px] bg-red-950 text-red-400 border border-red-700">@ErrCount lỗi</span>
             }
         </button>
-
-        <div class="h-4 w-px bg-slate-700/60 mx-1"></div>
-
-        <button type="button"
-                class="subtab-pill @(ActiveSubTab == 4 ? "active" : "")"
-                @onclick="() => ActiveSubTab = 4"
-                title="Hiển thị tất cả các phân khu cấu hình trong một trang cuộn">
-            <span>📑</span>
-            <span>Xem Tất Cả</span>
-        </button>
     </div>
 
     <!-- Main Viewport Area -->
-    <div class="flex-1 overflow-y-auto space-y-4 pr-1">
+    <div class="sv-scroll-wrapper flex-1 min-h-0 flex flex-col" data-scroll-text="Còn cài đặt bên dưới (Cuộn)">
+        <div class="flex-1 overflow-y-auto space-y-4 pr-1 sv-scroll-area">
         <!-- ==================== SUB-TAB 0: LƯU TRỮ & SAO LƯU ==================== -->
         @if (ActiveSubTab == 0 || ActiveSubTab == 4)
         {
@@ -127,19 +110,29 @@
                         </button>
                     </div>
 
-                    <div class="space-y-2">
-                        <label class="block text-[11px] text-slate-400 font-semibold">Đường dẫn thư mục sao lưu:</label>
+                    <div class="space-y-2.5">
+                        <div class="flex items-center justify-between">
+                            <label class="block text-[11px] text-slate-400 font-semibold">Đường dẫn thư mục sao lưu:</label>
+                            <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/70 text-emerald-400 border border-emerald-500/30">
+                                <span>🔒</span>
+                                <span>Cố Định Theo Chuẩn Portable</span>
+                            </span>
+                        </div>
                         <div class="flex items-center space-x-2">
                             <input type="text"
-                                   class="input-dark font-mono text-[12px] py-2 px-3 flex-1 bg-[#0F172A] border-[#334155] text-slate-200"
-                                   @bind="SettingsVM.BackupDestinationRoot" />
+                                   class="input-dark font-mono text-[12px] py-2 px-3 flex-1 bg-[#0B101E] border-[#253248] text-slate-300 select-all cursor-default opacity-90"
+                                   value="@SettingsVM.BackupDestinationRoot"
+                                   readonly />
                             <button type="button"
                                     class="btn-secondary py-2 px-4 text-[12px] flex-shrink-0 flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
-                                    @onclick="() => SettingsVM.BrowseBackupDirectoryCommand.Execute(null)">
-                                <span>📁</span>
-                                <span>Duyệt Thư Mục...</span>
+                                    @onclick="OpenBackupFolder">
+                                <span>📂</span>
+                                <span>Mở Thư Mục</span>
                             </button>
                         </div>
+                        <p class="text-[11px] text-slate-400 leading-relaxed">
+                            Toàn bộ bản sao lưu được lưu trữ an toàn và cố định bên trong thư mục <code class="text-sky-300 font-mono text-[11px]">data/backups/</code> của ứng dụng để đảm bảo tính toàn vẹn dữ liệu khi di chuyển thư mục hoặc chuyển sang máy tính khác.
+                        </p>
                     </div>
                 </div>
 
@@ -604,7 +597,15 @@
                                     }
                                 </div>
                                 <div class="text-[11px] text-slate-400">
-                                    @(string.IsNullOrEmpty(SettingsVM.SyncCatalogStatus) ? "Cập nhật hơn 12.000+ cấu hình đường dẫn game từ dự án Ludusavi." : SettingsVM.SyncCatalogStatus)
+                                    @(string.IsNullOrEmpty(SettingsVM.SyncCatalogStatus)
+                                        ? (SettingsVM.AutoUpdateLudusaviManifest
+                                            ? (SettingsVM.LastLudusaviSyncDate.HasValue
+                                                ? $"Cập nhật hơn 12.000+ cấu hình game từ Ludusavi (Lần cuối: {SettingsVM.LastLudusaviSyncDate.Value:dd/MM/yyyy HH:mm} - Tự động {SettingsVM.LudusaviAutoUpdateDays} ngày/lần)."
+                                                : $"Cập nhật hơn 12.000+ cấu hình đường dẫn game từ dự án Ludusavi (Tự động {SettingsVM.LudusaviAutoUpdateDays} ngày/lần).")
+                                            : (SettingsVM.LastLudusaviSyncDate.HasValue
+                                                ? $"Cập nhật hơn 12.000+ cấu hình game từ Ludusavi (Lần cuối: {SettingsVM.LastLudusaviSyncDate.Value:dd/MM/yyyy HH:mm} - Đã tắt tự động)."
+                                                : "Cập nhật hơn 12.000+ cấu hình đường dẫn game từ dự án Ludusavi (Đã tắt tự động)."))
+                                        : SettingsVM.SyncCatalogStatus)
                                 </div>
                             </div>
 
@@ -642,13 +643,94 @@
                             </div>
                         }
                     </div>
+
+                    <!-- Tùy chọn Bật/Tắt Tự động cập nhật Ludusavi & Chu kỳ (15/30 ngày) -->
+                    <div class="p-4 bg-[#0F172A] border border-[#2D3748] rounded-xl space-y-3">
+                        <div class="flex items-start justify-between space-x-3">
+                            <div class="space-y-1">
+                                <div class="text-[13px] font-bold text-white flex items-center space-x-2">
+                                    <span>Tự động cập nhật danh mục game từ GitHub</span>
+                                    @if (SettingsVM.AutoUpdateLudusaviManifest)
+                                    {
+                                        <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-700">Đang bật</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">Đã tắt</span>
+                                    }
+                                </div>
+                                <div class="text-[11px] text-slate-400 leading-relaxed">
+                                    Tự động tải ngầm file manifest mới nhất khi mở ứng dụng theo chu kỳ định kỳ, không làm gián đoạn trải nghiệm người dùng.
+                                </div>
+                            </div>
+                            <label class="switch-toggle mt-1">
+                                <input type="checkbox" @bind="SettingsVM.AutoUpdateLudusaviManifest" />
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+
+                        @if (SettingsVM.AutoUpdateLudusaviManifest)
+                        {
+                            <div class="pt-3 border-t border-slate-800/80 flex items-center justify-between flex-wrap gap-2">
+                                <div class="space-y-0.5">
+                                    <div class="text-[12px] font-semibold text-slate-200">Chu kỳ tự động cập nhật:</div>
+                                    <div class="text-[10.5px] text-slate-400">Khoảng thời gian tự động đồng bộ lại từ GitHub</div>
+                                </div>
+                                <div class="w-48">
+                                    <select class="input-dark py-1.5 px-3 text-[12px] bg-[#0A0F1D] border-[#334155] text-slate-200 cursor-pointer"
+                                            @bind="SettingsVM.LudusaviAutoUpdateDays">
+                                        <option value="15">15 ngày (Mặc định)</option>
+                                        <option value="30">30 ngày</option>
+                                    </select>
+                                </div>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
         }
 
-        <!-- ==================== SUB-TAB 3: NHẬT KÝ HOẠT ĐỘNG ==================== -->
+        <!-- ==================== SUB-TAB 3: CẬP NHẬT & LOGS ==================== -->
         @if (ActiveSubTab == 3 || ActiveSubTab == 4)
         {
+            <!-- Card Phiên Bản & Cập Nhật Hệ Thống (Đưa lên trên Card Log) -->
+            <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-3.5">
+                <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                    <div class="flex items-center space-x-2.5">
+                        <span class="text-cyan-400 text-lg">🚀</span>
+                        <div>
+                            <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">PHIÊN BẢN &amp; CẬP NHẬT ỨNG DỤNG</h3>
+                            <div class="text-[11px] text-slate-400">Kiểm tra và nâng cấp trực tiếp từ repository bản build publish</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span class="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
+                            v@(UpdateVM.CurrentVersion)
+                        </span>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between flex-wrap gap-2 p-3 bg-[#0F172A] border border-[#2D3748] rounded-xl">
+                    <div class="space-y-0.5">
+                        <div class="text-[12px] font-semibold text-white">Trạng thái cập nhật hệ thống:</div>
+                        <div class="text-[11px] text-slate-400">
+                            @(string.IsNullOrEmpty(UpdateVM.StatusMessage) ? "Ứng dụng tự động kiểm tra bản build publish mới mỗi khi khởi động." : UpdateVM.StatusMessage)
+                        </div>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <button type="button"
+                                class="btn-secondary py-1.5 px-3.5 text-[12px] flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
+                                disabled="@UpdateVM.IsCheckingForUpdate"
+                                @onclick="() => UpdateVM.CheckForUpdateCommand.Execute(null)">
+                            <span>@(UpdateVM.IsCheckingForUpdate ? "⏳" : "🔄")</span>
+                            <span>@(UpdateVM.IsCheckingForUpdate ? "Đang kiểm tra..." : "Kiểm Tra Bản Mới")</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card Nhật Ký Hoạt Động (Logs Console) -->
             <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
                 <!-- Log Header -->
                 <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
@@ -718,65 +800,31 @@
                 </div>
 
                 <!-- Log Console Box -->
-                <div class="bg-[#0A0F1D] border border-[#2D3748] rounded-xl p-3 font-mono text-[11px] text-slate-300 min-h-[220px] max-h-[380px] overflow-y-auto space-y-1.5 shadow-inner">
-                    @if (!FilteredLogs.Any())
-                    {
-                        <div class="text-slate-500 italic py-8 text-center flex flex-col items-center justify-center space-y-2">
-                            <span class="text-2xl">📋</span>
-                            <span>Không tìm thấy bản ghi nhật ký phù hợp với bộ lọc.</span>
-                        </div>
-                    }
-                    else
-                    {
-                        @foreach (var log in FilteredLogs)
+                <div class="sv-scroll-wrapper" data-scroll-text="Còn nhật ký bên dưới (Cuộn)">
+                    <div class="bg-[#0A0F1D] border border-[#2D3748] rounded-xl p-3 font-mono text-[11px] text-slate-300 min-h-[220px] max-h-[380px] overflow-y-auto space-y-1.5 shadow-inner sv-scroll-area">
+                        @if (!FilteredLogs.Any())
                         {
-                            <div class="flex items-start space-x-2 py-1 px-1.5 rounded hover:bg-slate-800/50 border-b border-[#1E293B]/30 last:border-0 transition-colors">
-                                <span class="text-slate-500 shrink-0 select-none text-[10.5px]">[@log.Timestamp.ToString("HH:mm:ss")]</span>
-                                <span class="px-1.5 py-0.2 rounded text-[9.5px] font-bold shrink-0 @log.BadgeClass">@log.ShortLevel</span>
-                                <span class="text-slate-200 break-all leading-relaxed">@log.Message</span>
+                            <div class="text-slate-500 italic py-8 text-center flex flex-col items-center justify-center space-y-2">
+                                <span class="text-2xl">📋</span>
+                                <span>Không tìm thấy bản ghi nhật ký phù hợp với bộ lọc.</span>
                             </div>
                         }
-                    }
-                </div>
-            </div>
-
-            <!-- Card Phiên Bản & Cập Nhật Hệ Thống -->
-            <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-3.5">
-                <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
-                    <div class="flex items-center space-x-2.5">
-                        <span class="text-cyan-400 text-lg">🚀</span>
-                        <div>
-                            <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">PHIÊN BẢN &amp; CẬP NHẬT ỨNG DỤNG</h3>
-                            <div class="text-[11px] text-slate-400">Kiểm tra và nâng cấp trực tiếp từ repository bản build publish</div>
-                        </div>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <span class="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
-                            v@(UpdateVM.CurrentVersion)
-                        </span>
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-between flex-wrap gap-2 p-3 bg-[#0F172A] border border-[#2D3748] rounded-xl">
-                    <div class="space-y-0.5">
-                        <div class="text-[12px] font-semibold text-white">Trạng thái cập nhật hệ thống:</div>
-                        <div class="text-[11px] text-slate-400">
-                            @(string.IsNullOrEmpty(UpdateVM.StatusMessage) ? "Ứng dụng tự động kiểm tra bản build publish mới mỗi khi khởi động." : UpdateVM.StatusMessage)
-                        </div>
-                    </div>
-
-                    <div class="flex items-center space-x-2">
-                        <button type="button"
-                                class="btn-secondary py-1.5 px-3.5 text-[12px] flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
-                                disabled="@UpdateVM.IsCheckingForUpdate"
-                                @onclick="() => UpdateVM.CheckForUpdateCommand.Execute(null)">
-                            <span>@(UpdateVM.IsCheckingForUpdate ? "⏳" : "🔄")</span>
-                            <span>@(UpdateVM.IsCheckingForUpdate ? "Đang kiểm tra..." : "Kiểm Tra Bản Mới")</span>
-                        </button>
+                        else
+                        {
+                            @foreach (var log in FilteredLogs)
+                            {
+                                <div class="flex items-start space-x-2 py-1 px-1.5 rounded hover:bg-slate-800/50 border-b border-[#1E293B]/30 last:border-0 transition-colors">
+                                    <span class="text-slate-500 shrink-0 select-none text-[10.5px]">[@log.Timestamp.ToString("HH:mm:ss")]</span>
+                                    <span class="px-1.5 py-0.2 rounded text-[9.5px] font-bold shrink-0 @log.BadgeClass">@log.ShortLevel</span>
+                                    <span class="text-slate-200 break-all leading-relaxed">@log.Message</span>
+                                </div>
+                            }
+                        }
                     </div>
                 </div>
             </div>
         }
+        </div>
     </div>
 </div>
 
@@ -862,7 +910,7 @@
     {
         return !string.IsNullOrWhiteSpace(LoggingService.LogDirectory) && Directory.Exists(LoggingService.LogDirectory)
             ? LoggingService.LogDirectory
-            : Path.Combine(DatabaseService.GetDefaultProjectRoot(), "Logs");
+            : Path.Combine(DatabaseService.GetDefaultProjectRoot(), "data", "logs");
     }
 
     private void OpenLogsFolder()
@@ -877,9 +925,14 @@
 
     private void OpenBackupFolder()
     {
-        if (!string.IsNullOrWhiteSpace(SettingsVM.BackupDestinationRoot) && Directory.Exists(SettingsVM.BackupDestinationRoot))
+        var backupDir = SettingsVM.BackupDestinationRoot;
+        if (!string.IsNullOrWhiteSpace(backupDir))
         {
-            NativeDialog.OpenFolderInExplorer(SettingsVM.BackupDestinationRoot);
+            if (!Directory.Exists(backupDir))
+            {
+                try { Directory.CreateDirectory(backupDir); } catch { }
+            }
+            NativeDialog.OpenFolderInExplorer(backupDir);
         }
     }
 

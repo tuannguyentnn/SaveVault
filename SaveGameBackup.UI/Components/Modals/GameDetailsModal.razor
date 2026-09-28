@@ -91,7 +91,8 @@
             </div>
 
             <!-- Snapshots Table (Image 3.JPG) -->
-            <div class="flex-1 overflow-y-auto p-4 min-h-0 bg-[#131C2E]">
+            <div class="sv-scroll-wrapper flex-1 min-h-0 flex flex-col" data-scroll-text="Còn mốc sao lưu bên dưới (Cuộn)">
+                <div class="flex-1 overflow-y-auto p-4 min-h-0 bg-[#131C2E] sv-scroll-area">
                 <table class="custom-table overflow-hidden" style="border-collapse: separate; border-spacing: 0;">
                     <thead class="sticky top-0 z-10 shadow-sm" style="background-color: #1E293B;">
                         <tr style="background-color: #1E293B; border-bottom: 1px solid #334155;">
@@ -251,6 +252,7 @@
                     </tbody>
                 </table>
             </div>
+        </div>
 
             <!-- Pagination Bar (10 items / page) -->
             @if (totalDetailPages > 1)

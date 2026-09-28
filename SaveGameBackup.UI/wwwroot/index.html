@@ -104,6 +104,106 @@
                 }
             }
         };
+
+        // Universal Scroll Indicator Helper (Tu dong kich hoat cho moi .sv-scroll-wrapper)
+        window.scrollHintHelper = {
+            attachedWrappers: new WeakSet(),
+            init: function () {
+                var self = this;
+                var scanAndAttach = function () {
+                    var wrappers = document.querySelectorAll('.sv-scroll-wrapper');
+                    for (var i = 0; i < wrappers.length; i++) {
+                        self.attach(wrappers[i]);
+                    }
+                };
+
+                if (window.MutationObserver) {
+                    var mo = new MutationObserver(function () {
+                        scanAndAttach();
+                    });
+                    mo.observe(document.body, { childList: true, subtree: true });
+                }
+
+                setTimeout(scanAndAttach, 100);
+                setTimeout(scanAndAttach, 400);
+                setTimeout(scanAndAttach, 1000);
+            },
+            attach: function (wrapper) {
+                if (!wrapper || this.attachedWrappers.has(wrapper)) return;
+
+                var area = wrapper.querySelector('.sv-scroll-area');
+                if (!area) {
+                    for (var i = 0; i < wrapper.children.length; i++) {
+                        var c = wrapper.children[i];
+                        if (c.classList.contains('sv-scroll-area') || 
+                            window.getComputedStyle(c).overflowY === 'auto' || 
+                            window.getComputedStyle(c).overflowY === 'scroll') {
+                            area = c;
+                            break;
+                        }
+                    }
+                }
+                if (!area) return;
+
+                this.attachedWrappers.add(wrapper);
+
+                var gradient = wrapper.querySelector('.sv-scroll-gradient');
+                if (!gradient) {
+                    gradient = document.createElement('div');
+                    gradient.className = 'sv-scroll-gradient';
+                    wrapper.appendChild(gradient);
+                }
+
+                var hintBtn = wrapper.querySelector('.sv-scroll-hint-btn');
+                if (!hintBtn) {
+                    hintBtn = document.createElement('button');
+                    hintBtn.type = 'button';
+                    hintBtn.className = 'sv-scroll-hint-btn';
+                    var customText = wrapper.getAttribute('data-scroll-text') || 'Còn nội dung bên dưới (Cuộn)';
+                    hintBtn.innerHTML = '<span>▼</span><span>' + customText + '</span>';
+                    wrapper.appendChild(hintBtn);
+                }
+
+                hintBtn.onclick = function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var scrollAmount = Math.max(120, area.clientHeight * 0.7);
+                    area.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+                };
+
+                var check = function () {
+                    if (!area) return;
+                    var canScroll = (area.scrollHeight - area.scrollTop - area.clientHeight) > 15;
+                    if (canScroll) {
+                        wrapper.classList.add('has-overflow-down');
+                    } else {
+                        wrapper.classList.remove('has-overflow-down');
+                    }
+                };
+
+                area.addEventListener('scroll', check, { passive: true });
+
+                if (window.ResizeObserver) {
+                    var ro = new ResizeObserver(function () {
+                        check();
+                    });
+                    ro.observe(area);
+                    ro.observe(wrapper);
+                }
+
+                setTimeout(check, 60);
+                setTimeout(check, 250);
+                check();
+            }
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function () {
+                window.scrollHintHelper.init();
+            });
+        } else {
+            window.scrollHintHelper.init();
+        }
     </script>
 </body>
 </html>

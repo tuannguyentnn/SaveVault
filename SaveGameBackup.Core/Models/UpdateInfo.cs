@@ -12,8 +12,8 @@ public class UpdateInfo
     public string ReleaseDate { get; set; } = string.Empty;
     public string MinSupportedVersion { get; set; } = string.Empty;
     public string DownloadUrl { get; set; } = string.Empty;
+    public long? PackageSizeBytes { get; set; }
     public List<string> Changelog { get; set; } = new();
-    public long PackageSizeBytes { get; set; }
 
     public string FormattedChangelog => Changelog.Count > 0 
         ? string.Join(Environment.NewLine, Changelog) 
@@ -21,24 +21,50 @@ public class UpdateInfo
 }
 
 /// <summary>
-/// Tiến trình tải xuống gói cập nhật.
+/// Tiến trình tải xuống gói cập nhật thời gian thực.
 /// </summary>
 public class UpdateDownloadProgress
 {
     public int Percent { get; set; }
     public long BytesDownloaded { get; set; }
     public long TotalBytes { get; set; }
+    public bool IsEstimatedTotal { get; set; }
+    public double SpeedBytesPerSecond { get; set; }
     public string StatusMessage { get; set; } = string.Empty;
 
-    public UpdateDownloadProgress(int percent, long bytesDownloaded, long totalBytes, string statusMessage)
+    public UpdateDownloadProgress(
+        int percent, 
+        long bytesDownloaded, 
+        long totalBytes, 
+        string statusMessage,
+        bool isEstimatedTotal = false,
+        double speedBytesPerSecond = 0)
     {
         Percent = percent;
         BytesDownloaded = bytesDownloaded;
         TotalBytes = totalBytes;
         StatusMessage = statusMessage;
+        IsEstimatedTotal = isEstimatedTotal;
+        SpeedBytesPerSecond = speedBytesPerSecond;
     }
 
-    public string DownloadedSizeText => TotalBytes > 0
-        ? $"{(double)BytesDownloaded / (1024 * 1024):0.1} MB / {(double)TotalBytes / (1024 * 1024):0.1} MB"
-        : $"{(double)BytesDownloaded / (1024 * 1024):0.1} MB";
+    public string DownloadedSizeText
+    {
+        get
+        {
+            var downloadedMb = (BytesDownloaded / (1024.0 * 1024.0)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+            var speedText = SpeedBytesPerSecond > (50 * 1024)
+                ? $" • {(SpeedBytesPerSecond / (1024.0 * 1024.0)).ToString("0.1", System.Globalization.CultureInfo.InvariantCulture)} MB/s"
+                : "";
+
+            if (TotalBytes > 0)
+            {
+                var totalMb = (TotalBytes / (1024.0 * 1024.0)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+                var prefix = IsEstimatedTotal ? "~" : "";
+                return $"{downloadedMb} MB / {prefix}{totalMb} MB{speedText}";
+            }
+
+            return $"{downloadedMb} MB{speedText}";
+        }
+    }
 }

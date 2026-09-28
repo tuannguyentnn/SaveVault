@@ -10,9 +10,9 @@
 ## ⚡ Thông Số Google OAuth Bạn Vừa Tạo Thành Công!
 
 - **Google OAuth Client ID:**  
-  `358261978928-pdf09gqvgchd3la392dn15s0kkbrnl8h.apps.googleusercontent.com`
+  `xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com`
 - **Google Client Secret:**  
-  `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`
+  `GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxxxxxx`
 
 👉 Giờ bạn chỉ cần mở **SaveVault ➔ Tab Cài đặt** và làm theo **Bước 7** bên dưới là kết nối được ngay!
 
@@ -85,9 +85,9 @@
 > Google **chỉ hiển thị Client Secret 1 lần duy nhất** trong popup này. Nếu đóng cửa sổ mà chưa lưu, bạn sẽ không thể xem lại Client Secret được nữa mà phải tạo lại cái mới.
 
 1. Bấm vào biểu tượng sao chép **❐** cạnh **Client ID** để copy mã:  
-   `358261978928-pdf09gqvgchd3la392dn15s0kkbrnl8h.apps.googleusercontent.com`
+   `xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com`
 2. Bấm vào biểu tượng sao chép **❐** cạnh **Client secret** để copy mã:  
-   `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`
+   `GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxxxxxx`
 3. Bấm vào chữ **⬇ Download JSON** để tải file dự phòng về máy.
 4. Bấm **OK** để đóng hộp thoại.
 
@@ -97,7 +97,7 @@ Nếu bạn lỡ bấm `OK` đóng hộp thoại mà chưa kịp copy Secret:
 2. Nhấp chuột vào tên client **`SaveVault Desktop`** để mở trang chi tiết.
 3. **Lấy lại Client ID:** Khung bên phải tại mục **Additional information** ➔ Copy dòng **Client ID**.
 4. **Lấy lại Client Secret (2 cách):**
-   - **Cách 1 (Ưu tiên thử trước):** Bấm vào biểu tượng **Copy ❐** hoặc **Tải về JSON ⬇** ngay cạnh dòng `Client secret ****Y295`. Nếu Google vẫn cho copy ra mã gốc hoặc mở file JSON tải về có mã bí mật ➔ Lấy dùng lại luôn, không cần tạo mới!
+   - **Cách 1 (Ưu tiên thử trước):** Bấm vào biểu tượng **Copy ❐** hoặc **Tải về JSON ⬇** ngay cạnh dòng `Client secret ****xxxx`. Nếu Google vẫn cho copy ra mã gốc hoặc mở file JSON tải về có mã bí mật ➔ Lấy dùng lại luôn, không cần tạo mới!
    - **Cách 2 (Nếu không copy được):** Bấm nút **`+ Add secret`** ở ngay bên dưới ➔ Google sẽ cấp thêm 1 Client Secret mới hiển thị đầy đủ chuỗi để bạn copy dán vào SaveVault.
 
 ---

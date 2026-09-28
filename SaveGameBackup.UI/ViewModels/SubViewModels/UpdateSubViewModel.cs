@@ -28,6 +28,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
     private string _downloadProgressText = string.Empty;
     private string _statusMessage = string.Empty;
     private string? _busyWarningMessage;
+    private string? _downloadErrorMessage;
     private UpdateInfo? _updateInfo;
     private CancellationTokenSource? _downloadCts;
 
@@ -46,6 +47,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
 
         CheckForUpdateCommand = new RelayCommand(async _ => await CheckForUpdateManualAsync(), _ => !IsDownloading && !IsCheckingForUpdate);
         ApplyUpdateCommand = new RelayCommand(async _ => await ExecuteApplyUpdateAsync(), _ => !IsDownloading && UpdateInfo != null);
+        RetryDownloadCommand = new RelayCommand(async _ => await ExecuteApplyUpdateAsync(), _ => !IsDownloading && UpdateInfo != null);
         SkipVersionCommand = new RelayCommand(_ => ExecuteSkipVersion(), _ => !IsDownloading);
         RemindLaterCommand = new RelayCommand(_ => ExecuteRemindLater(), _ => !IsDownloading);
         CancelDownloadCommand = new RelayCommand(_ => CancelDownload(), _ => IsDownloading);
@@ -81,6 +83,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
             {
                 (CheckForUpdateCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (ApplyUpdateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (RetryDownloadCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (SkipVersionCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (RemindLaterCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (CancelDownloadCommand as RelayCommand)?.RaiseCanExecuteChanged();
@@ -120,6 +123,21 @@ public class UpdateSubViewModel : INotifyPropertyChanged
 
     public bool HasBusyWarning => !string.IsNullOrEmpty(BusyWarningMessage);
 
+    public string? DownloadErrorMessage
+    {
+        get => _downloadErrorMessage;
+        set
+        {
+            if (SetField(ref _downloadErrorMessage, value))
+            {
+                OnPropertyChanged(nameof(HasDownloadError));
+                (RetryDownloadCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public bool HasDownloadError => !string.IsNullOrEmpty(DownloadErrorMessage);
+
     public UpdateInfo? UpdateInfo
     {
         get => _updateInfo;
@@ -128,16 +146,74 @@ public class UpdateSubViewModel : INotifyPropertyChanged
             if (SetField(ref _updateInfo, value))
             {
                 (ApplyUpdateCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (RetryDownloadCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         }
     }
 
     public ICommand CheckForUpdateCommand { get; }
     public ICommand ApplyUpdateCommand { get; }
+    public ICommand RetryDownloadCommand { get; }
     public ICommand SkipVersionCommand { get; }
     public ICommand RemindLaterCommand { get; }
     public ICommand CancelDownloadCommand { get; }
     public ICommand RefreshBusyStatusCommand { get; }
+
+    /// <summary>
+    /// Kiểm tra trạng thái hậu cập nhật (được gọi khi ứng dụng khởi động).
+    /// Phát hiện và thông báo nếu có cờ báo lỗi (update_error.flag) hoặc cờ cập nhật thành công (update_success.flag).
+    /// </summary>
+    public async Task CheckPostUpdateStatusAsync()
+    {
+        try
+        {
+            // Kiểm tra xem lần cập nhật trước có bị rollback (hoàn tác tự động) hay không
+            if (_updateService.HasUpdateRollbackFlag(out var rollbackMsg))
+            {
+                LoggingService.Warn("Phát hiện cờ rollback từ lần cập nhật trước: {RollbackReason}", rollbackMsg);
+                LoggingService.LogAction("Update_Rollback_Confirmed", new { Reason = rollbackMsg });
+
+                var detailMsg = string.IsNullOrWhiteSpace(rollbackMsg)
+                    ? "Sao chép tệp tin cập nhật thất bại (có thể do tệp đang bị khóa hoặc quyền ghi)."
+                    : rollbackMsg;
+
+                _dialogService.ShowMessage(
+                    "Cập Nhật Thất Bại - Đã Tự Động Khôi Phục",
+                    $"Quá trình cập nhật SaveVault lên phiên bản mới đã gặp sự cố khi sao chép tệp tin:\n\n{detailMsg}\n\nHệ thống đã tự động hoàn tác (rollback) và khôi phục an toàn phiên bản hiện tại (v{CurrentVersion}). Toàn bộ dữ liệu save và cấu hình của bạn không bị ảnh hưởng.\n\nBạn có thể thử kiểm tra và cập nhật lại sau từ tab Cài đặt.",
+                    "Warning");
+                return;
+            }
+
+            if (_updateService.HasUpdateErrorFlag(out var errorMsg))
+            {
+                LoggingService.Warn("Phát hiện cờ lỗi từ lần cập nhật trước: {Error}", errorMsg);
+                var detailMsg = string.IsNullOrWhiteSpace(errorMsg)
+                    ? "Quá trình sao chép tệp tin cập nhật thất bại (có thể do tệp đang bị khóa bởi tiến trình khác hoặc quyền ghi). Vui lòng kiểm tra lại quyền ghi hoặc xem data\\temp\\update.log."
+                    : errorMsg;
+
+                _dialogService.ShowMessage(
+                    "Lỗi Cập Nhật Trước Đó",
+                    $"Quá trình cập nhật SaveVault ở lần chạy trước đã gặp sự cố:\n\n{detailMsg}\n\nBạn có thể thử kiểm tra và cập nhật lại từ tab Cài đặt.",
+                    "Error");
+                return;
+            }
+
+            if (_updateService.HasUpdateSuccessFlag(out var updatedVersion))
+            {
+                var verStr = !string.IsNullOrWhiteSpace(updatedVersion) ? $"v{updatedVersion.Trim().TrimStart('v', 'V')}" : $"v{CurrentVersion}";
+                LoggingService.LogAction("Update_Success_Confirmed", new { Version = verStr });
+
+                _dialogService.ShowMessage(
+                    "Cập Nhật Thành Công",
+                    $"Chúc mừng! SaveVault đã được cập nhật thành công lên phiên bản {verStr}!\n\nBạn có thể vào Cài đặt để xem thông tin chi tiết và lịch sử thay đổi.",
+                    "Success");
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Lỗi kiểm tra trạng thái hậu cập nhật: {Message}", ex.Message);
+        }
+    }
 
     /// <summary>
     /// Kiểm tra phiên bản mới ngầm khi app khởi động xong.
@@ -146,6 +222,9 @@ public class UpdateSubViewModel : INotifyPropertyChanged
     {
         try
         {
+            // 1. Kiểm tra trạng thái hậu cập nhật trước (nếu có cờ error/success từ runner script)
+            await CheckPostUpdateStatusAsync();
+
             // Trì hoãn 2 giây để nhường tài nguyên cho giao diện tải hoàn tất
             await Task.Delay(2000);
 
@@ -154,6 +233,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
             {
                 UpdateInfo = info;
                 BusyWarningMessage = null;
+                DownloadErrorMessage = null;
                 IsUpdateModalOpen = true;
                 LoggingService.LogAction("Update_Modal_Shown_OnStartup", new { TargetVersion = info.Version });
             }
@@ -179,6 +259,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
             {
                 UpdateInfo = info;
                 BusyWarningMessage = null;
+                DownloadErrorMessage = null;
                 IsUpdateModalOpen = true;
                 StatusMessage = string.Empty;
             }
@@ -208,6 +289,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
         {
             _updateService.SkipVersion(UpdateInfo.Version);
         }
+        DownloadErrorMessage = null;
         IsUpdateModalOpen = false;
     }
 
@@ -216,6 +298,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
     /// </summary>
     public void ExecuteRemindLater()
     {
+        DownloadErrorMessage = null;
         IsUpdateModalOpen = false;
     }
 
@@ -253,6 +336,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
         }
 
         BusyWarningMessage = null;
+        DownloadErrorMessage = null;
         IsDownloading = true;
         DownloadPercent = 0;
         DownloadProgressText = "Bắt đầu tải xuống bản cập nhật...";
@@ -267,9 +351,10 @@ public class UpdateSubViewModel : INotifyPropertyChanged
                 StatusMessage = p.StatusMessage;
             });
 
-            // 1. Tải gói publish.zip về thư mục temp trong app
+            // 1. Tải gói update_package.zip về thư mục temp trong app
             var downloadUrl = UpdateInfo.DownloadUrl;
-            var zipPath = await _updateService.DownloadUpdatePackageAsync(downloadUrl, progress, _downloadCts.Token);
+            long expectedBytes = UpdateInfo.PackageSizeBytes ?? -1L;
+            var zipPath = await _updateService.DownloadUpdatePackageAsync(downloadUrl, progress, _downloadCts.Token, expectedBytes);
 
             DownloadProgressText = "Đang giải nén các file cập nhật...";
             await Task.Delay(300);
@@ -282,7 +367,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
 
             // 3. Tạo runner script
             int currentPid = Process.GetCurrentProcess().Id;
-            var runnerScript = _updateService.GenerateRunnerScript(extractedDir, currentPid);
+            var runnerScript = _updateService.GenerateRunnerScript(extractedDir, currentPid, UpdateInfo.Version);
 
             // 4. Kích hoạt runner script độc lập
             _updateService.LaunchRunnerScript(runnerScript);
@@ -304,14 +389,16 @@ public class UpdateSubViewModel : INotifyPropertyChanged
         }
         catch (OperationCanceledException)
         {
+            DownloadErrorMessage = null;
             DownloadProgressText = "Đã hủy tải bản cập nhật.";
             StatusMessage = "Đã hủy thao tác cập nhật.";
         }
         catch (Exception ex)
         {
             LoggingService.Error(ex, "Lỗi trong quá trình cập nhật ứng dụng: {Message}", ex.Message);
-            _dialogService.ShowMessage("Lỗi Cập Nhật", $"Quá trình cập nhật thất bại: {ex.Message}", "Error");
+            DownloadErrorMessage = ex.Message;
             StatusMessage = $"Lỗi: {ex.Message}";
+            IsUpdateModalOpen = true;
         }
         finally
         {

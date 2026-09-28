@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="SaveGameBackup.Core/SaveGameBackup.Core.csproj" />
+  <Project Path="SaveGameBackup.Launcher/SaveGameBackup.Launcher.csproj" />
   <Project Path="SaveGameBackup.Tests/SaveGameBackup.Tests.csproj" />
   <Project Path="SaveGameBackup.UI/SaveGameBackup.UI.csproj" />
 </Solution>

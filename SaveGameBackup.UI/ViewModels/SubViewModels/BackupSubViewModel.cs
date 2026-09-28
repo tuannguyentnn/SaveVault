@@ -44,10 +44,7 @@ public class BackupSubViewModel : INotifyPropertyChanged
         _nativeDialog = nativeDialog;
 
         var config = AppConfigService.GetConfig();
-        var defaultFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
-        _backupDestinationRoot = !string.IsNullOrWhiteSpace(config.BackupRootDirectory)
-            ? config.BackupRootDirectory
-            : defaultFolder;
+        _backupDestinationRoot = DatabaseService.DefaultBackupDir;
 
         _createTimestampSubfolder = config.CreateTimestampSubfolder;
         _autoCompressZip = config.AutoCompressZip;
@@ -68,7 +65,7 @@ public class BackupSubViewModel : INotifyPropertyChanged
 
     public string BackupDestinationRoot
     {
-        get => _backupDestinationRoot;
+        get => DatabaseService.DefaultBackupDir;
         set => SetField(ref _backupDestinationRoot, value);
     }
 
@@ -252,16 +249,7 @@ public class BackupSubViewModel : INotifyPropertyChanged
 
     private async Task ExecuteBrowseBackupDirectoryAsync()
     {
-        var folder = _nativeDialog != null
-            ? await _nativeDialog.PickFolderAsync("Chọn thư mục gốc lưu trữ các bản sao lưu")
-            : null;
-
-        if (!string.IsNullOrEmpty(folder))
-        {
-            BackupDestinationRoot = folder;
-            AppConfigService.UpdateConfig(cfg => cfg.BackupRootDirectory = folder);
-            LoggingService.LogAction("Change_Backup_Directory", new { NewDir = folder });
-        }
+        await Task.CompletedTask;
     }
 
     protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)

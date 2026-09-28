@@ -126,7 +126,8 @@
                 </div>
 
                 <!-- List of Restore Items (Image 4.JPG) -->
-                <div class="flex-1 overflow-y-auto p-5 space-y-3 min-h-0 bg-[#131C2E]">
+                <div class="sv-scroll-wrapper flex-1 min-h-0 flex flex-col" data-scroll-text="Còn mục bên dưới (Cuộn)">
+                    <div class="flex-1 overflow-y-auto p-5 space-y-3 min-h-0 bg-[#131C2E] sv-scroll-area">
                     @if (restoreItems.Count == 0)
                     {
                         <div class="p-8 text-center text-slate-400 text-[13px]">
@@ -173,6 +174,7 @@
                         }
                     }
                 </div>
+            </div>
 
                 <!-- Footer Bước 1 -->
                 <div class="bg-[#0F172A] border-t border-[#1E293B] px-6 py-3.5 flex items-center justify-between flex-shrink-0">
@@ -221,7 +223,8 @@
                 </div>
 
                 <!-- Nội dung Bước 2 -->
-                <div class="flex-1 overflow-y-auto p-6 space-y-4 min-h-0 bg-[#131C2E]">
+                <div class="sv-scroll-wrapper flex-1 min-h-0 flex flex-col" data-scroll-text="Còn nội dung bên dưới (Cuộn)">
+                    <div class="flex-1 overflow-y-auto p-6 space-y-4 min-h-0 bg-[#131C2E] sv-scroll-area">
                     <!-- Warning Box -->
                     <div class="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/40 text-amber-200 text-[12.5px] leading-relaxed flex items-start space-x-3">
                         <span class="text-xl flex-shrink-0">🚨</span>
@@ -280,25 +283,27 @@
                         <!-- Danh sách các mục & đường dẫn đích -->
                         <div class="pt-1 space-y-2">
                             <div class="text-[11.5px] text-slate-400 font-semibold">Các thư mục đích sẽ nhận dữ liệu và bị ghi đè:</div>
-                            <div class="max-h-[220px] overflow-y-auto space-y-2 pr-1">
-                                @foreach (var item in selectedItems)
-                                {
-                                    <div class="bg-[#131C2E] border border-slate-700/80 rounded-lg p-3 text-[12px]">
-                                        <div class="flex items-center justify-between mb-1.5">
-                                            <span class="font-bold text-white flex items-center space-x-1.5">
-                                                <span>📁</span>
-                                                <span>@item.DisplayTitle</span>
-                                            </span>
-                                            @if (item.FileCount > 0)
-                                            {
-                                                <span class="text-[11px] text-slate-400 font-mono">(@item.FileCount files - @item.FormattedSize)</span>
-                                            }
+                            <div class="sv-scroll-wrapper" data-scroll-text="Còn thư mục bên dưới (Cuộn)">
+                                <div class="max-h-[220px] overflow-y-auto space-y-2 pr-1 sv-scroll-area">
+                                    @foreach (var item in selectedItems)
+                                    {
+                                        <div class="bg-[#131C2E] border border-slate-700/80 rounded-lg p-3 text-[12px]">
+                                            <div class="flex items-center justify-between mb-1.5">
+                                                <span class="font-bold text-white flex items-center space-x-1.5">
+                                                    <span>📁</span>
+                                                    <span>@item.DisplayTitle</span>
+                                                </span>
+                                                @if (item.FileCount > 0)
+                                                {
+                                                    <span class="text-[11px] text-slate-400 font-mono">(@item.FileCount files - @item.FormattedSize)</span>
+                                                }
+                                            </div>
+                                            <div class="font-mono text-[11px] text-emerald-300 break-all select-text bg-[#0A0F1D] p-2 rounded border border-emerald-500/20">
+                                                ➔ @item.RestoreDestinationPath
+                                            </div>
                                         </div>
-                                        <div class="font-mono text-[11px] text-emerald-300 break-all select-text bg-[#0A0F1D] p-2 rounded border border-emerald-500/20">
-                                            ➔ @item.RestoreDestinationPath
-                                        </div>
-                                    </div>
-                                }
+                                    }
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -321,6 +326,7 @@
                         </div>
                     }
                 </div>
+            </div>
 
                 <!-- Footer Bước 2 -->
                 <div class="bg-[#0F172A] border-t border-[#1E293B] px-6 py-3.5 flex items-center justify-between flex-shrink-0">

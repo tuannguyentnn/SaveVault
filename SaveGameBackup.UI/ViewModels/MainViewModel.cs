@@ -400,7 +400,19 @@ public class MainViewModel : INotifyPropertyChanged
             HistoryVM.ExecuteCloseDetailsModal();
             return;
         }
+
+        if (UpdateVM.IsUpdateModalOpen && !UpdateVM.IsDownloading)
+        {
+            UpdateVM.RemindLaterCommand.Execute(null);
+            return;
+        }
     }
+
+    // Update
+    public bool IsUpdateModalOpen { get => UpdateVM.IsUpdateModalOpen; set => UpdateVM.IsUpdateModalOpen = value; }
+    public string? DownloadErrorMessage => UpdateVM.DownloadErrorMessage;
+    public bool HasDownloadError => UpdateVM.HasDownloadError;
+    public ICommand RetryDownloadCommand => UpdateVM.RetryDownloadCommand;
 
     protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {

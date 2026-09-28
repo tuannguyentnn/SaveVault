@@ -14,9 +14,6 @@
     <!-- Display Name & App Identifiers -->
     <ApplicationTitle>SaveVault</ApplicationTitle>
     <ApplicationId>com.savevault.gamesavebackup</ApplicationId>
-    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-    <ApplicationVersion>1</ApplicationVersion>
-
     <!-- Run unpackaged as standard .exe without MSIX requirement -->
     <WindowsPackageType>None</WindowsPackageType>
 
@@ -49,7 +46,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\GoogleDrive_Setup_Guide.html" Link="GoogleDrive_Setup_Guide.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\GoogleDrive_Setup_Guide.html" Link="GoogleDrive_Setup_Guide.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Auto compile Tailwind CSS on build if npm is present -->

@@ -23,6 +23,8 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     private bool _autoCompressZip = true;
     private int _pageSize = 10;
     private bool _useSqlPagination = true;
+    private bool _autoUpdateLudusaviManifest = true;
+    private int _ludusaviAutoUpdateDays = 15;
     private bool _isSyncingCatalog;
     private string _syncCatalogStatus = string.Empty;
     private int _syncProgressPercent;
@@ -45,18 +47,15 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _ludusaviService = ludusaviService ?? new LudusaviManifestService();
 
         var config = AppConfigService.GetConfig();
-        _databaseLocation = !string.IsNullOrWhiteSpace(config.DatabasePath)
-            ? config.DatabasePath
-            : _databaseService.DbPath;
-
-        _backupDestinationRoot = !string.IsNullOrWhiteSpace(config.BackupRootDirectory)
-            ? config.BackupRootDirectory
-            : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
+        _databaseLocation = _databaseService.DbPath;
+        _backupDestinationRoot = DatabaseService.DefaultBackupDir;
 
         _createTimestampSubfolder = config.CreateTimestampSubfolder;
         _autoCompressZip = config.AutoCompressZip;
         _pageSize = config.PageSize > 0 ? config.PageSize : 10;
         _useSqlPagination = config.UseSqlPagination;
+        _autoUpdateLudusaviManifest = config.AutoUpdateLudusaviManifest;
+        _ludusaviAutoUpdateDays = config.LudusaviAutoUpdateDays > 0 ? config.LudusaviAutoUpdateDays : 15;
 
         BrowseDatabaseFileCommand = new RelayCommand(async _ => await ExecuteBrowseDatabaseFileAsync());
         ApplyDatabaseLocationCommand = new RelayCommand(async _ => await ExecuteApplyDatabaseLocationAsync());
@@ -68,13 +67,13 @@ public class SettingsSubViewModel : INotifyPropertyChanged
 
     public string DatabaseLocation
     {
-        get => _databaseLocation;
+        get => _databaseService.DbPath;
         set => SetField(ref _databaseLocation, value);
     }
 
     public string BackupDestinationRoot
     {
-        get => _backupDestinationRoot;
+        get => DatabaseService.DefaultBackupDir;
         set => SetField(ref _backupDestinationRoot, value);
     }
 
@@ -103,6 +102,57 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     }
 
     public int CatalogGamesCount => _ludusaviService.TotalGamesCount;
+    public DateTime? LastLudusaviSyncDate => AppConfigService.GetConfig().LastLudusaviManifestSync;
+
+    public bool AutoUpdateLudusaviManifest
+    {
+        get => _autoUpdateLudusaviManifest;
+        set
+        {
+            if (SetField(ref _autoUpdateLudusaviManifest, value))
+            {
+                AppConfigService.UpdateConfig(cfg => cfg.AutoUpdateLudusaviManifest = value);
+            }
+        }
+    }
+
+    public int LudusaviAutoUpdateDays
+    {
+        get => _ludusaviAutoUpdateDays;
+        set
+        {
+            if (SetField(ref _ludusaviAutoUpdateDays, value))
+            {
+                AppConfigService.UpdateConfig(cfg => cfg.LudusaviAutoUpdateDays = value);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra và tự động cập nhật danh mục game Ludusavi nếu đã quá chu kỳ.
+    /// </summary>
+    public async Task CheckAutoSyncCatalogAsync()
+    {
+        try
+        {
+            if (LudusaviManifestService.IsUpdateDue())
+            {
+                await Task.Delay(3000);
+                int count = await _ludusaviService.CheckAndAutoSyncIfDueAsync();
+                if (count > 0)
+                {
+                    OnPropertyChanged(nameof(CatalogGamesCount));
+                    OnPropertyChanged(nameof(LastLudusaviSyncDate));
+                    int days = LudusaviAutoUpdateDays > 0 ? LudusaviAutoUpdateDays : 15;
+                    SyncCatalogStatus = $"Tự động cập nhật thành công {count:N0} game từ GitHub (chu kỳ {days} ngày).";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Lỗi kiểm tra tự động cập nhật Ludusavi: {Message}", ex.Message);
+        }
+    }
 
     public bool IsSyncingCatalog
     {
@@ -182,6 +232,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
                 SyncProgressSubText = $"{count:N0} game";
                 SyncCatalogStatus = $"Cập nhật thành công {count:N0} tựa game vào danh mục!";
                 OnPropertyChanged(nameof(CatalogGamesCount));
+                OnPropertyChanged(nameof(LastLudusaviSyncDate));
                 _dialogService.ShowMessage("Cập Nhật Danh Mục", $"Đã đồng bộ thành công {count:N0} tựa game từ Ludusavi Manifest (GitHub)!", "Success");
             }
             else
@@ -233,79 +284,28 @@ public class SettingsSubViewModel : INotifyPropertyChanged
 
     private async Task ExecuteApplyDatabaseLocationAsync()
     {
-        if (string.IsNullOrWhiteSpace(DatabaseLocation)) return;
-
-        try
-        {
-            var oldPath = _databaseService.DbPath;
-            var targetPath = DatabaseLocation.Trim();
-
-            if (!string.Equals(oldPath, targetPath, StringComparison.OrdinalIgnoreCase))
-            {
-                if (File.Exists(oldPath) && !File.Exists(targetPath))
-                {
-                    var targetDir = Path.GetDirectoryName(targetPath);
-                    if (!string.IsNullOrEmpty(targetDir) && !Directory.Exists(targetDir))
-                    {
-                        Directory.CreateDirectory(targetDir);
-                    }
-                    File.Copy(oldPath, targetPath, overwrite: false);
-                    LoggingService.LogAction("Migrate_Database_File", new { From = oldPath, To = targetPath });
-                }
-
-                AppConfigService.UpdateConfig(cfg => cfg.DatabasePath = targetPath);
-
-                _dialogService.ShowMessage("Chuyển Đổi Database", $"Đã lưu đường dẫn cơ sở dữ liệu SQLite mới:\n{targetPath}\n\nĐường dẫn sẽ được áp dụng trong phiên làm việc tiếp theo.", "Success");
-                LoggingService.LogAction("Apply_Database_Location_Success", new { NewLocation = targetPath });
-
-                _eventBus.Publish(new HistoryChangedEvent());
-            }
-        }
-        catch (Exception ex)
-        {
-            LoggingService.Error(ex, "Lỗi chuyển vị trí database: {Message}", ex.Message);
-            _dialogService.ShowMessage("Lỗi Database", ex.Message, "Error", ex.StackTrace);
-        }
-
         await Task.CompletedTask;
     }
 
     private void ExecuteResetDatabaseLocation()
     {
-        var defaultPath = Path.Combine(DatabaseService.GetDefaultProjectRoot(), "save_backup.db");
-        DatabaseLocation = defaultPath;
-        AppConfigService.UpdateConfig(cfg => cfg.DatabasePath = defaultPath);
-
-        _dialogService.ShowMessage("Khôi Phục Mặc Định", $"Đã đặt lại database về đường dẫn mặc định:\n{defaultPath}", "Info");
-        LoggingService.LogAction("Reset_Database_Location_Default", new { Path = defaultPath });
-
-        _eventBus.Publish(new HistoryChangedEvent());
     }
 
     private async Task ExecuteBrowseBackupDirectoryAsync()
     {
-        var folder = _nativeDialog != null
-            ? await _nativeDialog.PickFolderAsync("Chọn thư mục gốc lưu trữ các bản sao lưu")
-            : null;
-
-        if (!string.IsNullOrEmpty(folder))
-        {
-            BackupDestinationRoot = folder;
-            AppConfigService.UpdateConfig(cfg => cfg.BackupRootDirectory = folder);
-            LoggingService.LogAction("Settings_Change_Backup_Dir", new { Directory = folder });
-        }
+        await Task.CompletedTask;
     }
 
     public async Task ExecuteSaveSettingsAsync()
     {
         AppConfigService.UpdateConfig(cfg =>
         {
-            cfg.BackupRootDirectory = BackupDestinationRoot;
             cfg.CreateTimestampSubfolder = CreateTimestampSubfolder;
             cfg.AutoCompressZip = AutoCompressZip;
             cfg.PageSize = PageSize;
-            cfg.DatabasePath = DatabaseLocation;
             cfg.UseSqlPagination = UseSqlPagination;
+            cfg.AutoUpdateLudusaviManifest = AutoUpdateLudusaviManifest;
+            cfg.LudusaviAutoUpdateDays = LudusaviAutoUpdateDays;
         });
 
         _eventBus.Publish(new HistoryChangedEvent());
@@ -313,12 +313,14 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _dialogService.ShowMessage("Lưu Cài Đặt", "Đã lưu toàn bộ cấu hình vào app_config.json thành công!", "Success");
         LoggingService.LogAction("Save_General_Settings", new
         {
-            BackupRoot = BackupDestinationRoot,
+            BackupRoot = DatabaseService.DefaultBackupDir,
             CreateTimestampSubfolder,
             AutoCompressZip,
             PageSize,
-            DatabaseLocation,
-            UseSqlPagination
+            DatabaseLocation = _databaseService.DbPath,
+            UseSqlPagination,
+            AutoUpdateLudusaviManifest,
+            LudusaviAutoUpdateDays
         });
 
         await Task.CompletedTask;

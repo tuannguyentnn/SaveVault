@@ -11,9 +11,7 @@ namespace SaveGameBackup.Core.Services;
 /// </summary>
 public class AppConfigFile
 {
-    // Cấu hình sao lưu chung
-    public string? DatabasePath { get; set; }
-    public string? BackupRootDirectory { get; set; }
+    // Cấu hình sao lưu chung (Database và Backups folder được cố định tại data/ theo chuẩn Portable)
     public bool CreateTimestampSubfolder { get; set; } = true;
     public bool AutoCompressZip { get; set; } = true; // Mặc định và bắt buộc nén zip 100%
     public int PageSize { get; set; } = 10; // Số dòng trên mỗi trang cho các bảng phân trang
@@ -21,6 +19,11 @@ public class AppConfigFile
 
     // Phiên bản ứng dụng mà người dùng đã chọn Bỏ qua (Skip this version)
     public string? SkippedUpdateVersion { get; set; }
+
+    // Cấu hình tự động cập nhật Ludusavi Manifest
+    public bool AutoUpdateLudusaviManifest { get; set; } = true;
+    public int LudusaviAutoUpdateDays { get; set; } = 15; // 15 hoặc 30 ngày
+    public DateTime? LastLudusaviManifestSync { get; set; }
 
     // Nhà cung cấp Cloud hiện thời ("GoogleDrive" hoặc "OneDrive")
     public string ActiveCloudProvider { get; set; } = "GoogleDrive";
@@ -82,17 +85,17 @@ public class AppConfigFile
     }
 
     [JsonIgnore]
-    public string OneDriveRefreshToken
+    public string? OneDriveRefreshToken
     {
-        get => SecurityHelper.DecryptWithSalt(OneDriveRefreshTokenProtected);
-        set => OneDriveRefreshTokenProtected = SecurityHelper.EncryptWithSalt(value);
+        get => string.IsNullOrEmpty(OneDriveRefreshTokenProtected) ? null : SecurityHelper.DecryptWithSalt(OneDriveRefreshTokenProtected);
+        set => OneDriveRefreshTokenProtected = string.IsNullOrEmpty(value) ? null : SecurityHelper.EncryptWithSalt(value);
     }
 
     [JsonIgnore]
-    public string OneDriveAccessToken
+    public string? OneDriveAccessToken
     {
-        get => SecurityHelper.DecryptWithSalt(OneDriveAccessTokenProtected);
-        set => OneDriveAccessTokenProtected = SecurityHelper.EncryptWithSalt(value);
+        get => string.IsNullOrEmpty(OneDriveAccessTokenProtected) ? null : SecurityHelper.DecryptWithSalt(OneDriveAccessTokenProtected);
+        set => OneDriveAccessTokenProtected = string.IsNullOrEmpty(value) ? null : SecurityHelper.EncryptWithSalt(value);
     }
 
     [JsonIgnore]
@@ -117,17 +120,17 @@ public class AppConfigFile
     }
 
     [JsonIgnore]
-    public string GoogleDriveRefreshToken
+    public string? GoogleDriveRefreshToken
     {
-        get => SecurityHelper.DecryptWithSalt(GoogleDriveRefreshTokenProtected);
-        set => GoogleDriveRefreshTokenProtected = SecurityHelper.EncryptWithSalt(value);
+        get => string.IsNullOrEmpty(GoogleDriveRefreshTokenProtected) ? null : SecurityHelper.DecryptWithSalt(GoogleDriveRefreshTokenProtected);
+        set => GoogleDriveRefreshTokenProtected = string.IsNullOrEmpty(value) ? null : SecurityHelper.EncryptWithSalt(value);
     }
 
     [JsonIgnore]
-    public string GoogleDriveAccessToken
+    public string? GoogleDriveAccessToken
     {
-        get => SecurityHelper.DecryptWithSalt(GoogleDriveAccessTokenProtected);
-        set => GoogleDriveAccessTokenProtected = SecurityHelper.EncryptWithSalt(value);
+        get => string.IsNullOrEmpty(GoogleDriveAccessTokenProtected) ? null : SecurityHelper.DecryptWithSalt(GoogleDriveAccessTokenProtected);
+        set => GoogleDriveAccessTokenProtected = string.IsNullOrEmpty(value) ? null : SecurityHelper.EncryptWithSalt(value);
     }
 
     [JsonIgnore]
@@ -143,17 +146,17 @@ public class AppConfigFile
 /// </summary>
 public static class AppConfigService
 {
-    private const string ConfigFileName = "app_config.json";
+    private const string ConfigFileName = "appconfig.json";
     private static AppConfigFile? _cachedConfig;
     private static readonly object _lock = new();
 
     public static string GetConfigFilePath()
     {
-        return Path.Combine(DatabaseService.GetDefaultProjectRoot(), ConfigFileName);
+        return Path.Combine(DatabaseService.GetDefaultProjectRoot(), "data", "config", ConfigFileName);
     }
 
     /// <summary>
-    /// Lấy cấu hình từ bộ nhớ đệm RAM. Nếu chưa nạp thì nạp từ app_config.json vào RAM.
+    /// Lấy cấu hình từ bộ nhớ đệm RAM. Nếu chưa nạp thì nạp từ appconfig.json vào RAM.
     /// </summary>
     public static AppConfigFile GetConfig()
     {
@@ -179,7 +182,7 @@ public static class AppConfigService
     }
 
     /// <summary>
-    /// Đọc trực tiếp từ file app_config.json và cập nhật cache trong RAM.
+    /// Đọc trực tiếp từ file appconfig.json và cập nhật cache trong RAM.
     /// </summary>
     public static AppConfigFile LoadConfig()
     {
@@ -195,6 +198,16 @@ public static class AppConfigService
         try
         {
             var path = GetConfigFilePath();
+            // Nếu chưa có data/config/appconfig.json, kiểm tra file legacy ở root (app_config.json hoặc appconfig.json)
+            if (!File.Exists(path))
+            {
+                var legacyRootConfig = Path.Combine(DatabaseService.GetDefaultProjectRoot(), "app_config.json");
+                if (File.Exists(legacyRootConfig))
+                {
+                    path = legacyRootConfig;
+                }
+            }
+
             if (File.Exists(path))
             {
                 var json = File.ReadAllText(path);
@@ -212,13 +225,14 @@ public static class AppConfigService
         }
         catch { }
 
-        return new AppConfigFile();
-    }
+        var defaultConfig = new AppConfigFile();
+        try
+        {
+            SaveConfig(defaultConfig);
+        }
+        catch { }
 
-    public static string? GetConfiguredDatabasePath()
-    {
-        var config = GetConfig();
-        return !string.IsNullOrWhiteSpace(config.DatabasePath) ? config.DatabasePath : null;
+        return defaultConfig;
     }
 
     /// <summary>
@@ -242,13 +256,6 @@ public static class AppConfigService
             }
             catch { }
         }
-    }
-
-    public static void SaveDatabasePath(string dbPath)
-    {
-        var config = GetConfig();
-        config.DatabasePath = dbPath;
-        SaveConfig(config);
     }
 
     /// <summary>
@@ -280,7 +287,6 @@ public static class AppConfigService
             "gdrive_access_token" => config.GoogleDriveAccessToken,
             "gdrive_account_email" => config.GoogleDriveAccountEmail ?? defaultValue,
             "active_cloud_provider" => config.ActiveCloudProvider,
-            "backuprootdirectory" => config.BackupRootDirectory ?? defaultValue,
             "createtimestampsubfolder" => config.CreateTimestampSubfolder.ToString(),
             "autocompresszip" => "true",
             _ => defaultValue
@@ -324,9 +330,6 @@ public static class AppConfigService
                 break;
             case "active_cloud_provider":
                 config.ActiveCloudProvider = value;
-                break;
-            case "backuprootdirectory":
-                config.BackupRootDirectory = value;
                 break;
             case "createtimestampsubfolder":
                 if (bool.TryParse(value, out var b)) config.CreateTimestampSubfolder = b;

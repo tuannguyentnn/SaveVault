@@ -57,7 +57,7 @@ public static class RevertService
     public static string GetRevertsRootDirectory()
     {
         var root = DatabaseService.GetDefaultProjectRoot();
-        var dir = Path.Combine(root, "Reverts");
+        var dir = Path.Combine(root, "data", "reverts");
         if (!Directory.Exists(dir))
         {
             try { Directory.CreateDirectory(dir); } catch { }

@@ -164,7 +164,7 @@ public class LudusaviManifestService
 
     public static string GetLocalManifestPath()
     {
-        return Path.Combine(DatabaseService.GetDefaultProjectRoot(), "manifest.yaml");
+        return Path.Combine(DatabaseService.GetDefaultProjectRoot(), "data", "database", "manifest.yaml");
     }
 
     /// <summary>
@@ -234,6 +234,14 @@ public class LudusaviManifestService
             int parsedCount = ParseYamlStream(reader, totalLength, progress, cancellationToken);
 
             LoggingService.LogAction("Ludusavi_Sync_Success", new { TotalImported = parsedCount });
+            try
+            {
+                var cfg = AppConfigService.GetConfig();
+                cfg.LastLudusaviManifestSync = DateTime.Now;
+                AppConfigService.SaveConfig(cfg);
+            }
+            catch { }
+
             progress?.Report(new ManifestSyncProgress(100, $"Đồng bộ thành công {parsedCount:N0} tựa game!", $"Tổng cộng {parsedCount:N0} game"));
             return parsedCount;
         }
@@ -255,6 +263,71 @@ public class LudusaviManifestService
     {
         var progress = textProgress != null ? new Progress<ManifestSyncProgress>(p => textProgress.Report(p.Status)) : null;
         return SyncFromGithubAsync(progress, cancellationToken);
+    }
+
+    /// <summary>
+    /// Kiểm tra xem đã đến thời hạn tự động cập nhật Ludusavi Manifest hay chưa.
+    /// </summary>
+    public static bool IsUpdateDue()
+    {
+        var config = AppConfigService.GetConfig();
+        if (!config.AutoUpdateLudusaviManifest)
+        {
+            return false;
+        }
+
+        int intervalDays = config.LudusaviAutoUpdateDays > 0 ? config.LudusaviAutoUpdateDays : 15;
+
+        DateTime lastSync;
+        if (config.LastLudusaviManifestSync.HasValue)
+        {
+            lastSync = config.LastLudusaviManifestSync.Value;
+        }
+        else
+        {
+            var localFile = GetLocalManifestPath();
+            if (File.Exists(localFile))
+            {
+                lastSync = File.GetLastWriteTime(localFile);
+            }
+            else
+            {
+                return true;
+            }
+        }
+
+        return (DateTime.Now - lastSync).TotalDays >= intervalDays;
+    }
+
+    /// <summary>
+    /// Tự động kiểm tra và đồng bộ ngầm nếu đã quá chu kỳ ngày kể từ lần cập nhật gần nhất.
+    /// Chạy an toàn không làm ảnh hưởng luồng chính của người dùng.
+    /// </summary>
+    public async Task<int> CheckAndAutoSyncIfDueAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsUpdateDue())
+        {
+            return 0;
+        }
+
+        var config = AppConfigService.GetConfig();
+        int intervalDays = config.LudusaviAutoUpdateDays > 0 ? config.LudusaviAutoUpdateDays : 15;
+
+        LoggingService.LogAction("Ludusavi_AutoSync_Triggered", new { IntervalDays = intervalDays });
+        try
+        {
+            int count = await SyncFromGithubAsync(progress: null, cancellationToken);
+            if (count > 0)
+            {
+                LoggingService.LogAction("Ludusavi_AutoSync_Completed", new { TotalGames = count });
+            }
+            return count;
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Tự động cập nhật Ludusavi Manifest thất bại: {Message}", ex.Message);
+            return 0;
+        }
     }
 
     private int ParseYamlStream(
@@ -350,6 +423,15 @@ public class LudusaviManifestService
             if (_isLoaded) return;
 
             var localFile = GetLocalManifestPath();
+            if (!File.Exists(localFile))
+            {
+                var legacyPath = Path.Combine(DatabaseService.GetDefaultProjectRoot(), "manifest.yaml");
+                if (File.Exists(legacyPath))
+                {
+                    localFile = legacyPath;
+                }
+            }
+
             if (File.Exists(localFile))
             {
                 try

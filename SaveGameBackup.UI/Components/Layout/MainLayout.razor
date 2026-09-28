@@ -86,7 +86,7 @@
         </div>
 
         <div style="color: #475569; font-family: var(--font-mono); font-size: 11px;">
-            SaveGameBackup v1.0 • .NET 10
+            SaveVault v@(SaveGameBackup.Core.Services.UpdateService.CurrentAppVersion) • .NET 10
         </div>
     </footer>
 
@@ -109,6 +109,7 @@
         if (firstRender)
         {
             _ = VM.UpdateVM.CheckForUpdateOnStartupAsync();
+            _ = VM.SettingsVM.CheckAutoSyncCatalogAsync();
         }
     }
 

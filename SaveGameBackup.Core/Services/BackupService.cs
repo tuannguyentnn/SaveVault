@@ -71,7 +71,7 @@ public class BackupService
         var timestamp = backupDateTime.ToString("yyyy-MM-dd_HH-mm-ss");
 
         var rootBackupDir = string.IsNullOrWhiteSpace(settings.BackupRootDirectory)
-            ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups")
+            ? DatabaseService.DefaultBackupDir
             : settings.BackupRootDirectory;
 
         Directory.CreateDirectory(rootBackupDir);
@@ -1322,10 +1322,10 @@ public class BackupService
             detail.IsCloudSynced = detail.CloudSyncList.Count > 0;
             detail.CloudProvider = string.Join(", ", detail.CloudSyncList.Select(c => c.Provider));
             var firstRemaining = detail.CloudSyncList.FirstOrDefault();
-            detail.CloudFileId = firstRemaining?.FileId;
-            detail.CloudFileName = firstRemaining?.FileName;
+            detail.CloudFileId = firstRemaining?.FileId ?? string.Empty;
+            detail.CloudFileName = firstRemaining?.FileName ?? string.Empty;
             detail.CloudSyncDate = firstRemaining?.SyncDate;
-            detail.CloudSyncJson = detail.CloudSyncList.Count > 0 ? JsonSerializer.Serialize(detail.CloudSyncList) : null;
+            detail.CloudSyncJson = detail.CloudSyncList.Count > 0 ? JsonSerializer.Serialize(detail.CloudSyncList) : string.Empty;
         }
 
         // 3. Database: Nếu còn ít nhất 1 bản lưu (local hoặc cloud) thì chỉ cập nhật record; nếu không còn bản nào thì xóa hẳn khỏi SQLite

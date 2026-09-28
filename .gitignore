@@ -608,3 +608,5 @@ Covers/baldur's_gate_3.jpg
 *.jpg
 *.db-shm
 *.db-wal
+data/database/manifest.yaml
+*.zip

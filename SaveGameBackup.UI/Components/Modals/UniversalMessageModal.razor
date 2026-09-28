@@ -47,11 +47,13 @@
             </h3>
 
             <!-- Message Body -->
-            <div class="w-full max-h-[50vh] overflow-y-auto px-2 mb-4">
-                <p class="text-[13px] text-slate-300 leading-relaxed whitespace-pre-line select-text text-center break-words"
-                   style="word-break: break-word; overflow-wrap: anywhere;">
-                    @content
-                </p>
+            <div class="sv-scroll-wrapper w-full mb-4" data-scroll-text="Còn nội dung bên dưới (Cuộn)">
+                <div class="w-full max-h-[50vh] overflow-y-auto px-2 sv-scroll-area">
+                    <p class="text-[13px] text-slate-300 leading-relaxed whitespace-pre-line select-text text-center break-words"
+                       style="word-break: break-word; overflow-wrap: anywhere;">
+                        @content
+                    </p>
+                </div>
             </div>
 
             @if (!string.IsNullOrEmpty(targetUrl))

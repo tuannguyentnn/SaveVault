@@ -124,7 +124,7 @@ public static class GameCoverService
     public static string GetCoverDirectory()
     {
         var rootDir = DatabaseService.GetDefaultProjectRoot();
-        var coversDir = Path.Combine(rootDir, "Covers");
+        var coversDir = Path.Combine(rootDir, "data", "covers");
         if (!Directory.Exists(coversDir))
         {
             try
@@ -137,12 +137,12 @@ public static class GameCoverService
     }
 
     /// <summary>
-    /// Lấy đường dẫn thư mục tạm Temp/covers để lưu ảnh bìa vừa tìm kiếm.
+    /// Lấy đường dẫn thư mục tạm data/temp/covers để lưu ảnh bìa vừa tìm kiếm.
     /// </summary>
     public static string GetTempCoverDirectory()
     {
         var rootDir = DatabaseService.GetDefaultProjectRoot();
-        var tempDir = Path.Combine(rootDir, "Temp", "covers");
+        var tempDir = Path.Combine(rootDir, "data", "temp", "covers");
         if (!Directory.Exists(tempDir))
         {
             try

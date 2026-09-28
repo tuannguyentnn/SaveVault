@@ -28,14 +28,22 @@ public static class LoggingService
 
             try
             {
-                var rootDir = !string.IsNullOrWhiteSpace(customLogDir)
-                    ? customLogDir
-                    : DatabaseService.GetDefaultProjectRoot();
+                if (!string.IsNullOrWhiteSpace(customLogDir))
+                {
+                    _logDirectory = customLogDir;
+                }
+                else
+                {
+                    var rootDir = DatabaseService.GetDefaultProjectRoot();
+                    _logDirectory = Path.Combine(rootDir, "data", "logs");
 
-                _logDirectory = Path.Combine(rootDir, "Logs");
+                    // Tự động di chuyển log cũ từ <AppRoot>/logs sang <AppRoot>/data/logs
+                    MigrateLegacyLogs(rootDir, _logDirectory);
+                }
+
                 Directory.CreateDirectory(_logDirectory);
 
-                // Tên file dạng: Logs/yyyy-MM.json
+                // Tên file dạng: data/logs/yyyy-MM.json
                 // Khi vượt quá 5MB, Serilog tự động cuộn (roll) thành yyyy-MM_001.json, yyyy-MM_002.json,...
                 var currentMonthKey = DateTime.Now.ToString("yyyy-MM");
                 var logFilePath = Path.Combine(_logDirectory, $"{currentMonthKey}.json");
@@ -136,5 +144,34 @@ public static class LoggingService
         {
             Initialize();
         }
+    }
+
+    private static void MigrateLegacyLogs(string rootDir, string targetLogDir)
+    {
+        try
+        {
+            var oldLogDirs = new[] { Path.Combine(rootDir, "logs"), Path.Combine(rootDir, "Logs") };
+            foreach (var oldDir in oldLogDirs)
+            {
+                if (Directory.Exists(oldDir) && !string.Equals(Path.GetFullPath(oldDir), Path.GetFullPath(targetLogDir), StringComparison.OrdinalIgnoreCase))
+                {
+                    Directory.CreateDirectory(targetLogDir);
+                    foreach (var file in Directory.GetFiles(oldDir, "*.json"))
+                    {
+                        var destFile = Path.Combine(targetLogDir, Path.GetFileName(file));
+                        if (!File.Exists(destFile))
+                        {
+                            File.Move(file, destFile);
+                        }
+                    }
+
+                    if (Directory.GetFiles(oldDir).Length == 0 && Directory.GetDirectories(oldDir).Length == 0)
+                    {
+                        Directory.Delete(oldDir, false);
+                    }
+                }
+            }
+        }
+        catch { }
     }
 }

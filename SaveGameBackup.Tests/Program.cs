@@ -54,21 +54,20 @@ try
     Console.WriteLine("\n[2] Testing AppConfigService (In-Memory RAM Cache & app_config.json)");
     var sampleConfig = new AppConfigFile
     {
-        DatabasePath = Path.Combine(tempTestDir, "test_app_config.db"),
-        BackupRootDirectory = Path.Combine(tempTestDir, "MyCustomBackups"),
         CreateTimestampSubfolder = true,
-        AutoCompressZip = true
+        AutoCompressZip = true,
+        PageSize = 25
     };
     AppConfigService.SaveConfig(sampleConfig);
 
     var memCached = AppConfigService.GetConfig();
-    if (memCached.DatabasePath != sampleConfig.DatabasePath ||
-        memCached.BackupRootDirectory != sampleConfig.BackupRootDirectory ||
+    if (memCached.PageSize != sampleConfig.PageSize ||
+        memCached.CreateTimestampSubfolder != true ||
         memCached.AutoCompressZip != true)
     {
         throw new Exception("AppConfig RAM Cache does not match saved config!");
     }
-    Console.WriteLine($"  ✓ AppConfig RAM cache verified OK: BackupRoot={memCached.BackupRootDirectory}, AutoZip={memCached.AutoCompressZip}");
+    Console.WriteLine($"  ✓ AppConfig RAM cache verified OK: PageSize={memCached.PageSize}, AutoZip={memCached.AutoCompressZip}");
 
     // Test Search Coordinator: Cache-then-PCGamingWiki logic
     var searchCoordinator = new GameSearchCoordinator(db);
@@ -210,19 +209,16 @@ try
     if (!File.Exists(Path.Combine(projectRoot, "SaveVault.slnx")) && !File.Exists(Path.Combine(projectRoot, "LaunchApp.bat")))
         throw new Exception("Detected project root does not contain SaveVault solution files!");
 
-    var defaultDbPath = Path.Combine(projectRoot, "save_backup.db");
+    var defaultDbPath = Path.Combine(projectRoot, "data", "database", "save_backup.db");
     Console.WriteLine($"  ✓ Default DB Path: {defaultDbPath}");
 
-    // Test AppConfigService
-    var testCustomDbPath = Path.Combine(tempTestDir, "custom_configured_db.db");
-    AppConfigService.SaveDatabasePath(testCustomDbPath);
-    var loadedPath = AppConfigService.GetConfiguredDatabasePath();
-    if (loadedPath != testCustomDbPath)
-        throw new Exception($"AppConfigService failed: expected {testCustomDbPath} but got {loadedPath}");
-    Console.WriteLine($"  ✓ AppConfigService Save/Load OK: {loadedPath}");
-
-    // Reset config back so it doesn't pollute user environment
-    AppConfigService.SaveDatabasePath(string.Empty);
+    // Test 7: Verify Database Default Path and Backup Default Dir
+    defaultDbPath = DatabaseService.DefaultDbPath;
+    var defaultBackupDir = DatabaseService.DefaultBackupDir;
+    if (!defaultDbPath.EndsWith("save_backup.db") || !defaultBackupDir.EndsWith("backups"))
+        throw new Exception($"Default paths incorrect: DB={defaultDbPath}, Backup={defaultBackupDir}");
+    Console.WriteLine($"  ✓ Default DB Path verified: {defaultDbPath}");
+    Console.WriteLine($"  ✓ Default Backup Dir verified: {defaultBackupDir}");
 
     // Test 8: GetRestoreItemsFromBackup, Selective Restore & Custom Destination
     Console.WriteLine("\n[8] Testing GetRestoreItemsFromBackup, Selective Restore & Custom Destination");
@@ -857,7 +853,7 @@ try
     LoggingService.Info("Serilog test informational message with param: {Param}", 42);
     LoggingService.CloseAndFlush();
 
-    var expectedLogFolder = Path.Combine(DatabaseService.GetDefaultProjectRoot(), "Logs");
+    var expectedLogFolder = Path.Combine(DatabaseService.GetDefaultProjectRoot(), "data", "logs");
     if (!Directory.Exists(expectedLogFolder))
     {
         throw new Exception($"FAIL: Logs directory does not exist at expected root path: {expectedLogFolder}");
@@ -1855,11 +1851,11 @@ try
     var updateTestDir = Path.Combine(tempTestDir, "AppRoot");
     Directory.CreateDirectory(updateTestDir);
     var updateService = new UpdateService(customAppDirectory: updateTestDir);
-    if (!updateService.TempDirectory.Equals(Path.Combine(updateTestDir, "temp"), StringComparison.OrdinalIgnoreCase))
-        throw new Exception($"FAIL: TempDirectory expected '{Path.Combine(updateTestDir, "temp")}', got '{updateService.TempDirectory}'");
+    if (!updateService.TempDirectory.Equals(Path.Combine(updateTestDir, "data", "temp"), StringComparison.OrdinalIgnoreCase))
+        throw new Exception($"FAIL: TempDirectory expected '{Path.Combine(updateTestDir, "data", "temp")}', got '{updateService.TempDirectory}'");
     if (!Directory.Exists(updateService.TempDirectory))
         throw new Exception("FAIL: TempDirectory must exist!");
-    Console.WriteLine($"  ✓ TempDirectory verified in app root: {updateService.TempDirectory}");
+    Console.WriteLine($"  ✓ TempDirectory verified in data/temp: {updateService.TempDirectory}");
 
     // 32.3: Skip Version Persistence
     updateService.SkipVersion("1.2.0");
@@ -1890,7 +1886,7 @@ try
     Console.WriteLine("  ✓ Pre-Update Safety Check verified idle state!");
 
     // 32.5: Runner Script Generation
-    var dummyExtracted = Path.Combine(updateService.TempDirectory, "extracted");
+    var dummyExtracted = Path.Combine(updateService.AutoUpdateDirectory, "extracted");
     Directory.CreateDirectory(dummyExtracted);
     int currentPid = System.Diagnostics.Process.GetCurrentProcess().Id;
     var runnerScriptPath = updateService.GenerateRunnerScript(dummyExtracted, currentPid);
@@ -1901,8 +1897,80 @@ try
         throw new Exception("FAIL: Runner script content is missing expected commands or PID!");
     Console.WriteLine("  ✓ Runner script generated cleanly with xcopy and process supervision!");
 
+    // ==========================================
+    // [33] Testing Auto-Update Comprehensive Error Handling & Post-Update Flags
+    // ==========================================
+    Console.WriteLine("\n[33] Testing Auto-Update Comprehensive Error Handling, Integrity Check & Post-Update Flags");
+
+    // 33.1: Corrupt ZIP handling in ExtractUpdatePackage
+    var corruptZipPath = Path.Combine(updateService.AutoUpdateDirectory, "corrupt_test.zip");
+    File.WriteAllText(corruptZipPath, "This is not a valid zip archive data stream!");
+    bool corruptHandled = false;
+    try
+    {
+        updateService.ExtractUpdatePackage(corruptZipPath);
+    }
+    catch (InvalidOperationException ex) when (ex.Message.Contains("hỏng") || ex.Message.Contains("thất bại"))
+    {
+        corruptHandled = true;
+    }
+    if (!corruptHandled)
+        throw new Exception("FAIL: ExtractUpdatePackage should catch corrupt zip and throw clear InvalidOperationException!");
+    if (File.Exists(corruptZipPath))
+        throw new Exception("FAIL: Corrupt zip file should be automatically purged!");
+    Console.WriteLine("  ✓ Corrupt package was safely detected, purged, and threw descriptive exception!");
+
+    // 33.2: Update Error & Success Flags
+    var errFlagPath = Path.Combine(updateService.AutoUpdateDirectory, "update_error.flag");
+    var succFlagPath = Path.Combine(updateService.AutoUpdateDirectory, "update_success.flag");
+
+    // Test error flag
+    File.WriteAllText(errFlagPath, "Error copying app files due to file lock");
+    bool hasErr = updateService.HasUpdateErrorFlag(out var errMsg);
+    if (!hasErr || !errMsg.Contains("file lock"))
+        throw new Exception($"FAIL: Expected error flag with 'file lock', got: '{errMsg}'");
+    if (File.Exists(errFlagPath))
+        throw new Exception("FAIL: update_error.flag must be deleted after reading!");
+    if (updateService.HasUpdateErrorFlag(out _))
+        throw new Exception("FAIL: update_error.flag should return false when file does not exist!");
+    Console.WriteLine("  ✓ HasUpdateErrorFlag read message and purged flag file correctly!");
+
+    // Test success flag
+    File.WriteAllText(succFlagPath, "1.2.3");
+    bool hasSucc = updateService.HasUpdateSuccessFlag(out var succVer);
+    if (!hasSucc || succVer != "1.2.3")
+        throw new Exception($"FAIL: Expected success version '1.2.3', got: '{succVer}'");
+    if (File.Exists(succFlagPath))
+        throw new Exception("FAIL: update_success.flag must be deleted after reading!");
+    if (updateService.HasUpdateSuccessFlag(out _))
+        throw new Exception("FAIL: update_success.flag should return false when file does not exist!");
+    Console.WriteLine("  ✓ HasUpdateSuccessFlag read version and purged flag file correctly!");
+
+    // 33.3: Rollback Flag Testing
+    var rollbackFlagPath = Path.Combine(updateService.AutoUpdateDirectory, "update_rollback.flag");
+    File.WriteAllText(rollbackFlagPath, "Sao chep that bai: file lock. Da rollback an toan.");
+    bool hasRollback = updateService.HasUpdateRollbackFlag(out var rollbackMsg);
+    if (!hasRollback || !rollbackMsg.Contains("rollback an toan"))
+        throw new Exception($"FAIL: Expected rollback flag with 'rollback an toan', got: '{rollbackMsg}'");
+    if (File.Exists(rollbackFlagPath))
+        throw new Exception("FAIL: update_rollback.flag must be deleted after reading!");
+    if (updateService.HasUpdateRollbackFlag(out _))
+        throw new Exception("FAIL: update_rollback.flag should return false when file does not exist!");
+    Console.WriteLine("  ✓ HasUpdateRollbackFlag read message and purged flag file correctly!");
+
+    // 33.4: Runner script error flag, rollback & success flag generation
+    var runnerScript33 = updateService.GenerateRunnerScript(dummyExtracted, currentPid, "1.2.3");
+    var scriptText33 = File.ReadAllText(runnerScript33);
+    if (!scriptText33.Contains("update_error.flag") || !scriptText33.Contains("update_success.flag") || !scriptText33.Contains("UPDATE_FAILED"))
+        throw new Exception("FAIL: Runner script must contain errorlevel tracking and error/success flag creation!");
+    if (!scriptText33.Contains("backup_prev") || !scriptText33.Contains("rollback_procedure") || !scriptText33.Contains("update_rollback.flag") || !scriptText33.Contains("BACKUP_FAILED"))
+        throw new Exception("FAIL: Runner script must contain pre-update snapshot backup, rollback procedure, and rollback flag!");
+    Console.WriteLine("  ✓ Runner script verified with pre-update snapshot backup, rollback procedure & rollback flag!");
+
+    Console.WriteLine("  ✓ Auto-update error handling, corrupt zip integrity, rollback resilience & runner recovery verified OK!");
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 32 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 33 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally

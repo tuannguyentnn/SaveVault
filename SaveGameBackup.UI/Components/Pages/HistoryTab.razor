@@ -61,12 +61,12 @@
     </div>
 
     <!-- Master Container (Card chứa Gallery hoặc Table) -->
-    <div class="flex-1 sv-card p-0 overflow-hidden flex flex-col min-h-0" @onclick="DeselectEntry">
+    <div class="flex-1 sv-card p-0 overflow-hidden flex flex-col min-h-0 sv-scroll-wrapper" @onclick="DeselectEntry" data-scroll-text="Còn game bên dưới (Cuộn)">
         
         @if (IsGalleryView)
         {
             <!-- ================= CHẾ ĐỘ GALLERY GAME (BOX ART POSTER CARDS) ================= -->
-            <div id="gallery-container" class="flex-1 overflow-y-auto p-4 min-h-0">
+            <div id="gallery-container" class="flex-1 overflow-y-auto p-4 min-h-0 sv-scroll-area">
                 @if (PagedHistories.Count == 0)
                 {
                     <div class="h-full flex flex-col items-center justify-center py-20 text-slate-400 text-[12.5px]">
@@ -164,7 +164,7 @@
         else
         {
             <!-- ================= CHẾ ĐỘ TABLE (BẢNG DANH SÁCH CÓ THUMBNAIL COVER) ================= -->
-            <div class="flex-1 overflow-y-auto overflow-x-auto min-h-0">
+            <div class="flex-1 overflow-y-auto overflow-x-auto min-h-0 sv-scroll-area">
                 <table class="custom-table w-full overflow-hidden" style="border-collapse: separate; border-spacing: 0;">
                     <thead class="sticky top-0 z-10 shadow-sm" style="background-color: #101726;">
                         <tr style="background-color: #101726; border-bottom: 1px solid #1E293B;">

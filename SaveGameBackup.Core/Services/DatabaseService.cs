@@ -17,6 +17,9 @@ public class DatabaseService
     private readonly IGameCacheRepository _cacheRepository;
     private readonly IBackupHistoryRepository _historyRepository;
 
+    public static string DefaultDbPath => Path.Combine(GetDefaultProjectRoot(), "data", "database", "save_backup.db");
+    public static string DefaultBackupDir => Path.Combine(GetDefaultProjectRoot(), "data", "backups");
+
     public DatabaseService(string? customDbPath = null)
     {
         if (!string.IsNullOrWhiteSpace(customDbPath))
@@ -25,15 +28,13 @@ public class DatabaseService
         }
         else
         {
-            var configuredPath = AppConfigService.GetConfiguredDatabasePath();
-            if (!string.IsNullOrWhiteSpace(configuredPath))
-            {
-                _dbPath = configuredPath;
-            }
-            else
-            {
-                _dbPath = Path.Combine(GetDefaultProjectRoot(), "save_backup.db");
-            }
+            _dbPath = DefaultDbPath;
+        }
+
+        var dbDir = Path.GetDirectoryName(_dbPath);
+        if (!string.IsNullOrWhiteSpace(dbDir) && !Directory.Exists(dbDir))
+        {
+            Directory.CreateDirectory(dbDir);
         }
 
         _connectionFactory = new SqliteConnectionFactory(_dbPath);
@@ -51,7 +52,21 @@ public class DatabaseService
 
     public static string GetDefaultProjectRoot()
     {
-        var current = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var dirInfo = new DirectoryInfo(baseDir);
+
+        // Trường hợp chạy từ thư mục app/ của gói xuất bản phân cấp (SaveVault/app/)
+        if (dirInfo.Name.Equals("app", StringComparison.OrdinalIgnoreCase) && dirInfo.Parent != null)
+        {
+            var parent = dirInfo.Parent;
+            if (File.Exists(Path.Combine(parent.FullName, "SaveVault.exe")) ||
+                Directory.Exists(Path.Combine(parent.FullName, "data")))
+            {
+                return parent.FullName;
+            }
+        }
+
+        var current = dirInfo;
         while (current != null)
         {
             var isInsideBuildOutput = current.FullName.Contains(@"\bin\", StringComparison.OrdinalIgnoreCase) ||
@@ -62,7 +77,7 @@ public class DatabaseService
             if (current.GetFiles("*.slnx").Length > 0 ||
                 current.GetFiles("*.sln").Length > 0 ||
                 current.GetFiles("LaunchApp.bat").Length > 0 ||
-                (!isInsideBuildOutput && current.GetFiles("*.exe").Length > 0) ||
+                (!isInsideBuildOutput && !current.Name.Equals("app", StringComparison.OrdinalIgnoreCase) && current.GetFiles("*.exe").Length > 0) ||
                 Directory.Exists(Path.Combine(current.FullName, ".git")))
             {
                 return current.FullName;
@@ -70,7 +85,7 @@ public class DatabaseService
             current = current.Parent;
         }
 
-        return AppDomain.CurrentDomain.BaseDirectory;
+        return baseDir;
     }
 
     private void InitializeDatabase()
@@ -321,7 +336,7 @@ public class DatabaseService
         var config = AppConfigService.GetConfig();
         return Task.FromResult(new AppSettings
         {
-            BackupRootDirectory = string.IsNullOrWhiteSpace(config.BackupRootDirectory) ? defaultBackupDir : config.BackupRootDirectory,
+            BackupRootDirectory = DefaultBackupDir,
             CreateTimestampSubfolder = config.CreateTimestampSubfolder,
             AutoCompressZip = true, // Mặc định và bắt buộc nén zip 100%
             OverwriteExisting = true
@@ -331,7 +346,6 @@ public class DatabaseService
     public Task SaveSettingsAsync(AppSettings settings)
     {
         var config = AppConfigService.GetConfig();
-        config.BackupRootDirectory = settings.BackupRootDirectory;
         config.CreateTimestampSubfolder = settings.CreateTimestampSubfolder;
         config.AutoCompressZip = true;
         AppConfigService.SaveConfig(config);
