@@ -35,12 +35,69 @@ public class CloudSubViewModel : INotifyPropertyChanged
     private bool _useCustomOneDriveApi;
     private bool _useCustomGoogleDriveApi;
 
+    // Cloud Storage Quota
+    private CloudStorageQuota? _googleDriveQuota;
+    private CloudStorageQuota? _oneDriveQuota;
+    private bool _isLoadingGoogleDriveQuota;
+    private bool _isLoadingOneDriveQuota;
+
     // Cloud Sync Provider Selection Modal
     private bool _isSyncCloudSelectModalOpen;
     private BackupHistoryDetail? _targetSyncDetail;
     private CancellationTokenSource? _syncCts;
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public CloudStorageQuota? GoogleDriveQuota
+    {
+        get => _googleDriveQuota;
+        set
+        {
+            if (SetField(ref _googleDriveQuota, value))
+            {
+                OnPropertyChanged(nameof(CurrentProviderQuota));
+            }
+        }
+    }
+
+    public CloudStorageQuota? OneDriveQuota
+    {
+        get => _oneDriveQuota;
+        set
+        {
+            if (SetField(ref _oneDriveQuota, value))
+            {
+                OnPropertyChanged(nameof(CurrentProviderQuota));
+            }
+        }
+    }
+
+    public bool IsLoadingGoogleDriveQuota
+    {
+        get => _isLoadingGoogleDriveQuota;
+        set
+        {
+            if (SetField(ref _isLoadingGoogleDriveQuota, value))
+            {
+                OnPropertyChanged(nameof(IsLoadingCurrentQuota));
+            }
+        }
+    }
+
+    public bool IsLoadingOneDriveQuota
+    {
+        get => _isLoadingOneDriveQuota;
+        set
+        {
+            if (SetField(ref _isLoadingOneDriveQuota, value))
+            {
+                OnPropertyChanged(nameof(IsLoadingCurrentQuota));
+            }
+        }
+    }
+
+    public CloudStorageQuota? CurrentProviderQuota => IsOneDriveSelected ? OneDriveQuota : GoogleDriveQuota;
+    public bool IsLoadingCurrentQuota => IsOneDriveSelected ? IsLoadingOneDriveQuota : IsLoadingGoogleDriveQuota;
 
     public CloudSubViewModel(
         CloudManagerService cloudManager,
@@ -71,6 +128,8 @@ public class CloudSubViewModel : INotifyPropertyChanged
         ConfirmSyncToProviderCommand = new RelayCommand(async param => await ConfirmSyncToProviderAsync(param?.ToString() ?? "GoogleDrive"), _ => !IsCloudSyncing);
         CloseSyncCloudSelectModalCommand = new RelayCommand(_ => ExecuteCloseSyncCloudSelectModal());
         CancelSyncCommand = new RelayCommand(_ => ExecuteCancelSync(), _ => IsCloudSyncing);
+
+        RefreshCloudQuotaCommand = new RelayCommand(async param => await RefreshCloudQuotaAsync(param?.ToString()));
 
         OpenCloudWebViewCommand = new RelayCommand(param => ExecuteOpenCloudWebView(param));
         OpenAzurePortalGuideCommand = new RelayCommand(_ => ExecuteOpenAzurePortalGuide());
@@ -210,6 +269,7 @@ public class CloudSubViewModel : INotifyPropertyChanged
     public ICommand ConfirmSyncToProviderCommand { get; }
     public ICommand CloseSyncCloudSelectModalCommand { get; }
     public ICommand CancelSyncCommand { get; }
+    public ICommand RefreshCloudQuotaCommand { get; }
     public ICommand OpenCloudWebViewCommand { get; }
     public ICommand OpenAzurePortalGuideCommand { get; }
     public ICommand OpenGoogleCloudConsoleGuideCommand { get; }
@@ -220,6 +280,14 @@ public class CloudSubViewModel : INotifyPropertyChanged
         {
             await _cloudManager.InitializeAsync();
             UpdateCloudStatusDisplay();
+            if (_cloudManager.GoogleDrive.IsAuthenticated)
+            {
+                _ = RefreshCloudQuotaAsync("GoogleDrive");
+            }
+            if (_cloudManager.OneDrive.IsAuthenticated)
+            {
+                _ = RefreshCloudQuotaAsync("OneDrive");
+            }
         }
         catch (Exception ex)
         {
@@ -250,6 +318,8 @@ public class CloudSubViewModel : INotifyPropertyChanged
         _cloudManager.SetActiveProvider("GoogleDrive");
         SelectedCloudProviderIndex = 0;
         await _cloudManager.GoogleDrive.SignOutAsync();
+        GoogleDriveQuota = null;
+        OnPropertyChanged(nameof(CurrentProviderQuota));
         UpdateCloudStatusDisplay();
         _dialogService.ShowMessage("Đã Đăng Xuất", "Đã ngắt kết nối tài khoản Google Drive.", "Info");
     }
@@ -267,6 +337,8 @@ public class CloudSubViewModel : INotifyPropertyChanged
         _cloudManager.SetActiveProvider("OneDrive");
         SelectedCloudProviderIndex = 1;
         await _cloudManager.OneDrive.SignOutAsync();
+        OneDriveQuota = null;
+        OnPropertyChanged(nameof(CurrentProviderQuota));
         UpdateCloudStatusDisplay();
         _dialogService.ShowMessage("Đã Đăng Xuất", "Đã ngắt kết nối tài khoản Microsoft OneDrive.", "Info");
     }
@@ -284,6 +356,7 @@ public class CloudSubViewModel : INotifyPropertyChanged
             if (success)
             {
                 UpdateCloudStatusDisplay();
+                _ = RefreshCloudQuotaAsync(provider.ProviderName);
                 _dialogService.ShowMessage("Kết Nối Thành Công", $"Đã kết nối thành công với {providerName}!\n\nTài khoản: {CloudAccountEmail}", "Success");
                 LoggingService.LogAction("Cloud_Connect_Success", new { Provider = provider.ProviderName, Email = CloudAccountEmail });
             }
@@ -307,6 +380,15 @@ public class CloudSubViewModel : INotifyPropertyChanged
         try
         {
             await provider.SignOutAsync();
+            if (string.Equals(provider.ProviderName, "GoogleDrive", StringComparison.OrdinalIgnoreCase))
+            {
+                GoogleDriveQuota = null;
+            }
+            else
+            {
+                OneDriveQuota = null;
+            }
+            OnPropertyChanged(nameof(CurrentProviderQuota));
             UpdateCloudStatusDisplay();
             _dialogService.ShowMessage("Đã Đăng Xuất", $"Đã ngắt kết nối tài khoản khỏi {provider.DisplayName}.", "Info");
             LoggingService.LogAction("Cloud_Disconnect_Success", new { Provider = provider.ProviderName });
@@ -315,6 +397,74 @@ public class CloudSubViewModel : INotifyPropertyChanged
         {
             LoggingService.Error(ex, "Lỗi đăng xuất Cloud: {Message}", ex.Message);
             _dialogService.ShowMessage("Lỗi Đăng Xuất", ex.Message, "Error", ex.StackTrace);
+        }
+    }
+
+    public async Task RefreshCloudQuotaAsync(string? provider = null)
+    {
+        var targetProvider = string.IsNullOrWhiteSpace(provider)
+            ? (IsOneDriveSelected ? "OneDrive" : "GoogleDrive")
+            : provider;
+
+        if (string.Equals(targetProvider, "GoogleDrive", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!_cloudManager.GoogleDrive.IsAuthenticated)
+            {
+                GoogleDriveQuota = null;
+                return;
+            }
+
+            IsLoadingGoogleDriveQuota = true;
+            try
+            {
+                GoogleDriveQuota = await _cloudManager.GoogleDrive.GetStorageQuotaAsync();
+                LoggingService.LogAction("Cloud_Quota_Refreshed", new
+                {
+                    Provider = "GoogleDrive",
+                    Total = GoogleDriveQuota?.TotalBytes,
+                    Used = GoogleDriveQuota?.UsedBytes
+                });
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("Lỗi làm mới quota Google Drive: {Message}", ex.Message);
+            }
+            finally
+            {
+                IsLoadingGoogleDriveQuota = false;
+                OnPropertyChanged(nameof(CurrentProviderQuota));
+                OnPropertyChanged(nameof(IsLoadingCurrentQuota));
+            }
+        }
+        else if (string.Equals(targetProvider, "OneDrive", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!_cloudManager.OneDrive.IsAuthenticated)
+            {
+                OneDriveQuota = null;
+                return;
+            }
+
+            IsLoadingOneDriveQuota = true;
+            try
+            {
+                OneDriveQuota = await _cloudManager.OneDrive.GetStorageQuotaAsync();
+                LoggingService.LogAction("Cloud_Quota_Refreshed", new
+                {
+                    Provider = "OneDrive",
+                    Total = OneDriveQuota?.TotalBytes,
+                    Used = OneDriveQuota?.UsedBytes
+                });
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("Lỗi làm mới quota OneDrive: {Message}", ex.Message);
+            }
+            finally
+            {
+                IsLoadingOneDriveQuota = false;
+                OnPropertyChanged(nameof(CurrentProviderQuota));
+                OnPropertyChanged(nameof(IsLoadingCurrentQuota));
+            }
         }
     }
 

@@ -141,7 +141,7 @@
 
                     <div class="w-full bg-[#0A0F1D] rounded-full h-3 overflow-hidden border border-slate-700">
                         <div class="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 h-3 rounded-full transition-all duration-200"
-                             style="width: @(Math.Clamp(UpdateVM.DownloadPercent, 0, 100))%;"></div>
+                             style="width: @(Math.Clamp(UpdateVM.DownloadPercent, 0, 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%;"></div>
                     </div>
 
                     <div class="text-[10.5px] text-slate-400 flex items-center justify-between">

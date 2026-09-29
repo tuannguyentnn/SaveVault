@@ -625,7 +625,57 @@ public class GoogleDriveApiService : ICloudStorageService
         {
             return Task.FromResult(config.GoogleDriveClientId.Trim());
         }
+        if (!string.IsNullOrWhiteSpace(config.GoogleDriveClientId))
+        {
+            return Task.FromResult(config.GoogleDriveClientId.Trim());
+        }
         return Task.FromResult(DefaultClientId);
+    }
+
+    public async Task<CloudStorageQuota?> GetStorageQuotaAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsAuthenticated) return null;
+
+        try
+        {
+            await EnsureAccessTokenAsync(cancellationToken);
+
+            using var req = new HttpRequestMessage(HttpMethod.Get, "https://www.googleapis.com/drive/v3/about?fields=storageQuota");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+
+            using var resp = await _httpClient.SendAsync(req, cancellationToken);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadAsStringAsync(cancellationToken);
+                LoggingService.Warn("GoogleDrive: Không thể lấy quota dung lượng: {Error}", ExtractApiErrorMessage(err));
+                return null;
+            }
+
+            var json = await resp.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("storageQuota", out var quotaElem))
+            {
+                long totalBytes = GetLongProperty(quotaElem, "limit");
+                long usedBytes = GetLongProperty(quotaElem, "usage");
+
+                if (totalBytes <= 0 && usedBytes > 0)
+                {
+                    totalBytes = Math.Max(0, usedBytes);
+                }
+
+                return new CloudStorageQuota
+                {
+                    TotalBytes = totalBytes,
+                    UsedBytes = usedBytes
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("GoogleDrive: Ngoại lệ khi truy vấn storageQuota: {Message}", ex.Message);
+        }
+
+        return null;
     }
 
     private Task<string> GetClientSecretAsync()
@@ -635,7 +685,23 @@ public class GoogleDriveApiService : ICloudStorageService
         {
             return Task.FromResult(config.GoogleDriveClientSecret.Trim());
         }
+        if (!string.IsNullOrWhiteSpace(config.GoogleDriveClientSecret))
+        {
+            return Task.FromResult(config.GoogleDriveClientSecret.Trim());
+        }
         return Task.FromResult(DefaultClientSecret);
+    }
+
+    private static long GetLongProperty(JsonElement elem, string propName)
+    {
+        if (elem.TryGetProperty(propName, out var p))
+        {
+            if (p.ValueKind == JsonValueKind.Number && p.TryGetInt64(out var valNum))
+                return valNum;
+            if (p.ValueKind == JsonValueKind.String && long.TryParse(p.GetString(), out var valStr))
+                return valStr;
+        }
+        return 0;
     }
 
     private static string ExtractApiErrorMessage(string raw)

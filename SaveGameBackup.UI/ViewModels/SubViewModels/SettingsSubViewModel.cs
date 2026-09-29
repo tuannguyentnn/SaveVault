@@ -23,8 +23,6 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     private readonly LudusaviManifestService _ludusaviService;
     private readonly DatabaseBackupService _databaseBackupService;
     private readonly CloudManagerService? _cloudManager;
-
-    private string _backupDestinationRoot = string.Empty;
     private bool _createTimestampSubfolder = true;
     private bool _autoCompressZip = true;
     private int _pageSize = 10;
@@ -66,7 +64,6 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _databaseBackupService = databaseBackupService ?? new DatabaseBackupService(databaseService, cloudManager ?? new CloudManagerService(databaseService));
 
         var config = AppConfigService.GetConfig();
-        _backupDestinationRoot = DatabaseService.DefaultBackupDir;
 
         _createTimestampSubfolder = config.CreateTimestampSubfolder;
         _autoCompressZip = config.AutoCompressZip;
@@ -91,11 +88,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     }
 
 
-    public string BackupDestinationRoot
-    {
-        get => DatabaseService.DefaultBackupDir;
-        set => SetField(ref _backupDestinationRoot, value);
-    }
+    public string BackupDestinationRoot => DatabaseService.DefaultBackupDir;
 
     public bool CreateTimestampSubfolder
     {

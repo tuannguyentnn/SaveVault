@@ -53,9 +53,19 @@ public class UpdateDownloadProgress
         get
         {
             var downloadedMb = (BytesDownloaded / (1024.0 * 1024.0)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
-            var speedText = SpeedBytesPerSecond > (50 * 1024)
-                ? $" • {(SpeedBytesPerSecond / (1024.0 * 1024.0)).ToString("0.1", System.Globalization.CultureInfo.InvariantCulture)} MB/s"
-                : "";
+            string speedText;
+            if (SpeedBytesPerSecond >= 1024 * 1024)
+            {
+                speedText = $" • {(SpeedBytesPerSecond / (1024.0 * 1024.0)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)} MB/s";
+            }
+            else if (SpeedBytesPerSecond >= 1024)
+            {
+                speedText = $" • {(SpeedBytesPerSecond / 1024.0).ToString("0", System.Globalization.CultureInfo.InvariantCulture)} KB/s";
+            }
+            else
+            {
+                speedText = "";
+            }
 
             if (TotalBytes > 0)
             {

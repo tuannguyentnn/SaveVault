@@ -713,6 +713,10 @@ public class OneDriveApiService : ICloudStorageService
         {
             return Task.FromResult(config.OneDriveClientId.Trim());
         }
+        if (!string.IsNullOrWhiteSpace(config.OneDriveClientId))
+        {
+            return Task.FromResult(config.OneDriveClientId.Trim());
+        }
         return Task.FromResult(DefaultClientId);
     }
 
@@ -720,6 +724,10 @@ public class OneDriveApiService : ICloudStorageService
     {
         var config = AppConfigService.GetConfig();
         if (config.UseCustomOneDriveApi && !string.IsNullOrWhiteSpace(config.OneDriveClientId))
+        {
+            return Task.FromResult<string?>(null);
+        }
+        if (!string.IsNullOrWhiteSpace(config.OneDriveClientId))
         {
             return Task.FromResult<string?>(null);
         }
@@ -738,6 +746,76 @@ public class OneDriveApiService : ICloudStorageService
         var bytes = Encoding.ASCII.GetBytes(codeVerifier);
         var hash = SHA256.HashData(bytes);
         return Base64UrlEncode(hash);
+    }
+
+    public async Task<CloudStorageQuota?> GetStorageQuotaAsync(CancellationToken cancellationToken = default)
+    {
+        if (!IsAuthenticated) return null;
+
+        try
+        {
+            await EnsureAccessTokenAsync(cancellationToken);
+
+            using var req = new HttpRequestMessage(HttpMethod.Get, GraphApiDriveEndpoint);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+
+            using var resp = await _httpClient.SendAsync(req, cancellationToken);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadAsStringAsync(cancellationToken);
+                LoggingService.Warn("OneDrive: Không thể lấy quota dung lượng: {Error}", ExtractApiErrorMessage(err));
+                return null;
+            }
+
+            var json = await resp.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("quota", out var quotaElem))
+            {
+                long totalBytes = GetLongProperty(quotaElem, "total");
+                long usedBytes = GetLongProperty(quotaElem, "used");
+                long remainingBytes = GetLongProperty(quotaElem, "remaining");
+
+                // Trong OneDrive Personal, API /me/drive có thể trả về quota.total là hạn ngạch cơ bản (vd 5GB),
+                // trong khi người dùng có thêm dung lượng khuyến mãi/trung thành/đăng ký khiến remaining > total hoặc used + remaining > total.
+                // Dung lượng tổng thực tế của ổ đĩa phải là used + remaining nếu lớn hơn total.
+                if (remainingBytes > 0)
+                {
+                    if (totalBytes < usedBytes + remainingBytes)
+                    {
+                        totalBytes = usedBytes + remainingBytes;
+                    }
+                    else if (usedBytes <= 0 && totalBytes > remainingBytes)
+                    {
+                        usedBytes = totalBytes - remainingBytes;
+                    }
+                }
+
+                return new CloudStorageQuota
+                {
+                    TotalBytes = totalBytes,
+                    UsedBytes = usedBytes,
+                    RemainingBytes = remainingBytes > 0 ? remainingBytes : null
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("OneDrive: Ngoại lệ khi truy vấn quota: {Message}", ex.Message);
+        }
+
+        return null;
+    }
+
+    private static long GetLongProperty(JsonElement elem, string propName)
+    {
+        if (elem.TryGetProperty(propName, out var p))
+        {
+            if (p.ValueKind == JsonValueKind.Number && p.TryGetInt64(out var valNum))
+                return valNum;
+            if (p.ValueKind == JsonValueKind.String && long.TryParse(p.GetString(), out var valStr))
+                return valStr;
+        }
+        return 0;
     }
 
     private static string Base64UrlEncode(byte[] bytes)

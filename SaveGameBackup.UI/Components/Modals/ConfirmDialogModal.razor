@@ -293,7 +293,7 @@
                             </div>
                             <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
                                 <div class="bg-gradient-to-r from-red-600 to-red-400 h-2 rounded-full transition-all duration-300"
-                                     style="width: @(Math.Clamp(progressPercent, 0, 100))%;"></div>
+                                     style="width: @(Math.Clamp(progressPercent, 0, 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%;"></div>
                             </div>
                         </div>
                     }
@@ -616,7 +616,7 @@
                             </div>
                             <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
                                 <div class="bg-gradient-to-r from-red-600 to-red-400 h-2 rounded-full transition-all duration-300"
-                                     style="width: @(Math.Clamp(progressPercent, 0, 100))%;"></div>
+                                     style="width: @(Math.Clamp(progressPercent, 0, 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%;"></div>
                             </div>
                         </div>
                     }

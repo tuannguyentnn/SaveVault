@@ -56,7 +56,7 @@
 
         <button type="button"
                 class="subtab-pill @(ActiveSubTab == 1 ? "active" : "")"
-                @onclick="() => ActiveSubTab = 1">
+                @onclick="SelectCloudSubTab">
             <span>☁️</span>
             <span>Đồng Bộ Đám Mây</span>
             @if (CloudVM.IsGoogleDriveLoggedIn || CloudVM.IsOneDriveLoggedIn)
@@ -109,7 +109,7 @@
                             <label class="block text-[11px] text-slate-400 font-semibold">Đường dẫn thư mục sao lưu:</label>
                             <span class="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-950/70 text-emerald-400 border border-emerald-500/30">
                                 <span>🔒</span>
-                                <span>Cố Định Theo Chuẩn Portable</span>
+                                <span>Mặc Định Chuẩn Portable</span>
                             </span>
                         </div>
                         <div class="flex items-center space-x-2">
@@ -419,6 +419,56 @@
                                 </span>
                             </div>
 
+                            @if (CloudVM.IsGoogleDriveLoggedIn)
+                            {
+                                <!-- Google Drive Storage Quota Display -->
+                                <div class="p-3 bg-[#131C2E] border border-emerald-500/30 rounded-xl space-y-2">
+                                    <div class="flex items-center justify-between text-[11px]">
+                                        <div class="flex items-center space-x-1.5 text-emerald-300 font-semibold">
+                                            <span>📊</span>
+                                            <span>Hạn Ngạch Dung Lượng Google Drive:</span>
+                                        </div>
+                                        <button type="button"
+                                                class="text-[10px] text-slate-400 hover:text-emerald-300 flex items-center space-x-1 cursor-pointer"
+                                                @onclick='() => CloudVM.RefreshCloudQuotaCommand.Execute("GoogleDrive")'
+                                                title="Cập nhật dung lượng mới nhất từ Google Drive">
+                                            <span class="@(CloudVM.IsLoadingGoogleDriveQuota ? "animate-spin" : "")">🔄</span>
+                                            <span>@(CloudVM.IsLoadingGoogleDriveQuota ? "Đang quét..." : "Làm Mới")</span>
+                                        </button>
+                                    </div>
+
+                                    @if (CloudVM.GoogleDriveQuota != null && CloudVM.GoogleDriveQuota.HasQuota)
+                                    {
+                                        var quota = CloudVM.GoogleDriveQuota;
+                                        <div class="flex items-baseline justify-between text-[11px] text-slate-300">
+                                            <span>Đã dùng: <strong class="text-white font-bold">@quota.FormattedUsed</strong> / @quota.FormattedTotal</span>
+                                            <span class="text-emerald-300 font-medium">Còn trống: @quota.FormattedFree (@(quota.FreePercent.ToString("F1"))%)</span>
+                                        </div>
+                                        <div class="w-full bg-[#0B101E] h-2 rounded-full overflow-hidden border border-slate-700/50">
+                                            <div class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-500"
+                                                 style="width: @(quota.UsedPercentCss)%"></div>
+                                        </div>
+                                    }
+                                    else if (CloudVM.IsLoadingGoogleDriveQuota)
+                                    {
+                                        <div class="text-[10.5px] text-slate-400 animate-pulse py-1">
+                                            Đang truy vấn dung lượng Google Drive qua API...
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-[10.5px] text-slate-400 py-1 flex items-center justify-between">
+                                            <span>Chưa có thông tin hạn ngạch dung lượng.</span>
+                                            <button type="button"
+                                                    class="text-emerald-400 hover:underline cursor-pointer"
+                                                    @onclick='() => CloudVM.RefreshCloudQuotaCommand.Execute("GoogleDrive")'>
+                                                Quét Ngay
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+
                             @if (!CloudVM.UseCustomGoogleDriveApi)
                             {
                                 <!-- Chế độ Tự Động 1-Click -->
@@ -547,6 +597,56 @@
                                     @(CloudVM.IsOneDriveLoggedIn ? (string.IsNullOrEmpty(CloudVM.OneDriveAccountEmail) ? "✓ Đã kết nối" : $"✓ {CloudVM.OneDriveAccountEmail}") : "○ Chưa kết nối")
                                 </span>
                             </div>
+
+                            @if (CloudVM.IsOneDriveLoggedIn)
+                            {
+                                <!-- OneDrive Storage Quota Display -->
+                                <div class="p-3 bg-[#131C2E] border border-blue-500/30 rounded-xl space-y-2">
+                                    <div class="flex items-center justify-between text-[11px]">
+                                        <div class="flex items-center space-x-1.5 text-cyan-300 font-semibold">
+                                            <span>📊</span>
+                                            <span>Hạn Ngạch Dung Lượng OneDrive:</span>
+                                        </div>
+                                        <button type="button"
+                                                class="text-[10px] text-slate-400 hover:text-cyan-300 flex items-center space-x-1 cursor-pointer"
+                                                @onclick='() => CloudVM.RefreshCloudQuotaCommand.Execute("OneDrive")'
+                                                title="Cập nhật dung lượng mới nhất từ Microsoft OneDrive">
+                                            <span class="@(CloudVM.IsLoadingOneDriveQuota ? "animate-spin" : "")">🔄</span>
+                                            <span>@(CloudVM.IsLoadingOneDriveQuota ? "Đang quét..." : "Làm Mới")</span>
+                                        </button>
+                                    </div>
+
+                                    @if (CloudVM.OneDriveQuota != null && CloudVM.OneDriveQuota.HasQuota)
+                                    {
+                                        var quota = CloudVM.OneDriveQuota;
+                                        <div class="flex items-baseline justify-between text-[11px] text-slate-300">
+                                            <span>Đã dùng: <strong class="text-white font-bold">@quota.FormattedUsed</strong> / @quota.FormattedTotal</span>
+                                            <span class="text-cyan-300 font-medium">Còn trống: @quota.FormattedFree (@(quota.FreePercent.ToString("F1"))%)</span>
+                                        </div>
+                                        <div class="w-full bg-[#0B101E] h-2 rounded-full overflow-hidden border border-slate-700/50">
+                                            <div class="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-400 transition-all duration-500"
+                                                 style="width: @(quota.UsedPercentCss)%"></div>
+                                        </div>
+                                    }
+                                    else if (CloudVM.IsLoadingOneDriveQuota)
+                                    {
+                                        <div class="text-[10.5px] text-slate-400 animate-pulse py-1">
+                                            Đang truy vấn dung lượng OneDrive qua Microsoft Graph...
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-[10.5px] text-slate-400 py-1 flex items-center justify-between">
+                                            <span>Chưa có thông tin hạn ngạch dung lượng.</span>
+                                            <button type="button"
+                                                    class="text-sky-400 hover:underline cursor-pointer"
+                                                    @onclick='() => CloudVM.RefreshCloudQuotaCommand.Execute("OneDrive")'>
+                                                Quét Ngay
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            }
 
                             @if (!CloudVM.UseCustomOneDriveApi)
                             {
@@ -762,7 +862,7 @@
                             <div class="pt-2 space-y-2 border-t border-slate-800">
                                 <div class="w-full bg-[#1E293B] rounded-full h-2.5 overflow-hidden border border-slate-700/50">
                                     <div class="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 h-2.5 rounded-full transition-all duration-300"
-                                         style="width: @(Math.Clamp(SettingsVM.SyncProgressPercent, 0, 100))%;"></div>
+                                         style="width: @(Math.Clamp(SettingsVM.SyncProgressPercent, 0, 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%;"></div>
                                 </div>
                                 <div class="flex justify-between items-center text-[10.5px] text-slate-400 font-mono">
                                     <span>@SettingsVM.SyncProgressSubText</span>
@@ -995,6 +1095,26 @@
         CloudVM.PropertyChanged += OnStateChanged;
         UpdateVM.PropertyChanged += OnStateChanged;
         LoadRecentLogs();
+
+        TriggerQuotaRefreshIfMissing();
+    }
+
+    private void SelectCloudSubTab()
+    {
+        ActiveSubTab = 1;
+        TriggerQuotaRefreshIfMissing();
+    }
+
+    private void TriggerQuotaRefreshIfMissing()
+    {
+        if (CloudVM.IsGoogleDriveLoggedIn && CloudVM.GoogleDriveQuota == null && !CloudVM.IsLoadingGoogleDriveQuota)
+        {
+            _ = CloudVM.RefreshCloudQuotaAsync("GoogleDrive");
+        }
+        if (CloudVM.IsOneDriveLoggedIn && CloudVM.OneDriveQuota == null && !CloudVM.IsLoadingOneDriveQuota)
+        {
+            _ = CloudVM.RefreshCloudQuotaAsync("OneDrive");
+        }
     }
 
     private void OnStateChanged(object? sender, PropertyChangedEventArgs e)

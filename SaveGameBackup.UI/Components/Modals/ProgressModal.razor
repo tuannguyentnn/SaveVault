@@ -33,7 +33,7 @@
 
             <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden mb-2">
                 <div class="bg-gradient-to-r from-blue-500 to-cyan-400 h-2.5 transition-all duration-200"
-                     style="width: @(Math.Clamp(percent, 0, 100))%"></div>
+                     style="width: @(Math.Clamp(percent, 0, 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%"></div>
             </div>
 
             <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono @(canCancel ? "mb-4" : "")">

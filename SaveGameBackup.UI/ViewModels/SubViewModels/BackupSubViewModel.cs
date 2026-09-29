@@ -225,7 +225,7 @@ public class BackupSubViewModel : INotifyPropertyChanged
     {
         try
         {
-            string targetDir = DatabaseService.DefaultBackupDir;
+            string targetDir = BackupDestinationRoot;
 
             if (!string.IsNullOrEmpty(LastBackupPath))
             {
@@ -233,7 +233,7 @@ public class BackupSubViewModel : INotifyPropertyChanged
             }
             else if (_searchVM.CurrentGame != null && !string.IsNullOrWhiteSpace(_searchVM.CurrentGame.GameName))
             {
-                var gameBackupDir = Path.Combine(DatabaseService.DefaultBackupDir, _searchVM.CurrentGame.GameName);
+                var gameBackupDir = Path.Combine(BackupDestinationRoot, _searchVM.CurrentGame.GameName);
                 if (Directory.Exists(gameBackupDir))
                 {
                     targetDir = gameBackupDir;

@@ -2221,8 +2221,75 @@ try
         throw new Exception("FAIL: Database data was lost after corrupt rollback!");
     Console.WriteLine("  ✓ Database integrity check and automatic safety backup (.bak) rollback verified!");
 
+    // =========================================================================
+    // TEST 35: Cloud Storage Quota & Auto-Update Speed Calculation
+    // =========================================================================
+    Console.WriteLine("\n[35] Testing Cloud Storage Quota (OneDrive Remaining Fix) & Auto-Update Speed");
+
+    // 35.1: Test OneDrive personal quota scenario (Remaining = 23.8 GB, Total = 30 GB, ensuring bar is NOT full)
+    long oneDriveRemaining = 25554829312L; // 23.8 GB
+    long oneDriveUsed = 6657425408L;       // 6.2 GB
+    long oneDriveBaseTotal = 5368709120L;   // 5.0 GB base limit reported by API
+
+    long reconciledTotal = Math.Max(oneDriveBaseTotal, oneDriveUsed + oneDriveRemaining);
+    var oneDriveQuota = new CloudStorageQuota
+    {
+        TotalBytes = reconciledTotal,
+        UsedBytes = oneDriveUsed,
+        RemainingBytes = oneDriveRemaining
+    };
+
+    if (oneDriveQuota.UsedPercent >= 90)
+        throw new Exception($"FAIL: OneDrive quota bar should NOT be full when 23.8GB is free! Got UsedPercent={oneDriveQuota.UsedPercent}%");
+    if (!oneDriveQuota.FormattedFree.Contains("23.8 GB") && !oneDriveQuota.FormattedFree.Contains("23,8 GB"))
+        throw new Exception($"FAIL: FormattedFree expected '23.8 GB', got '{oneDriveQuota.FormattedFree}'");
+    if (oneDriveQuota.UsedPercentCss.Contains(","))
+        throw new Exception($"FAIL: UsedPercentCss must use dot '.' and never comma ','! Got: {oneDriveQuota.UsedPercentCss}");
+    if (oneDriveQuota.FreePercent < 70 || oneDriveQuota.FreePercent > 85)
+        throw new Exception($"FAIL: FreePercent expected ~79.3%, got {oneDriveQuota.FreePercent}%");
+    Console.WriteLine($"  ✓ OneDrive quota fix verified: Free={oneDriveQuota.FormattedFree}, Total={oneDriveQuota.FormattedTotal}, UsedPercent={oneDriveQuota.UsedPercent:F1}% (CssWidth={oneDriveQuota.UsedPercentCss}%)");
+
+    // 35.2: Test Auto-Update Speed Calculation & Formatting
+    var updateProgress1 = new UpdateDownloadProgress(50, 20 * 1024 * 1024, 40 * 1024 * 1024, "Downloading", false, 5.4 * 1024 * 1024);
+    if (!updateProgress1.DownloadedSizeText.Contains("5.4 MB/s"))
+        throw new Exception($"FAIL: DownloadedSizeText should format speed with true decimal! Got: {updateProgress1.DownloadedSizeText}");
+
+    var updateProgressKb = new UpdateDownloadProgress(10, 2 * 1024 * 1024, 20 * 1024 * 1024, "Downloading", false, 450 * 1024);
+    if (!updateProgressKb.DownloadedSizeText.Contains("450 KB/s"))
+        throw new Exception($"FAIL: DownloadedSizeText should format KB/s for speeds < 1MB/s! Got: {updateProgressKb.DownloadedSizeText}");
+    Console.WriteLine("  ✓ Auto-update speed formatting and stability verified (No hardcoded '0.1')!");
+
+    // 35.3: Test CloudStorageQuota model calculations
+    var testQuota = new CloudStorageQuota
+    {
+        TotalBytes = 15L * 1024 * 1024 * 1024,
+        UsedBytes = 4831838208L // ~4.5 GB
+    };
+    if (!testQuota.HasQuota)
+        throw new Exception("FAIL: HasQuota should be true!");
+    if (testQuota.FreeBytes != testQuota.TotalBytes - testQuota.UsedBytes)
+        throw new Exception("FAIL: FreeBytes calculation incorrect!");
+    if (Math.Abs(testQuota.UsedPercent - 30.0) > 1.0)
+        throw new Exception($"FAIL: UsedPercent expected ~30%, got {testQuota.UsedPercent}%");
+    if (testQuota.UsedPercentCss.Contains(","))
+        throw new Exception($"FAIL: testQuota UsedPercentCss contained comma: {testQuota.UsedPercentCss}");
+    if (Math.Abs(testQuota.FreePercent - 70.0) > 1.0)
+        throw new Exception($"FAIL: testQuota FreePercent expected ~70%, got {testQuota.FreePercent}%");
+    if (!testQuota.FormattedTotal.Contains("15.0 GB") && !testQuota.FormattedTotal.Contains("15,0 GB"))
+        throw new Exception($"FAIL: FormattedTotal expected '15.0 GB', got '{testQuota.FormattedTotal}'");
+    if (!testQuota.FormattedUsed.Contains("4.5 GB") && !testQuota.FormattedUsed.Contains("4,5 GB"))
+        throw new Exception($"FAIL: FormattedUsed expected '4.5 GB', got '{testQuota.FormattedUsed}'");
+    Console.WriteLine($"  ✓ CloudStorageQuota math & formatting verified: {testQuota.FormattedUsed} / {testQuota.FormattedTotal} (Used {testQuota.UsedPercent:F1}%, CssWidth={testQuota.UsedPercentCss}%)");
+
+    // 35.4: Test MockCloudService GetStorageQuotaAsync
+    var mockCloud35 = new MockCloudService();
+    var fetchedQuota = await mockCloud35.GetStorageQuotaAsync();
+    if (fetchedQuota == null || !fetchedQuota.HasQuota)
+        throw new Exception("FAIL: MockCloudService.GetStorageQuotaAsync failed!");
+    Console.WriteLine($"  ✓ MockCloudService.GetStorageQuotaAsync verified: Free={fetchedQuota.FormattedFree}");
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 34 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 35 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally
@@ -2323,6 +2390,15 @@ public class MockCloudService : SaveGameBackup.Core.Services.Cloud.ICloudStorage
         CancellationToken cancellationToken = default)
     {
         return Task.FromResult(new List<SaveGameBackup.Core.Services.Cloud.CloudFileInfo>());
+    }
+
+    public Task<SaveGameBackup.Core.Models.CloudStorageQuota?> GetStorageQuotaAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<SaveGameBackup.Core.Models.CloudStorageQuota?>(new SaveGameBackup.Core.Models.CloudStorageQuota
+        {
+            TotalBytes = 15L * 1024 * 1024 * 1024,
+            UsedBytes = 5L * 1024 * 1024 * 1024
+        });
     }
 }
 

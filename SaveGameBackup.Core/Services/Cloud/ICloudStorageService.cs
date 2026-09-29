@@ -56,6 +56,8 @@ public interface ICloudStorageService
     Task<List<CloudFileInfo>> ListBackupsAsync(
         string? remoteGameFolderName = null,
         CancellationToken cancellationToken = default);
+
+    Task<CloudStorageQuota?> GetStorageQuotaAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>

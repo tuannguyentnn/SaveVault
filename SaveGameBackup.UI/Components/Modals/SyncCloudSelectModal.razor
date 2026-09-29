@@ -120,7 +120,7 @@
                         </div>
                         <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
                             <div class="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 transition-all duration-200"
-                                 style="width: @(CloudVM.CloudSyncProgressPercent)%"></div>
+                                 style="width: @(CloudVM.CloudSyncProgressPercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%"></div>
                         </div>
                     </div>
                 }
