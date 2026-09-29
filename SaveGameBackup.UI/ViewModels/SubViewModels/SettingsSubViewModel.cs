@@ -17,7 +17,6 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     private readonly INativeDialogService? _nativeDialog;
     private readonly LudusaviManifestService _ludusaviService;
 
-    private string _databaseLocation = string.Empty;
     private string _backupDestinationRoot = string.Empty;
     private bool _createTimestampSubfolder = true;
     private bool _autoCompressZip = true;
@@ -47,7 +46,6 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _ludusaviService = ludusaviService ?? new LudusaviManifestService();
 
         var config = AppConfigService.GetConfig();
-        _databaseLocation = _databaseService.DbPath;
         _backupDestinationRoot = DatabaseService.DefaultBackupDir;
 
         _createTimestampSubfolder = config.CreateTimestampSubfolder;
@@ -57,18 +55,8 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _autoUpdateLudusaviManifest = config.AutoUpdateLudusaviManifest;
         _ludusaviAutoUpdateDays = config.LudusaviAutoUpdateDays > 0 ? config.LudusaviAutoUpdateDays : 15;
 
-        BrowseDatabaseFileCommand = new RelayCommand(async _ => await ExecuteBrowseDatabaseFileAsync());
-        ApplyDatabaseLocationCommand = new RelayCommand(async _ => await ExecuteApplyDatabaseLocationAsync());
-        ResetDatabaseLocationCommand = new RelayCommand(_ => ExecuteResetDatabaseLocation());
-        BrowseBackupDirectoryCommand = new RelayCommand(async _ => await ExecuteBrowseBackupDirectoryAsync());
         SaveSettingsCommand = new RelayCommand(async _ => await ExecuteSaveSettingsAsync());
         SyncCatalogCommand = new RelayCommand(async _ => await ExecuteSyncCatalogAsync(), _ => !IsSyncingCatalog);
-    }
-
-    public string DatabaseLocation
-    {
-        get => _databaseService.DbPath;
-        set => SetField(ref _databaseLocation, value);
     }
 
     public string BackupDestinationRoot
@@ -189,10 +177,6 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _syncCts?.Cancel();
     }
 
-    public ICommand BrowseDatabaseFileCommand { get; }
-    public ICommand ApplyDatabaseLocationCommand { get; }
-    public ICommand ResetDatabaseLocationCommand { get; }
-    public ICommand BrowseBackupDirectoryCommand { get; }
     public ICommand SaveSettingsCommand { get; }
     public ICommand SyncCatalogCommand { get; }
 
@@ -269,32 +253,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task ExecuteBrowseDatabaseFileAsync()
-    {
-        var file = _nativeDialog != null
-            ? await _nativeDialog.PickDatabaseFileAsync("Chọn file SQLite Database (.db)")
-            : null;
 
-        if (!string.IsNullOrEmpty(file))
-        {
-            DatabaseLocation = file;
-            LoggingService.LogAction("Browse_Database_Location", new { Path = file });
-        }
-    }
-
-    private async Task ExecuteApplyDatabaseLocationAsync()
-    {
-        await Task.CompletedTask;
-    }
-
-    private void ExecuteResetDatabaseLocation()
-    {
-    }
-
-    private async Task ExecuteBrowseBackupDirectoryAsync()
-    {
-        await Task.CompletedTask;
-    }
 
     public async Task ExecuteSaveSettingsAsync()
     {
@@ -308,8 +267,6 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             cfg.LudusaviAutoUpdateDays = LudusaviAutoUpdateDays;
         });
 
-        _eventBus.Publish(new HistoryChangedEvent());
-
         _dialogService.ShowMessage("Lưu Cài Đặt", "Đã lưu toàn bộ cấu hình vào app_config.json thành công!", "Success");
         LoggingService.LogAction("Save_General_Settings", new
         {
@@ -317,7 +274,6 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             CreateTimestampSubfolder,
             AutoCompressZip,
             PageSize,
-            DatabaseLocation = _databaseService.DbPath,
             UseSqlPagination,
             AutoUpdateLudusaviManifest,
             LudusaviAutoUpdateDays

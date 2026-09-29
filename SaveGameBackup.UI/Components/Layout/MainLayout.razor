@@ -118,13 +118,9 @@
         InvokeAsync(StateHasChanged);
     }
 
-    private async Task SetTab(int tabIndex)
+    private void SetTab(int tabIndex)
     {
         VM.SelectedTabIndex = tabIndex;
-        if (tabIndex == 1)
-        {
-            await VM.HistoryVM.RefreshHistoryAsync();
-        }
     }
 
     public void Dispose()

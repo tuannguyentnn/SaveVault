@@ -102,12 +102,6 @@
                                 <div class="text-[11px] text-slate-400">Vị trí mặc định trên máy để cất giữ các file zip hoặc thư mục save game</div>
                             </div>
                         </div>
-                        <button type="button"
-                                class="btn-secondary py-1.5 px-3 text-[11px] flex items-center space-x-1.5 text-slate-300 hover:text-white"
-                                @onclick="OpenBackupFolder">
-                            <span>📂</span>
-                            <span>Mở Trong Explorer</span>
-                        </button>
                     </div>
 
                     <div class="space-y-2.5">
@@ -468,59 +462,6 @@
         @if (ActiveSubTab == 2 || ActiveSubTab == 4)
         {
             <div class="space-y-4">
-                <!-- Cơ sở dữ liệu SQLite -->
-                <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
-                    <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
-                        <div class="flex items-center space-x-2.5">
-                            <span class="text-emerald-400 text-lg">🗄️</span>
-                            <div>
-                                <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">CƠ SỞ DỮ LIỆU SQLITE (SaveVault.db)</h3>
-                                <div class="text-[11px] text-slate-400">Lưu trữ master-detail lịch sử sao lưu (Dapper + SQLite) và game cache offline</div>
-                            </div>
-                        </div>
-                        <span class="px-2.5 py-1 text-[10.5px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 rounded-full flex items-center space-x-1.5">
-                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
-                            <span>Đang Hoạt Động</span>
-                        </span>
-                    </div>
-
-                    <div class="space-y-3">
-                        <div>
-                            <label class="block text-[11px] text-slate-400 font-semibold mb-1">Vị trí file cơ sở dữ liệu hiện tại:</label>
-                            <input type="text"
-                                   class="input-dark font-mono text-[12px] py-2 px-3 bg-[#0F172A] border-[#334155] text-slate-200"
-                                   @bind="SettingsVM.DatabaseLocation" />
-                        </div>
-
-                        <div class="flex items-center justify-between flex-wrap gap-2 pt-1">
-                            <div class="flex items-center space-x-2">
-                                <button type="button"
-                                        class="btn-secondary py-1.5 px-3.5 text-[12px] flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/30"
-                                        @onclick="() => SettingsVM.BrowseDatabaseFileCommand.Execute(null)">
-                                    <span>📂</span>
-                                    <span>Duyệt File...</span>
-                                </button>
-                                <button type="button"
-                                        class="btn-blue py-1.5 px-4 text-[12px] font-semibold"
-                                        @onclick="() => SettingsVM.ApplyDatabaseLocationCommand.Execute(null)">
-                                    <span>Áp Dụng Vị Trí Mới</span>
-                                </button>
-                                <button type="button"
-                                        class="btn-secondary py-1.5 px-3 text-[12px] text-slate-400 hover:text-white"
-                                        @onclick="() => SettingsVM.ResetDatabaseLocationCommand.Execute(null)">
-                                    <span>Khôi Phục Mặc Định</span>
-                                </button>
-                            </div>
-
-                            <button type="button"
-                                    class="btn-secondary py-1.5 px-3 text-[11.5px] text-slate-300 hover:text-white flex items-center space-x-1.5"
-                                    @onclick="OpenDatabaseFolder">
-                                <span>📁</span>
-                                <span>Mở Thư Mục Chứa DB</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Cơ chế Phân trang: SQL Pagination vs RAM Pagination -->
                 <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
@@ -936,22 +877,6 @@
         }
     }
 
-    private void OpenDatabaseFolder()
-    {
-        var dbPath = SettingsVM.DatabaseLocation;
-        if (File.Exists(dbPath))
-        {
-            NativeDialog.OpenFileInExplorer(dbPath);
-        }
-        else
-        {
-            var dir = Path.GetDirectoryName(dbPath);
-            if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
-            {
-                NativeDialog.OpenFolderInExplorer(dir);
-            }
-        }
-    }
 
     private void LoadRecentLogs()
     {

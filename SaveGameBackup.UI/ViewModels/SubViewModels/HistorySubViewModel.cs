@@ -233,7 +233,32 @@ public class HistorySubViewModel : INotifyPropertyChanged
     public ICommand RevertGameSaveCommand { get; }
     public ICommand ClearRevertPointsCommand { get; }
 
+    private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private int _hasPendingRefresh = 0;
+
     public async Task RefreshHistoryAsync()
+    {
+        if (!await _refreshLock.WaitAsync(0))
+        {
+            Interlocked.Exchange(ref _hasPendingRefresh, 1);
+            return;
+        }
+
+        try
+        {
+            do
+            {
+                Interlocked.Exchange(ref _hasPendingRefresh, 0);
+                await DoRefreshHistoryCoreAsync();
+            } while (Interlocked.CompareExchange(ref _hasPendingRefresh, 0, 1) == 1);
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
+    private async Task DoRefreshHistoryCoreAsync()
     {
         try
         {

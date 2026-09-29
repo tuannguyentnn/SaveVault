@@ -849,6 +849,16 @@ try
     Console.WriteLine("\n[17] Testing Serilog JSON Action Logging & Root Folder Resolution");
     LoggingService.Initialize();
     var testActionName = "Unit_Test_Action_" + Guid.NewGuid().ToString("N");
+    
+    // Kiểm tra cờ EnableTabAndModalLogging đang ở trạng thái mặc định = false
+    if (LoggingService.EnableTabAndModalLogging)
+        throw new Exception("FAIL: EnableTabAndModalLogging must be false by default!");
+
+    // Thử ghi log tab và modal khi đang ẩn
+    LoggingService.LogAction("Open_Restore_Modal", new { TestId = "SuppressedModal123" });
+    LoggingService.LogAction("Cloud_Tab_Switch_Provider", new { TestId = "SuppressedTab123" });
+
+    // Ghi log chức năng thông thường
     LoggingService.LogAction(testActionName, new { Game = "Witcher 3", Action = "Backup", FileCount = 5 });
     LoggingService.Info("Serilog test informational message with param: {Param}", 42);
     LoggingService.CloseAndFlush();
@@ -872,10 +882,26 @@ try
     }
     if (!latestLogContent.Contains(testActionName) || !latestLogContent.Contains("Witcher 3"))
     {
-        throw new Exception("FAIL: Structured JSON log does not contain the logged action or properties!");
+        throw new Exception("FAIL: Structured JSON log does not contain the logged functional action or properties!");
     }
+
+    // Xác minh log mở tab và modal đã được ẩn thành công
+    if (latestLogContent.Contains("SuppressedModal123") || latestLogContent.Contains("SuppressedTab123"))
+    {
+        throw new Exception("FAIL: Tab and modal logs must be suppressed when EnableTabAndModalLogging is false!");
+    }
+    if (!LoggingService.IsTabOrModalAction("Open_Restore_Modal") || !LoggingService.IsTabOrModalAction("View_Game_Snapshots"))
+    {
+        throw new Exception("FAIL: IsTabOrModalAction should recognize modal actions!");
+    }
+    if (LoggingService.IsTabOrModalAction("Backup_Start") || LoggingService.IsTabOrModalAction("Restore_Execute_Start"))
+    {
+        throw new Exception("FAIL: IsTabOrModalAction should NOT mark functional actions as modal!");
+    }
+
     Console.WriteLine($"  ✓ Serilog root directory verified at: {expectedLogFolder}");
     Console.WriteLine($"  ✓ Rolling monthly JSON log verified: {Path.GetFileName(logFiles[0])} contains valid structured JSON action data!");
+    Console.WriteLine($"  ✓ Tab and modal logs successfully suppressed while preserving 100% functional action logs!");
 
     // Test 18: 100% Config & OAuth Tokens in app_config.json with zero settings in database
     Console.WriteLine("\n[18] Testing 100% Config & OAuth Tokens in app_config.json (Zero Config in DB)");

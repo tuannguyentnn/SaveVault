@@ -70,9 +70,6 @@ public class MainViewModel : INotifyPropertyChanged
         // Lắng nghe sự kiện chuyển tab từ Mediator
         _eventBus.Subscribe<RequestNavigateTabEvent>(e => SelectedTabIndex = e.TabIndex);
 
-        // Lắng nghe sự kiện HistoryChanged để reload lịch sử
-        _eventBus.Subscribe<HistoryChangedEvent>(async _ => await HistoryVM.RefreshHistoryAsync());
-
         // Đăng ký theo dõi thay đổi trạng thái modal để cập nhật IsModalOpen
         DialogService.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
         SearchVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
@@ -126,16 +123,10 @@ public class MainViewModel : INotifyPropertyChanged
                 {
                     0 => "Tìm kiếm & Sao lưu",
                     1 => "Lịch sử sao lưu",
-                    2 => "Cloud Sync",
-                    3 => "Cài đặt",
+                    2 => "Cài đặt",
                     _ => $"Tab {value}"
                 };
                 LoggingService.LogAction("Tab_Navigated", new { TabIndex = value, TabName = tabName });
-
-                if (value == 1)
-                {
-                    _ = HistoryVM.RefreshHistoryAsync();
-                }
             }
         }
     }
@@ -260,8 +251,6 @@ public class MainViewModel : INotifyPropertyChanged
     public bool IsSyncCloudSelectModalOpen { get => CloudVM.IsSyncCloudSelectModalOpen; set => CloudVM.IsSyncCloudSelectModalOpen = value; }
     public BackupHistoryDetail? TargetSyncDetail => CloudVM.TargetSyncDetail;
 
-    // Settings
-    public string DatabaseLocation { get => SettingsVM.DatabaseLocation; set => SettingsVM.DatabaseLocation = value; }
 
     // Dialogs / Modals
     public bool IsMessageModalOpen => DialogService.IsMessageModalOpen;
@@ -300,7 +289,6 @@ public class MainViewModel : INotifyPropertyChanged
     // Backup Commands
     public ICommand BackupCommand => BackupVM.BackupCommand;
     public ICommand OpenBackupFolderCommand => BackupVM.OpenBackupFolderCommand;
-    public ICommand BrowseBackupDirectoryCommand => BackupVM.BrowseBackupDirectoryCommand;
 
     // History Commands
     public bool CanCloseModal => !DialogService.IsConfirmModalDeleting && !DialogService.IsProgressModalOpen && !RestoreVM.IsModalRestoring;
@@ -343,9 +331,6 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenGoogleCloudConsoleGuideCommand => CloudVM.OpenGoogleCloudConsoleGuideCommand;
 
     // Settings Commands
-    public ICommand BrowseDatabaseFileCommand => SettingsVM.BrowseDatabaseFileCommand;
-    public ICommand ApplyDatabaseLocationCommand => SettingsVM.ApplyDatabaseLocationCommand;
-    public ICommand ResetDatabaseLocationCommand => SettingsVM.ResetDatabaseLocationCommand;
     public ICommand SaveSettingsCommand => SettingsVM.SaveSettingsCommand;
 
     // Dialog Commands

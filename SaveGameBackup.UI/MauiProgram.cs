@@ -43,13 +43,13 @@ public static class MauiProgram
         builder.Services.AddSingleton<INativeDialogService, NativeDialogService>();
 
         // ViewModels
-        builder.Services.AddSingleton<SearchSubViewModel>();
-        builder.Services.AddSingleton<BackupSubViewModel>();
-        builder.Services.AddSingleton<HistorySubViewModel>();
-        builder.Services.AddSingleton<RestoreSubViewModel>();
-        builder.Services.AddSingleton<CloudSubViewModel>();
-        builder.Services.AddSingleton<SettingsSubViewModel>();
         builder.Services.AddSingleton<MainViewModel>();
+        builder.Services.AddSingleton(sp => sp.GetRequiredService<MainViewModel>().SearchVM);
+        builder.Services.AddSingleton(sp => sp.GetRequiredService<MainViewModel>().BackupVM);
+        builder.Services.AddSingleton(sp => sp.GetRequiredService<MainViewModel>().HistoryVM);
+        builder.Services.AddSingleton(sp => sp.GetRequiredService<MainViewModel>().RestoreVM);
+        builder.Services.AddSingleton(sp => sp.GetRequiredService<MainViewModel>().CloudVM);
+        builder.Services.AddSingleton(sp => sp.GetRequiredService<MainViewModel>().SettingsVM);
 
         var app = builder.Build();
         GameCoverService.HeadlessBrowser = app.Services.GetService<IHeadlessBrowserService>();

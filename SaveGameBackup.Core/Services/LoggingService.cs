@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.IO;
 using Serilog;
 using Serilog.Formatting.Json;
@@ -16,6 +18,45 @@ public static class LoggingService
     private static string _logDirectory = string.Empty;
 
     public static string LogDirectory => _logDirectory;
+
+    /// <summary>
+    /// Bật/tắt việc ghi log cho các hành động tương tác giao diện mở/đóng tab và modal.
+    /// Mặc định: false (Tạm thời ẩn theo yêu cầu người dùng, chỉ ghi log các chức năng).
+    /// </summary>
+    public static bool EnableTabAndModalLogging { get; set; } = false;
+
+    private static readonly HashSet<string> _tabAndModalActions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Tab_Navigated",
+        "Open_Restore_Modal",
+        "Close_Restore_Modal",
+        "Open_Sync_Cloud_Modal",
+        "Close_Sync_Cloud_Modal",
+        "View_Game_Snapshots",
+        "Close_Game_Snapshots_Modal",
+        "Update_Modal_Shown_OnStartup",
+        "Cloud_Tab_Switch_Provider",
+        "Dialog_ShowMessage",
+        "Dialog_CloseMessage"
+    };
+
+    /// <summary>
+    /// Kiểm tra xem một actionName có thuộc nhóm hành động mở/đóng tab hoặc modal hay không.
+    /// </summary>
+    public static bool IsTabOrModalAction(string actionName)
+    {
+        if (string.IsNullOrWhiteSpace(actionName)) return false;
+        if (_tabAndModalActions.Contains(actionName)) return true;
+
+        // Heuristic fallback nhận diện mở/đóng modal hoặc chuyển tab hoặc dialog thông báo
+        if (actionName.Contains("Modal", StringComparison.OrdinalIgnoreCase)) return true;
+        if (actionName.Contains("Tab_Switch", StringComparison.OrdinalIgnoreCase)) return true;
+        if (actionName.StartsWith("Switch_Tab", StringComparison.OrdinalIgnoreCase)) return true;
+        if (actionName.Contains("Tab_Navigat", StringComparison.OrdinalIgnoreCase)) return true;
+        if (actionName.StartsWith("Dialog_", StringComparison.OrdinalIgnoreCase)) return true;
+
+        return false;
+    }
 
     /// <summary>
     /// Khởi tạo cấu hình Serilog.
@@ -59,6 +100,7 @@ public static class LoggingService
                         fileSizeLimitBytes: 5 * 1024 * 1024, // 5 MB
                         rollOnFileSizeLimit: true,
                         shared: true,
+                        flushToDiskInterval: TimeSpan.FromSeconds(1),
                         retainedFileCountLimit: 100)
                     .CreateLogger();
 
@@ -78,6 +120,12 @@ public static class LoggingService
     /// </summary>
     public static void LogAction(string actionName, object? details = null, string level = "Info", Exception? ex = null)
     {
+        // Tạm thời ẩn các logs cho các hành động mở tab, modal. Chỉ ghi log các chức năng thôi.
+        if (!EnableTabAndModalLogging && IsTabOrModalAction(actionName))
+        {
+            return;
+        }
+
         EnsureInitialized();
 
         switch (level?.ToUpperInvariant())

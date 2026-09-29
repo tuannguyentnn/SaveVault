@@ -50,8 +50,7 @@ public class BackupSubViewModel : INotifyPropertyChanged
         _autoCompressZip = config.AutoCompressZip;
 
         BackupCommand = new RelayCommand(async _ => await ExecuteBackupAsync(), _ => CanExecuteBackup());
-        OpenBackupFolderCommand = new RelayCommand(_ => ExecuteOpenBackupFolder(), _ => !string.IsNullOrEmpty(LastBackupPath));
-        BrowseBackupDirectoryCommand = new RelayCommand(async _ => await ExecuteBrowseBackupDirectoryAsync());
+        OpenBackupFolderCommand = new RelayCommand(_ => ExecuteOpenBackupFolder());
 
         _searchVM.PropertyChanged += (s, e) =>
         {
@@ -126,7 +125,6 @@ public class BackupSubViewModel : INotifyPropertyChanged
 
     public ICommand BackupCommand { get; }
     public ICommand OpenBackupFolderCommand { get; }
-    public ICommand BrowseBackupDirectoryCommand { get; }
 
     private bool CanExecuteBackup()
     {
@@ -203,7 +201,6 @@ public class BackupSubViewModel : INotifyPropertyChanged
                 });
 
                 _eventBus.Publish(new BackupCompletedEvent(gameName, result.BackupPath, result.FileCount, result.TotalSizeBytes));
-                _eventBus.Publish(new HistoryChangedEvent());
             }
             else
             {
@@ -224,32 +221,48 @@ public class BackupSubViewModel : INotifyPropertyChanged
         }
     }
 
-    private void ExecuteOpenBackupFolder()
+    public void ExecuteOpenBackupFolder()
     {
-        if (string.IsNullOrEmpty(LastBackupPath)) return;
-
         try
         {
-            var targetDir = File.Exists(LastBackupPath) ? Path.GetDirectoryName(LastBackupPath) : LastBackupPath;
-            if (Directory.Exists(targetDir))
+            string targetDir = DatabaseService.DefaultBackupDir;
+
+            if (!string.IsNullOrEmpty(LastBackupPath))
+            {
+                targetDir = File.Exists(LastBackupPath) ? Path.GetDirectoryName(LastBackupPath) ?? targetDir : LastBackupPath;
+            }
+            else if (_searchVM.CurrentGame != null && !string.IsNullOrWhiteSpace(_searchVM.CurrentGame.GameName))
+            {
+                var gameBackupDir = Path.Combine(DatabaseService.DefaultBackupDir, _searchVM.CurrentGame.GameName);
+                if (Directory.Exists(gameBackupDir))
+                {
+                    targetDir = gameBackupDir;
+                }
+            }
+
+            if (!Directory.Exists(targetDir))
+            {
+                try { Directory.CreateDirectory(targetDir); } catch { }
+            }
+
+            if (_nativeDialog != null)
+            {
+                _nativeDialog.OpenFolderInExplorer(targetDir);
+            }
+            else
             {
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = targetDir,
                     UseShellExecute = true
                 });
-                LoggingService.LogAction("Open_Backup_Folder", new { Path = targetDir });
             }
+            LoggingService.LogAction("Open_Backup_Folder", new { Path = targetDir });
         }
         catch (Exception ex)
         {
-            LoggingService.Error(ex, "Không thể mở thư mục sao lưu: {Path}", LastBackupPath);
+            LoggingService.Error(ex, "Không thể mở thư mục sao lưu: {Path}", LastBackupPath ?? DatabaseService.DefaultBackupDir);
         }
-    }
-
-    private async Task ExecuteBrowseBackupDirectoryAsync()
-    {
-        await Task.CompletedTask;
     }
 
     protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
