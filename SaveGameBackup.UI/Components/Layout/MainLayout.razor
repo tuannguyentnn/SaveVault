@@ -60,6 +60,13 @@
             <span class="text-sm">⚙</span>
             <span>Cài đặt</span>
         </button>
+
+        <button type="button"
+                class="sv-tab ml-auto @(VM.SelectedTabIndex == 3 ? "active" : "")"
+                @onclick="() => SetTab(3)">
+            <span class="text-sm">ℹ️</span>
+            <span>Thông Tin &amp; Hỗ Trợ</span>
+        </button>
     </nav>
 
     <!-- Main Tab Viewport -->
@@ -75,6 +82,10 @@
         else if (VM.SelectedTabIndex == 2)
         {
             <SettingsTab />
+        }
+        else if (VM.SelectedTabIndex == 3)
+        {
+            <InfoSupportTab />
         }
     </main>
 

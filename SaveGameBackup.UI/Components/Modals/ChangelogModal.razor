@@ -1,0 +1,132 @@
+@namespace SaveGameBackup.UI.Components.Modals
+@inject MainViewModel VM
+@implements IDisposable
+
+@if (UpdateVM.IsChangelogModalOpen)
+{
+    <div class="modal-backdrop">
+        <div class="modal-content w-full max-w-2xl border border-purple-500/40 bg-[#0F172A] flex flex-col p-6 shadow-2xl mx-4 rounded-2xl relative select-none max-h-[85vh]">
+            <!-- Header -->
+            <div class="flex items-center justify-between pb-4 border-b border-[#1E293B]">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-xl shadow-inner">
+                        📜
+                    </div>
+                    <div>
+                        <h3 class="text-[16px] font-bold text-white tracking-wide uppercase">NHẬT KÝ PHIÊN BẢN</h3>
+                        <div class="text-[11.5px] text-slate-400">Lịch sử nâng cấp, cải tiến và các bản vá lỗi của SaveVault</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center space-x-3">
+                    <span class="px-2.5 py-1 rounded text-[11px] font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
+                        Bản hiện tại: v@(UpdateVM.CurrentVersion)
+                    </span>
+                    <button type="button"
+                            class="text-slate-400 hover:text-white text-lg p-1.5 rounded-lg hover:bg-slate-800/60 transition-all cursor-pointer"
+                            @onclick="() => UpdateVM.CloseChangelogModalCommand.Execute(null)">
+                        ✕
+                    </button>
+                </div>
+            </div>
+
+            <!-- Body: Scrollable Timeline of Versions -->
+            <div class="mt-4 flex-1 overflow-y-auto space-y-4 pr-1.5 max-h-[55vh] sv-custom-scrollbar">
+                @if (UpdateVM.ChangelogHistory == null || UpdateVM.ChangelogHistory.Count == 0)
+                {
+                    <div class="p-8 text-center text-slate-400 flex flex-col items-center justify-center space-y-2">
+                        <span class="text-3xl">📭</span>
+                        <div class="text-sm">Chưa có thông tin nhật ký phiên bản chi tiết.</div>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var entry in UpdateVM.ChangelogHistory)
+                    {
+                        var isCurrent = entry.Version.Equals(UpdateVM.CurrentVersion, StringComparison.OrdinalIgnoreCase);
+
+                        <div class="p-4 bg-[#131C2E] border @(isCurrent ? "border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.15)]" : "border-[#1E293B]") rounded-xl space-y-2.5 transition-all">
+                            <!-- Version Title & Date Bar -->
+                            <div class="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-[#1E293B]/70">
+                                <div class="flex items-center space-x-2.5">
+                                    <span class="px-2.5 py-0.5 rounded text-[12px] font-mono font-bold @(isCurrent ? "bg-cyan-900/60 text-cyan-200 border border-cyan-400/50" : "bg-purple-950/70 text-purple-300 border border-purple-500/30")">
+                                        v@(entry.Version)
+                                    </span>
+                                    @if (isCurrent)
+                                    {
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40">
+                                            ● Đang dùng
+                                        </span>
+                                    }
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(entry.ReleaseDate))
+                                {
+                                    <div class="flex items-center space-x-1.5 text-[11px] text-slate-400 font-mono">
+                                        <span>📅 Phát hành:</span>
+                                        <span class="text-slate-300">@entry.ReleaseDate</span>
+                                    </div>
+                                }
+                            </div>
+
+                            <!-- Changelog Lines -->
+                            <div class="space-y-1.5 text-[12px] text-slate-300 leading-relaxed pt-1">
+                                @if (entry.Changelog != null && entry.Changelog.Count > 0)
+                                {
+                                    @foreach (var line in entry.Changelog)
+                                    {
+                                        <div class="flex items-start space-x-2">
+                                            <span class="text-slate-500 select-none text-[10px] mt-1">▸</span>
+                                            <span class="flex-1">@line</span>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="text-slate-500 italic text-[11.5px]">Cập nhật và tối ưu hóa hệ thống.</div>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- Footer -->
+            <div class="mt-4 pt-3.5 border-t border-[#1E293B] flex items-center justify-between">
+                <div class="text-[11px] text-slate-400 flex items-center space-x-1.5">
+                    <span>💡</span>
+                    <span>Dữ liệu được cập nhật từ file cấu hình của hệ thống SaveVault</span>
+                </div>
+
+                <button type="button"
+                        class="btn-secondary py-1.5 px-5 text-[12px] text-slate-300 hover:text-white"
+                        @onclick="() => UpdateVM.CloseChangelogModalCommand.Execute(null)">
+                    Đóng
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private UpdateSubViewModel UpdateVM => VM.UpdateVM;
+
+    protected override void OnInitialized()
+    {
+        UpdateVM.PropertyChanged += OnStateChanged;
+    }
+
+    private void OnStateChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(UpdateVM.IsChangelogModalOpen) ||
+            e.PropertyName == nameof(UpdateVM.ChangelogHistory))
+        {
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose()
+    {
+        UpdateVM.PropertyChanged -= OnStateChanged;
+    }
+}

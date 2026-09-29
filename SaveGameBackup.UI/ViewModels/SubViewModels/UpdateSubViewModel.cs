@@ -22,6 +22,8 @@ public class UpdateSubViewModel : INotifyPropertyChanged
     private readonly IAppEventBus _eventBus;
 
     private bool _isUpdateModalOpen;
+    private bool _isChangelogModalOpen;
+    private List<ChangelogItem> _changelogHistory = new();
     private bool _isCheckingForUpdate;
     private bool _isDownloading;
     private int _downloadPercent;
@@ -52,6 +54,8 @@ public class UpdateSubViewModel : INotifyPropertyChanged
         RemindLaterCommand = new RelayCommand(_ => ExecuteRemindLater(), _ => !IsDownloading);
         CancelDownloadCommand = new RelayCommand(_ => CancelDownload(), _ => IsDownloading);
         RefreshBusyStatusCommand = new RelayCommand(_ => ExecuteRefreshBusyStatus());
+        OpenChangelogModalCommand = new RelayCommand(async _ => await ExecuteOpenChangelogModalAsync());
+        CloseChangelogModalCommand = new RelayCommand(_ => IsChangelogModalOpen = false);
     }
 
     public string CurrentVersion => _updateService.GetCurrentVersion();
@@ -60,6 +64,18 @@ public class UpdateSubViewModel : INotifyPropertyChanged
     {
         get => _isUpdateModalOpen;
         set => SetField(ref _isUpdateModalOpen, value);
+    }
+
+    public bool IsChangelogModalOpen
+    {
+        get => _isChangelogModalOpen;
+        set => SetField(ref _isChangelogModalOpen, value);
+    }
+
+    public List<ChangelogItem> ChangelogHistory
+    {
+        get => _changelogHistory;
+        set => SetField(ref _changelogHistory, value);
     }
 
     public bool IsCheckingForUpdate
@@ -158,6 +174,25 @@ public class UpdateSubViewModel : INotifyPropertyChanged
     public ICommand RemindLaterCommand { get; }
     public ICommand CancelDownloadCommand { get; }
     public ICommand RefreshBusyStatusCommand { get; }
+    public ICommand OpenChangelogModalCommand { get; }
+    public ICommand CloseChangelogModalCommand { get; }
+
+    /// <summary>
+    /// Mở modal hiển thị nhật ký phiên bản (Changelog).
+    /// </summary>
+    public async Task ExecuteOpenChangelogModalAsync()
+    {
+        try
+        {
+            var history = await _updateService.GetChangelogHistoryAsync();
+            ChangelogHistory = history ?? new List<ChangelogItem>();
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Lỗi khi tải nhật ký phiên bản: {Message}", ex.Message);
+        }
+        IsChangelogModalOpen = true;
+    }
 
     /// <summary>
     /// Kiểm tra trạng thái hậu cập nhật (được gọi khi ứng dụng khởi động).

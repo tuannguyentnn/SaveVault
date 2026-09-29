@@ -204,6 +204,12 @@ $propsContent = @"
 Set-Content -Path $propsPath -Value $propsContent -Encoding UTF8
 Write-Host "      [OK] Da cap nhat Directory.Build.props thanh cong!" -ForegroundColor Green
 
+# Dong bo thong tin phan mem tu config/info.json vao AppBuildInfo.cs
+$syncScript = Join-Path $scriptDir "sync_build_info.ps1"
+if (Test-Path $syncScript) {
+    & $syncScript -RootDir $scriptDir
+}
+
 Write-Host ""
 Write-Host "[2/6] Khoi tao va chuan bi cau truc thu muc sach se..." -ForegroundColor Yellow
 if (Test-Path $publishDir) {
@@ -272,6 +278,15 @@ if (Test-Path $manifestYaml) {
 if (Test-Path $versionJsonPath) {
     Copy-Item $versionJsonPath -Destination $publishDir -Force
     Write-Host "      [OK] Da sao chep version.json vao thu muc xuat ban" -ForegroundColor Green
+}
+
+$infoJsonSource = Join-Path $scriptDir "config\info.json"
+if (Test-Path $infoJsonSource) {
+    $pubConfigDir = Join-Path $publishDir "config"
+    if (-not (Test-Path $pubConfigDir)) { New-Item -ItemType Directory -Path $pubConfigDir -Force | Out-Null }
+    Copy-Item $infoJsonSource -Destination $pubConfigDir -Force
+    Copy-Item $infoJsonSource -Destination $configDir -Force
+    Write-Host "      [OK] Da sao chep config/info.json vao thu muc xuat ban" -ForegroundColor Green
 }
 
 # Cap nhat lich su changelogs va sao chep vao thu muc xuat ban

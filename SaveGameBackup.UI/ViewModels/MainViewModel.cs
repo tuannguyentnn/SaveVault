@@ -125,6 +125,7 @@ public class MainViewModel : INotifyPropertyChanged
                     0 => "Tìm kiếm & Sao lưu",
                     1 => "Lịch sử sao lưu",
                     2 => "Cài đặt",
+                    3 => "Thông tin & Hỗ trợ",
                     _ => $"Tab {value}"
                 };
                 LoggingService.LogAction("Tab_Navigated", new { TabIndex = value, TabName = tabName });

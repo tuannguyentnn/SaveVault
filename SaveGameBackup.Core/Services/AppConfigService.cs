@@ -78,7 +78,7 @@ public class AppConfigFile
 
     // Tùy chọn sử dụng API riêng thay vì cấu hình tự động mặc định (1-Click)
     public bool UseCustomOneDriveApi { get; set; } = false;
-    public bool UseCustomGoogleDriveApi { get; set; } = false;
+    public bool UseCustomGoogleDriveApi { get; set; } = true;
 
     // Các thuộc tính tiện ích (JsonIgnore) tự động mã hóa / giải mã trong suốt
     [JsonIgnore]

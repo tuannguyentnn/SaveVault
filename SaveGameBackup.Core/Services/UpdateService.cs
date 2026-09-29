@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using SaveGameBackup.Core.Models;
+using SaveGameBackup.Core.Constants;
 
 namespace SaveGameBackup.Core.Services;
 
@@ -142,6 +143,82 @@ public class UpdateService
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Đọc lịch sử các bản cập nhật từ changelogs.json hoặc version.json.
+    /// </summary>
+    public virtual async Task<List<ChangelogItem>> GetChangelogHistoryAsync()
+    {
+        var result = new List<ChangelogItem>();
+        try
+        {
+            var searchPaths = new[]
+            {
+                Path.Combine(AppDirectory, "changelogs.json"),
+                Path.Combine(AppContext.BaseDirectory, "changelogs.json"),
+                Path.Combine(AppDirectory, "..", "changelogs.json")
+            };
+
+            foreach (var path in searchPaths)
+            {
+                if (File.Exists(path))
+                {
+                    var json = await File.ReadAllTextAsync(path);
+                    var list = JsonSerializer.Deserialize<List<ChangelogItem>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (list != null && list.Count > 0)
+                    {
+                        return list;
+                    }
+                }
+            }
+
+            // Fallback: nếu không thấy changelogs.json thì đọc version.json
+            var verPaths = new[]
+            {
+                Path.Combine(AppDirectory, "version.json"),
+                Path.Combine(AppContext.BaseDirectory, "version.json")
+            };
+            foreach (var path in verPaths)
+            {
+                if (File.Exists(path))
+                {
+                    var json = await File.ReadAllTextAsync(path);
+                    var info = JsonSerializer.Deserialize<UpdateInfo>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (info != null && !string.IsNullOrEmpty(info.Version))
+                    {
+                        result.Add(new ChangelogItem
+                        {
+                            Version = info.Version,
+                            ReleaseDate = info.ReleaseDate,
+                            Changelog = info.Changelog
+                        });
+                        return result;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Lỗi khi đọc lịch sử changelog: {Message}", ex.Message);
+        }
+
+        // Fallback mặc định từ AppBuildInfo
+        if (result.Count == 0)
+        {
+            result.Add(new ChangelogItem
+            {
+                Version = AppBuildInfo.Version,
+                ReleaseDate = AppBuildInfo.BuildDate,
+                Changelog = new List<string>
+                {
+                    "🚀 Phát hành phiên bản SaveVault với hỗ trợ sao lưu và đồng bộ Cloud.",
+                    "✨ Tự động nhận diện save game và bảo vệ dữ liệu bằng Safety Snapshots."
+                }
+            });
+        }
+
+        return result;
     }
 
     /// <summary>

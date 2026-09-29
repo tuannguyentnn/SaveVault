@@ -751,8 +751,8 @@ input[type="checkbox"]:checked::before {
     background-color: #070B14;
     border: 1px solid #182234;
     border-radius: 8px;
-    min-height: 80px;
-    max-height: 200px;
+    min-height: 200px;
+    max-height: 300px;
     overflow-y: auto;
     padding: 10px;
     scroll-behavior: smooth;
@@ -805,6 +805,9 @@ input[type="checkbox"]:checked::before {
 .sv-scroll-wrapper {
     position: relative;
     overflow: hidden;
+}
+.sv-scroll-wrapper.absolute {
+    position: absolute !important;
 }
 
 .sv-scroll-area {

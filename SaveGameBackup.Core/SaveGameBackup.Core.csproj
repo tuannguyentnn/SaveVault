@@ -15,4 +15,8 @@
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
   </ItemGroup>
 
+  <Target Name="SyncBuildInfo" BeforeTargets="BeforeBuild" Condition="Exists('$(MSBuildThisFileDirectory)..\sync_build_info.ps1')">
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\sync_build_info.ps1&quot; -RootDir &quot;$(MSBuildThisFileDirectory)..&quot;" ContinueOnError="true" />
+  </Target>
+
 </Project>

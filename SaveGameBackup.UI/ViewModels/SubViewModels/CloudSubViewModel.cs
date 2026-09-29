@@ -114,7 +114,7 @@ public class CloudSubViewModel : INotifyPropertyChanged
 
         var config = AppConfigService.GetConfig();
         _useCustomOneDriveApi = config.UseCustomOneDriveApi;
-        _useCustomGoogleDriveApi = config.UseCustomGoogleDriveApi;
+        _useCustomGoogleDriveApi = true;
         _oneDriveClientId = config.OneDriveClientId ?? string.Empty;
         _googleDriveClientId = config.GoogleDriveClientId ?? string.Empty;
         _googleDriveClientSecret = config.GoogleDriveClientSecret ?? string.Empty;
@@ -473,7 +473,7 @@ public class CloudSubViewModel : INotifyPropertyChanged
         AppConfigService.UpdateConfig(cfg =>
         {
             cfg.UseCustomOneDriveApi = UseCustomOneDriveApi;
-            cfg.UseCustomGoogleDriveApi = UseCustomGoogleDriveApi;
+            cfg.UseCustomGoogleDriveApi = true;
             cfg.OneDriveClientId = OneDriveClientId?.Trim() ?? string.Empty;
             cfg.GoogleDriveClientId = GoogleDriveClientId?.Trim() ?? string.Empty;
             cfg.GoogleDriveClientSecret = GoogleDriveClientSecret?.Trim() ?? string.Empty;

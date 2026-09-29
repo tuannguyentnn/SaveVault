@@ -78,3 +78,14 @@ public class UpdateDownloadProgress
         }
     }
 }
+
+/// <summary>
+/// Đại diện cho một bản ghi trong lịch sử changelog (từ changelogs.json).
+/// </summary>
+public class ChangelogItem
+{
+    public string Version { get; set; } = string.Empty;
+    public string ReleaseDate { get; set; } = string.Empty;
+    public List<string> Changelog { get; set; } = new();
+}
+
