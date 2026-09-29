@@ -17,6 +17,10 @@ public class AppConfigFile
     public int PageSize { get; set; } = 10; // Số dòng trên mỗi trang cho các bảng phân trang
     public bool UseSqlPagination { get; set; } = true; // true: Phân trang trực tiếp từ SQL (LIMIT/OFFSET), false: RAM Pagination cũ
 
+    // Cấu hình sao lưu Cơ sở dữ liệu (Database) lên Cloud
+    public string DatabaseCloudBackupTarget { get; set; } = "GoogleDrive"; // "GoogleDrive", "OneDrive", "Both"
+    public int MaxDatabaseCloudBackupsToKeep { get; set; } = 5; // Mặc định giữ 5 bản gần nhất
+
     // Phiên bản ứng dụng mà người dùng đã chọn Bỏ qua (Skip this version)
     public string? SkippedUpdateVersion { get; set; }
 

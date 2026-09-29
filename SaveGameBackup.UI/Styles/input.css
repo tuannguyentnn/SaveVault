@@ -245,6 +245,70 @@ input[type="checkbox"]:checked::before {
     box-shadow: none;
 }
 
+/* Standard Primary Button (Emerald Gradient) */
+.btn-primary {
+    background: linear-gradient(135deg, #059669 0%, #10B981 100%);
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.25);
+    transition: all 150ms;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #047857 0%, #059669 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 10px -1px rgba(16, 185, 129, 0.35);
+}
+.btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+}
+.btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+    filter: grayscale(0.6);
+    box-shadow: none;
+}
+
+/* Cyan Action Button */
+.btn-cyan {
+    background: linear-gradient(135deg, #0284C7 0%, #06B6D4 100%);
+    color: #FFFFFF;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 6px -1px rgba(6, 182, 212, 0.25);
+    transition: all 150ms;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.btn-cyan:hover:not(:disabled) {
+    background: linear-gradient(135deg, #0369A1 0%, #0891B2 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 10px -1px rgba(6, 182, 212, 0.35);
+}
+.btn-cyan:active:not(:disabled) {
+    transform: translateY(0);
+}
+.btn-cyan:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+    filter: grayscale(0.6);
+    box-shadow: none;
+}
+
 /* Secondary Button */
 .btn-secondary {
     background-color: #1E293B;

@@ -1,6 +1,6 @@
 ﻿<Project>
   <PropertyGroup>
-    <!-- Tu dong doc phien ban tu version.json lam Single Source of Truth (2026-09-29 13:34:13) -->
+    <!-- Tu dong doc phien ban tu version.json lam Single Source of Truth (2026-09-29 16:08:44) -->
     <_VersionJsonPath>$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', 'version.json'))</_VersionJsonPath>
     <_VersionJsonRaw Condition="Exists('$(_VersionJsonPath)')">$([System.IO.File]::ReadAllText('$(_VersionJsonPath)'))</_VersionJsonRaw>
     <_VersionFromJson Condition="'$(_VersionJsonRaw)' != ''">$([System.Text.RegularExpressions.Regex]::Match('$(_VersionJsonRaw)', '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</_VersionFromJson>

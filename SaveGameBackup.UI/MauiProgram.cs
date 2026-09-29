@@ -35,6 +35,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<GameSearchCoordinator>();
         builder.Services.AddSingleton<BackupService>();
         builder.Services.AddSingleton<CloudManagerService>();
+        builder.Services.AddSingleton<DatabaseBackupService>();
         builder.Services.AddSingleton<IAppEventBus, AppEventBus>();
 
         // Dialog Services

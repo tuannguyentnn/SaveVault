@@ -26,6 +26,13 @@ public class CloudManagerService
         }
     }
 
+    private readonly Dictionary<string, ICloudStorageService> _customProviders = new(StringComparer.OrdinalIgnoreCase);
+
+    public void RegisterCustomProvider(string name, ICloudStorageService service)
+    {
+        _customProviders[name] = service;
+    }
+
     public GoogleDriveApiService GoogleDrive => _googleDriveService;
     public OneDriveApiService OneDrive => _oneDriveService;
 
@@ -45,6 +52,7 @@ public class CloudManagerService
     public ICloudStorageService? GetProvider(string? providerName)
     {
         if (string.IsNullOrWhiteSpace(providerName)) return CurrentProvider;
+        if (_customProviders.TryGetValue(providerName, out var custom)) return custom;
         if (providerName.Contains("OneDrive", StringComparison.OrdinalIgnoreCase))
             return _oneDriveService;
         if (providerName.Contains("Google", StringComparison.OrdinalIgnoreCase))

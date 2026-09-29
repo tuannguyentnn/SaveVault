@@ -64,7 +64,7 @@ public class MainViewModel : INotifyPropertyChanged
         HistoryVM = new HistorySubViewModel(_databaseService, _backupService, _cloudManager, DialogService, _eventBus);
         RestoreVM = new RestoreSubViewModel(_backupService, _cloudManager, _databaseService, DialogService, _eventBus, NativeDialog);
         CloudVM = new CloudSubViewModel(_cloudManager, _backupService, _databaseService, DialogService, _eventBus);
-        SettingsVM = new SettingsSubViewModel(_databaseService, DialogService, _eventBus, NativeDialog);
+        SettingsVM = new SettingsSubViewModel(_databaseService, DialogService, _eventBus, NativeDialog, cloudManager: _cloudManager);
         UpdateVM = new UpdateSubViewModel(new UpdateService(), CheckIfBusyBeforeUpdate, DialogService, _eventBus);
 
         // Lắng nghe sự kiện chuyển tab từ Mediator
@@ -76,6 +76,7 @@ public class MainViewModel : INotifyPropertyChanged
         HistoryVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
         RestoreVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
         CloudVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
+        SettingsVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
         UpdateVM.PropertyChanged += (s, e) => OnPropertyChanged(nameof(IsModalOpen));
 
         // Đăng ký chuyển tiếp PropertyChanged từ các Sub-VMs để binding cũ tiếp tục hoạt động
@@ -141,6 +142,7 @@ public class MainViewModel : INotifyPropertyChanged
         RestoreVM.IsRestoreSourceModalOpen ||
         CloudVM.IsSyncCloudSelectModalOpen ||
         SearchVM.IsGameSelectModalOpen ||
+        (SettingsVM?.IsDatabaseRestoreModalOpen == true) ||
         (UpdateVM?.IsUpdateModalOpen == true);
 
     /// <summary>
@@ -151,6 +153,10 @@ public class MainViewModel : INotifyPropertyChanged
         if (BackupVM.IsBackingUp)
         {
             return (true, "Đang diễn ra tiến trình sao lưu save game. Hãy đợi sao lưu hoàn tất trước khi cập nhật.");
+        }
+        if (SettingsVM.IsBackingUpDatabase)
+        {
+            return (true, "Đang diễn ra tiến trình sao lưu cơ sở dữ liệu lên Cloud. Hãy đợi sao lưu hoàn tất trước khi cập nhật.");
         }
         if (RestoreVM.IsModalRestoring)
         {

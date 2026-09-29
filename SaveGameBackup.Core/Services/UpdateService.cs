@@ -495,12 +495,12 @@ echo  [1/5] Dang doi SaveVault (PID: {targetProcessId}) dong an toan...
 :wait_loop
 tasklist /fi ""PID eq {targetProcessId}"" 2>nul | find ""{targetProcessId}"" >nul
 if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
+    ping 127.0.0.1 -n 2 >nul
     goto wait_loop
 )
 
 echo        Ung dung cu da thoat. Dang giai phong file locks...
-timeout /t 1 /nobreak >nul
+ping 127.0.0.1 -n 2 >nul
 
 set BACKUP_FAILED=0
 set UPDATE_FAILED=0
@@ -520,6 +520,7 @@ if exist ""{appDir}\app"" (
     )
 )
 
+(call )
 if exist ""{appDir}\SaveVault.exe"" (
     copy /y ""{appDir}\SaveVault.exe"" ""%BACKUP_DIR%\SaveVault.exe"" >> ""%LOG_FILE%"" 2>&1
     if errorlevel 1 set BACKUP_FAILED=1
@@ -533,21 +534,7 @@ if exist ""{appDir}\data\database\manifest.yaml"" (
     copy /y ""{appDir}\data\database\manifest.yaml"" ""%BACKUP_DIR%\data\database\manifest.yaml"" >> ""%LOG_FILE%"" 2>&1
 )
 
-if %BACKUP_FAILED% neq 0 (
-    color 0C
-    echo  [LOI] Khong the tao ban sao luu truoc khi cap nhat!
-    echo        Da huy cap nhat an toan de bao ve ung dung hien tai.
-    echo Khong the tao ban sao luu truoc khi cap nhat (co the do day bo nho hoac quyen ghi). Da huy de bao ve ung dung. > ""%ERROR_FLAG%""
-    powershell -NoProfile -Command ""Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('Khong the tao ban sao luu du phong truoc khi cap nhat (co the do o dia day). Qua trinh cap nhat da duoc huy an toan de bao ve ung dung.', 'SaveVault - Huy Cap Nhat', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)"" 2>nul
-    timeout /t 3 >nul
-    cd /d ""{appDir}""
-    if exist ""{Path.Combine(appDir, "SaveVault.exe")}"" (
-        start """" ""{Path.Combine(appDir, "SaveVault.exe")}""
-    ) else if exist ""{Path.Combine(appDir, "app", "SaveVault.exe")}"" (
-        start """" ""{Path.Combine(appDir, "app", "SaveVault.exe")}""
-    )
-    goto end_script
-)
+if %BACKUP_FAILED% neq 0 goto backup_failed_procedure
 
 echo.
 echo  [3/5] Dang sao chep cac tep tin phien ban moi...
@@ -566,6 +553,7 @@ if exist ""{extractedSourceDir}\app"" (
     if errorlevel 1 set UPDATE_FAILED=1
 )
 
+(call )
 echo        - Dang cap nhat launcher va cac tep tin phat hanh...
 if exist ""{extractedSourceDir}\SaveVault.exe"" (
     copy /y ""{extractedSourceDir}\SaveVault.exe"" ""{appDir}\SaveVault.exe"" >> ""%LOG_FILE%"" 2>&1
@@ -592,7 +580,7 @@ if %UPDATE_FAILED% neq 0 goto rollback_procedure
 
 echo.
 echo  [4/5] Dang don dep tap tin tam va ban sao luu...
-timeout /t 1 /nobreak >nul
+ping 127.0.0.1 -n 2 >nul
 rmdir /s /q ""{Path.Combine(tempDir, "extracted")}"" 2>nul
 del /q /f ""{Path.Combine(tempDir, "update_package.zip")}"" 2>nul
 if exist ""%BACKUP_DIR%"" rmdir /s /q ""%BACKUP_DIR%"" 2>nul
@@ -603,8 +591,26 @@ echo -------------------------------------------------------------------
 echo  [5/5] CAP NHAT THANH CONG!
 echo        Dang khoi dong lai SaveVault {targetVersion}...
 echo -------------------------------------------------------------------
-timeout /t 2 /nobreak >nul
+ping 127.0.0.1 -n 3 >nul
 
+cd /d ""{appDir}""
+if exist ""{Path.Combine(appDir, "SaveVault.exe")}"" (
+    start """" ""{Path.Combine(appDir, "SaveVault.exe")}""
+) else if exist ""{Path.Combine(appDir, "app", "SaveVault.exe")}"" (
+    start """" ""{Path.Combine(appDir, "app", "SaveVault.exe")}""
+)
+goto end_script
+
+:backup_failed_procedure
+color 0C
+echo.
+echo ===================================================================
+echo  [LOI] KHONG THE TAO BAN SAO LUU SNAPSHOT TRUOC KHI CAP NHAT!
+echo        Da huy cap nhat an toan de bao ve ung dung hien tai.
+echo ===================================================================
+echo Khong the tao ban sao luu truoc khi cap nhat do day bo nho hoac loi quyen ghi. Da huy de bao ve ung dung. > ""%ERROR_FLAG%""
+powershell -NoProfile -Command ""Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('Khong the tao ban sao luu du phong truoc khi cap nhat. Qua trinh cap nhat da duoc huy an toan de bao ve ung dung.', 'SaveVault - Huy Cap Nhat', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)"" 2>nul
+ping 127.0.0.1 -n 3 >nul
 cd /d ""{appDir}""
 if exist ""{Path.Combine(appDir, "SaveVault.exe")}"" (
     start """" ""{Path.Combine(appDir, "SaveVault.exe")}""
@@ -644,12 +650,12 @@ if exist ""%BACKUP_DIR%\data\database\manifest.yaml"" (
     copy /y ""%BACKUP_DIR%\data\database\manifest.yaml"" ""{appDir}\data\database\manifest.yaml"" >> ""%LOG_FILE%"" 2>&1
 )
 
-echo Sao chep file cap nhat that bai. He thong da tu dong hoan tac (rollback) va khoi phuc phien ban truoc do an toan. Xem chi tiet tai data\temp\auto_update\update.log. > ""%ROLLBACK_FLAG%""
+echo Sao chep file cap nhat that bai. He thong da tu dong hoan tac (rollback) va khoi phuc phien ban truoc do an toan. Xem chi tiet tai update.log. > ""%ROLLBACK_FLAG%""
 powershell -NoProfile -Command ""Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('Qua trinh cap nhat SaveVault gap su co khi sao chep tep tin. He thong da tu dong hoan tac (rollback) va khoi phuc an toan phien ban truoc do. Ung dung se khoi dong lai ngay bay gio.', 'SaveVault - Tu Dong Hoan Tac (Rollback)', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning)"" 2>nul
 
 echo.
 echo  Hoan tac thanh cong! Dang khoi dong lai phien ban an toan...
-timeout /t 2 /nobreak >nul
+ping 127.0.0.1 -n 3 >nul
 
 cd /d ""{appDir}""
 if exist ""{Path.Combine(appDir, "SaveVault.exe")}"" (

@@ -37,7 +37,7 @@
 
         <div class="flex items-center space-x-2.5">
             <button type="button"
-                    class="btn-backup-primary py-2 px-5 text-[12.5px] flex items-center space-x-2 shadow-lg hover:shadow-emerald-500/20 transition-all cursor-pointer"
+                    class="btn-primary py-2 px-4 text-[12px] flex items-center space-x-2 shadow-lg hover:shadow-emerald-500/20 transition-all cursor-pointer"
                     @onclick="SaveAllSettings">
                 <span>💾</span>
                 <span>Lưu Tất Cả Cài Đặt</span>
@@ -191,6 +191,193 @@
                             </select>
                         </div>
                     </div>
+                </div>
+
+                <!-- ☁️ SAO LƯU & KHÔI PHỤC DATABASE TRÊN CLOUD -->
+                <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
+                    <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                        <div class="flex items-center space-x-2.5">
+                            <span class="text-sky-400 text-lg">☁️</span>
+                            <div>
+                                <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">SAO LƯU &amp; KHÔI PHỤC DATABASE TRÊN CLOUD</h3>
+                                <div class="text-[11px] text-slate-400">Chụp snapshot SQLite WAL (VACUUM INTO), đóng gói an toàn và đồng bộ lên đám mây</div>
+                            </div>
+                        </div>
+                        <div class="text-[10.5px] font-mono text-sky-400 bg-sky-950/60 border border-sky-500/30 px-2.5 py-1 rounded-md flex items-center space-x-1.5">
+                            <span>🔒</span>
+                            <span>AES-256 Protected History</span>
+                        </div>
+                    </div>
+
+                    <!-- Cloud Connection Status / Warning Banner -->
+                    @if (!SettingsVM.HasConnectedCloud)
+                    {
+                        <div class="p-3.5 bg-amber-950/40 border border-amber-600/40 rounded-xl flex items-center justify-between space-x-3 text-[11.5px]">
+                            <div class="flex items-center space-x-2.5 text-amber-300">
+                                <span class="text-base">⚠️</span>
+                                <span>Chưa có tài khoản Cloud nào được kết nối (Google Drive hoặc OneDrive). Vui lòng đăng nhập để sử dụng tính năng sao lưu database.</span>
+                            </div>
+                            <button type="button"
+                                    class="btn-secondary py-1 px-3 text-[11px] text-amber-300 hover:text-white border-amber-500/40 flex-shrink-0"
+                                    @onclick="() => ActiveSubTab = 1">
+                                Kết Nối Ngay ➔
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="p-3 bg-[#0F172A] border border-[#2D3748] rounded-xl flex items-center justify-between text-[11.5px]">
+                            <div class="flex items-center space-x-3">
+                                <span class="text-slate-400 font-semibold">Tài khoản khả dụng:</span>
+                                @if (SettingsVM.IsGoogleDriveConnected)
+                                {
+                                    <span class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-md bg-blue-950/70 text-blue-300 border border-blue-500/30">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                                        <span>Google Drive (@SettingsVM.GoogleDriveEmail)</span>
+                                    </span>
+                                }
+                                @if (SettingsVM.IsOneDriveConnected)
+                                {
+                                    <span class="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-md bg-cyan-950/70 text-cyan-300 border border-cyan-500/30">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                                        <span>OneDrive (@SettingsVM.OneDriveEmail)</span>
+                                    </span>
+                                }
+                            </div>
+                            <div class="text-[11px] text-slate-400">
+                                Giữ tối đa: <span class="text-sky-300 font-bold">5 bản gần nhất</span> / Cloud
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Target Cloud Provider Selection -->
+                    <div class="space-y-2">
+                        <label class="block text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Chọn Nơi Lưu Trữ Cơ Sở Dữ Liệu:</label>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <!-- Option 1: Google Drive -->
+                            <label class="p-3 bg-[#0F172A] border rounded-xl flex items-center space-x-3 cursor-pointer transition-all @(SettingsVM.DatabaseCloudBackupTarget == "GoogleDrive" ? "border-blue-500 bg-blue-950/20" : "border-[#2D3748] hover:border-slate-500")">
+                                <input type="radio"
+                                       name="dbCloudTarget"
+                                       value="GoogleDrive"
+                                       checked="@(SettingsVM.DatabaseCloudBackupTarget == "GoogleDrive")"
+                                       @onchange="@(() => SettingsVM.DatabaseCloudBackupTarget = "GoogleDrive")"
+                                       class="text-blue-500 focus:ring-blue-500" />
+                                <div>
+                                    <div class="text-[12.5px] font-bold text-white flex items-center space-x-1.5">
+                                        <span>🔵</span>
+                                        <span>Google Drive</span>
+                                    </div>
+                                    <div class="text-[10.5px] text-slate-400">Thư mục: _Database_Backups</div>
+                                </div>
+                            </label>
+
+                            <!-- Option 2: OneDrive -->
+                            <label class="p-3 bg-[#0F172A] border rounded-xl flex items-center space-x-3 cursor-pointer transition-all @(SettingsVM.DatabaseCloudBackupTarget == "OneDrive" ? "border-cyan-500 bg-cyan-950/20" : "border-[#2D3748] hover:border-slate-500")">
+                                <input type="radio"
+                                       name="dbCloudTarget"
+                                       value="OneDrive"
+                                       checked="@(SettingsVM.DatabaseCloudBackupTarget == "OneDrive")"
+                                       @onchange="@(() => SettingsVM.DatabaseCloudBackupTarget = "OneDrive")"
+                                       class="text-cyan-500 focus:ring-cyan-500" />
+                                <div>
+                                    <div class="text-[12.5px] font-bold text-white flex items-center space-x-1.5">
+                                        <span>🔷</span>
+                                        <span>Microsoft OneDrive</span>
+                                    </div>
+                                    <div class="text-[10.5px] text-slate-400">Thư mục: _Database_Backups</div>
+                                </div>
+                            </label>
+
+                            <!-- Option 3: Both -->
+                            <label class="p-3 bg-[#0F172A] border rounded-xl flex items-center space-x-3 cursor-pointer transition-all @(SettingsVM.DatabaseCloudBackupTarget == "Both" ? "border-emerald-500 bg-emerald-950/20" : "border-[#2D3748] hover:border-slate-500")">
+                                <input type="radio"
+                                       name="dbCloudTarget"
+                                       value="Both"
+                                       checked="@(SettingsVM.DatabaseCloudBackupTarget == "Both")"
+                                       @onchange="@(() => SettingsVM.DatabaseCloudBackupTarget = "Both")"
+                                       class="text-emerald-500 focus:ring-emerald-500" />
+                                <div>
+                                    <div class="text-[12.5px] font-bold text-white flex items-center space-x-1.5">
+                                        <span>⚡</span>
+                                        <span>Cả Hai Cloud (Dự phòng kép)</span>
+                                    </div>
+                                    <div class="text-[10.5px] text-slate-400">Đồng thời đẩy lên Drive &amp; OneDrive</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Action Controls -->
+                    <div class="flex items-center justify-between pt-2">
+                        <div class="text-[11px] text-slate-400">
+                            Cơ chế Snapshot đảm bảo ứng dụng không bị gián đoạn hay lock database khi đang sao lưu.
+                        </div>
+
+                        <div class="flex items-center space-x-3">
+                            <button type="button"
+                                    class="btn-secondary py-2 px-4 text-[12px] flex items-center space-x-1.5 text-sky-300 hover:text-white border-sky-500/40 hover:bg-sky-950/30"
+                                    @onclick="() => SettingsVM.OpenDatabaseRestoreModalCommand.Execute(null)">
+                                <span>📥</span>
+                                <span>Khôi Phục Database Từ Cloud...</span>
+                            </button>
+
+                            <button type="button"
+                                    class="btn-primary py-2 px-4 text-[12px] flex items-center space-x-2 shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50"
+                                    disabled="@SettingsVM.IsBackingUpDatabase"
+                                    @onclick="() => SettingsVM.BackupDatabaseToCloudCommand.Execute(null)">
+                                <span>☁️</span>
+                                <span>@(SettingsVM.IsBackingUpDatabase ? "Đang Sao Lưu..." : "Sao Lưu Database Lên Cloud Ngay")</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Recent Backups Preview -->
+                    @if (SettingsVM.DatabaseCloudBackups.Count > 0)
+                    {
+                        <div class="space-y-2 pt-2 border-t border-[#1E293B]">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">Bản Sao Lưu Database Gần Nhất:</span>
+                                <button type="button"
+                                        class="text-[11px] text-sky-400 hover:underline cursor-pointer"
+                                        @onclick="() => SettingsVM.OpenDatabaseRestoreModalCommand.Execute(null)">
+                                    Xem tất cả (@SettingsVM.DatabaseCloudBackups.Count) ➔
+                                </button>
+                            </div>
+
+                            <div class="space-y-2">
+                                @foreach (var entry in SettingsVM.DatabaseCloudBackups.Take(3))
+                                {
+                                    <div class="p-3 bg-[#0F172A] border border-[#253248] rounded-xl flex items-center justify-between text-[11.5px]">
+                                        <div class="flex items-center space-x-3">
+                                            <span class="text-sky-400 font-bold">🗄️ @entry.FileName</span>
+                                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-800 text-slate-300">
+                                                @SettingsSubViewModel.FormatBytes(entry.FileSizeBytes)
+                                            </span>
+                                            <span class="text-slate-400">🕒 @entry.BackupTime.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                                        </div>
+
+                                        <div class="flex items-center space-x-2">
+                                            @foreach (var up in entry.CloudUploads)
+                                            {
+                                                var isG = string.Equals(up.Provider, "GoogleDrive", StringComparison.OrdinalIgnoreCase);
+                                                var bText = isG ? "Google Drive" : "OneDrive";
+                                                var bClass = isG ? "bg-blue-950/60 text-blue-300 border-blue-500/30" : "bg-cyan-950/60 text-cyan-300 border-cyan-500/30";
+                                                <span class="px-2 py-0.5 rounded text-[10px] border @bClass">
+                                                    @bText
+                                                </span>
+                                            }
+
+                                            <button type="button"
+                                                    class="btn-secondary py-1 px-2.5 text-[11px] text-emerald-400 hover:text-white border-emerald-500/40 ml-1"
+                                                    @onclick="() => SettingsVM.RestoreDatabaseCommand.Execute(entry)">
+                                                Khôi phục
+                                            </button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
                 </div>
             </div>
         }
@@ -561,7 +748,7 @@
                                     </button>
                                 }
                                 <button type="button"
-                                        class="btn-backup-primary py-1.5 px-4 text-[12px] flex items-center space-x-2 cursor-pointer shadow"
+                                        class="btn-primary py-1.5 px-4 text-[12px] flex items-center space-x-2 cursor-pointer shadow"
                                         disabled="@SettingsVM.IsSyncingCatalog"
                                         @onclick="() => SettingsVM.SyncCatalogCommand.Execute(null)">
                                     <span>@(SettingsVM.IsSyncingCatalog ? "⏳" : "🔄")</span>
