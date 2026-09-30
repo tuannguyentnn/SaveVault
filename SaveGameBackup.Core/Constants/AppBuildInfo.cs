@@ -8,11 +8,11 @@ namespace SaveGameBackup.Core.Constants;
 /// </summary>
 public static class AppBuildInfo
 {
-    public const string AppName = "SaveVault";
-    public const string AppTitle = "SaveVault - Game Save Backup & Cloud Sync";
-    public const string Version = "1.0.0";
+    public const string AppName = "Omnisave";
+    public const string AppTitle = "Omnisave - Game Save Backup & Cloud Sync";
+    public const string Version = "1.3.4";
     public const string BuildDate = "2026-09-29";
-    public const string Author = "Nguyễn Anh Tuấn (tuannguyen01101995)";
+    public const string Author = "Nguyễn Ngọc Tuấn (tuannguyen01101995)";
     public const string Description = "Ứng dụng chuyên nghiệp tự động nhận diện, sao lưu và đồng bộ save game lên đám mây (Google Drive & OneDrive) dành riêng cho game thủ PC.";
     public const string License = "MIT License - Tự do sử dụng và tùy biến cho mục đích cá nhân phi thương mại.";
 
@@ -27,17 +27,17 @@ public static class AppBuildInfo
 
     public static class Links
     {
-        public const string GitHub = "https://github.com/tuannguyen01101995/SaveVault";
-        public const string Issues = "https://github.com/tuannguyen01101995/SaveVault/issues";
-        public const string Releases = "https://github.com/tuannguyen01101995/SaveVault/releases";
-        public const string Guide = "https://github.com/tuannguyen01101995/SaveVault/blob/main/README.md";
+        public const string GitHub = "https://github.com/tuannguyen01101995/Omnisave-Publish";
+        public const string Issues = "https://github.com/tuannguyen01101995/Omnisave-Publish/issues";
+        public const string Releases = "https://github.com/tuannguyen01101995/Omnisave-Publish/releases";
+        public const string Guide = "https://github.com/tuannguyen01101995/Omnisave-Publish/blob/main/README.md";
     }
 
     public static class Support
     {
         public const string Email = "tuannguyen01101995@gmail.com";
-        public const string Community = "SaveVault Support Community";
-        public const string Telegram = "https://t.me/savevault_support";
+        public const string Community = "Omnisave Support Community";
+        public const string Telegram = "https://t.me/Omnisave_support";
     }
 
     public static readonly IReadOnlyList<string> Features = new[]

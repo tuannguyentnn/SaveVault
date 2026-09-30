@@ -124,14 +124,14 @@ public class OAuthLoopbackReceiver : IDisposable
         var iconColor = isSuccess ? "#34D399" : "#EF4444";
         var iconBg = isSuccess ? "#064E3B" : "#7F1D1D";
         var message = isSuccess
-            ? "Tài khoản lưu trữ đám mây đã được liên kết thành công với <b>SaveVault</b>.<br/><br/>Bạn có thể đóng tab trình duyệt này và quay lại ứng dụng."
+            ? "Tài khoản lưu trữ đám mây đã được liên kết thành công với <b>Omnisave</b>.<br/><br/>Bạn có thể đóng tab trình duyệt này và quay lại ứng dụng."
             : $"Không thể xác thực tài khoản: {System.Net.WebUtility.HtmlEncode(error ?? "Không rõ nguyên nhân")}.<br/><br/>Vui lòng thử lại.";
 
         return $@"<!DOCTYPE html>
 <html lang=""vi"">
 <head>
     <meta charset=""utf-8""/>
-    <title>{title} - SaveVault</title>
+    <title>{title} - Omnisave</title>
     <style>
         body {{
             background-color: #0B0F19;
@@ -191,7 +191,7 @@ public class OAuthLoopbackReceiver : IDisposable
         <div class=""icon"">{icon}</div>
         <h1>{title}</h1>
         <p>{message}</p>
-        <div class=""brand"">SaveVault Cloud Sync</div>
+        <div class=""brand"">Omnisave Cloud Sync</div>
     </div>
 </body>
 </html>";

@@ -240,7 +240,7 @@ public class OneDriveApiService : ICloudStorageService
             Message = "Đang kiểm tra thư mục trên OneDrive..."
         });
 
-        // Đảm bảo cấu trúc thư mục SaveVault_Backups/{remoteGameFolderName} đã được tạo trên OneDrive
+        // Đảm bảo cấu trúc thư mục Omnisave_Backups/{remoteGameFolderName} đã được tạo trên OneDrive
         var gameFolderId = await EnsureFolderHierarchyAsync(remoteGameFolderName, cancellationToken);
 
         progress?.Report(new BackupProgress
@@ -490,7 +490,7 @@ public class OneDriveApiService : ICloudStorageService
         try
         {
             await EnsureAccessTokenAsync(cancellationToken);
-            var deleteUrl = $"{GraphApiDriveEndpoint}/root:/SaveVault_Backups/{Uri.EscapeDataString(remoteFolderName)}";
+            var deleteUrl = $"{GraphApiDriveEndpoint}/root:/Omnisave_Backups/{Uri.EscapeDataString(remoteFolderName)}";
             using var req = new HttpRequestMessage(HttpMethod.Delete, deleteUrl);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
 
@@ -519,8 +519,8 @@ public class OneDriveApiService : ICloudStorageService
 
         var list = new List<CloudFileInfo>();
         string url = string.IsNullOrEmpty(remoteGameFolderName)
-            ? $"{GraphApiDriveEndpoint}/root:/SaveVault_Backups:/children"
-            : $"{GraphApiDriveEndpoint}/root:/SaveVault_Backups/{Uri.EscapeDataString(remoteGameFolderName)}:/children";
+            ? $"{GraphApiDriveEndpoint}/root:/Omnisave_Backups:/children"
+            : $"{GraphApiDriveEndpoint}/root:/Omnisave_Backups/{Uri.EscapeDataString(remoteGameFolderName)}:/children";
 
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
@@ -623,8 +623,8 @@ public class OneDriveApiService : ICloudStorageService
 
     private async Task<string> EnsureFolderHierarchyAsync(string remoteGameFolderName, CancellationToken cancellationToken)
     {
-        // 1. Đảm bảo thư mục gốc "SaveVault_Backups" tồn tại
-        var rootFolderId = await GetOrCreateFolderAsync("root", "SaveVault_Backups", cancellationToken);
+        // 1. Đảm bảo thư mục gốc "Omnisave_Backups" tồn tại
+        var rootFolderId = await GetOrCreateFolderAsync("root", "Omnisave_Backups", cancellationToken);
 
         // 2. Đảm bảo thư mục con theo tên game tồn tại
         var gameFolderId = await GetOrCreateFolderAsync(rootFolderId, remoteGameFolderName, cancellationToken);

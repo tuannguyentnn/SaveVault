@@ -214,6 +214,7 @@ public static class RevertService
         IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        using var trace = LoggingService.BeginTrace("Revert_CreateRevertPointAsync", new { GameName = gameName });
         if (string.IsNullOrWhiteSpace(gameName) || itemsToRestore == null || itemsToRestore.Count == 0)
         {
             return null;
@@ -277,7 +278,7 @@ public static class RevertService
         var timestamp = creationTime.ToString("yyyyMMdd_HHmmss");
         var revertZipPath = Path.Combine(revertDir, $"revert_{timestamp}.zip");
 
-        var tempStageDir = Path.Combine(Path.GetTempPath(), $"SaveVault_Revert_{Guid.NewGuid():N}");
+        var tempStageDir = Path.Combine(Path.GetTempPath(), $"Omnisave_Revert_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempStageDir);
 
         try
@@ -392,6 +393,7 @@ public static class RevertService
         IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        using var trace = LoggingService.BeginTrace("Revert_RevertGameSaveAsync", new { GameName = gameName, ZipPath = revertZipPath });
         if (string.IsNullOrWhiteSpace(gameName)) return false;
 
         var targetZip = revertZipPath;
@@ -408,7 +410,7 @@ public static class RevertService
 
         progress?.Report(new BackupProgress { Percent = 10, Message = "Đang chuẩn bị giải nén bản hoàn tác..." });
 
-        var tempExtractDir = Path.Combine(Path.GetTempPath(), $"SaveVault_RevertExtract_{Guid.NewGuid():N}");
+        var tempExtractDir = Path.Combine(Path.GetTempPath(), $"Omnisave_RevertExtract_{Guid.NewGuid():N}");
         Directory.CreateDirectory(tempExtractDir);
 
         try

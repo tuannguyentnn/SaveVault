@@ -11,6 +11,9 @@ public static class MauiProgram
 {
     public static MauiApp CreateMauiApp()
     {
+        // Fix WebView2 lag/stutter on window restore from minimized state
+        Environment.SetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=CalculateNativeWinOcclusion,RendererBackgrounding");
+
         var builder = MauiApp.CreateBuilder();
         builder
             .UseMauiApp<App>()

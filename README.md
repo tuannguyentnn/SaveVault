@@ -1,8 +1,8 @@
-# 🛡️ SaveVault - Game Save Manager & Cloud Vault
+# 🛡️ Omnisave - Game Save Manager & Cloud Vault
 
 <div align="center">
 
-![SaveVault Banner](https://img.shields.io/badge/SaveVault-v1.0.0-06b6d4?style=for-the-badge&logo=shield)
+![Omnisave Banner](https://img.shields.io/badge/Omnisave-v1.0.0-06b6d4?style=for-the-badge&logo=shield)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20x64-blue?style=for-the-badge&logo=windows)
 ![Framework](https://img.shields.io/badge/.NET-10.0%20%7C%20C%23%2014-512BD4?style=for-the-badge&logo=dotnet)
 ![UI](https://img.shields.io/badge/UI-Photino%20Blazor%20%2B%20TailwindCSS-38bdf8?style=for-the-badge&logo=blazor)
@@ -49,7 +49,7 @@
 - Tự động kiểm tra phiên bản mới từ GitHub Releases.
 - Tải ngầm bản cập nhật với thanh tiến trình real-time (tốc độ MB/s, phần trăm hoàn thành thực tế).
 - **Kiểm tra an toàn toàn diện**: Kiểm tra dung lượng đĩa khả dụng (> 200 MB), xác thực tính toàn vẹn file nén, xử lý ngắt kết nối mạng với banner thông báo lỗi và nút "Thử Tải Lại".
-- Tự động thay thế tệp và khởi động lại SaveVault thông qua kịch bản runner script an toàn.
+- Tự động thay thế tệp và khởi động lại Omnisave thông qua kịch bản runner script an toàn.
 
 ---
 
@@ -57,13 +57,13 @@
 
 ```mermaid
 flowchart TD
-    subgraph UI_Layer["Giao Diện & Trình Trình Diễn (SaveVault.UI)"]
+    subgraph UI_Layer["Giao Diện & Trình Trình Diễn (Omnisave.UI)"]
         Razor["Blazor Components (Razor + TailwindCSS)"]
         VM["ViewModels (MVVM Pattern)"]
         Photino["Photino.NET Desktop Shell (Chromium WebView2)"]
     end
 
-    subgraph Core_Layer["Lớp Nghiệp Vụ Chính (SaveVault.Core)"]
+    subgraph Core_Layer["Lớp Nghiệp Vụ Chính (Omnisave.Core)"]
         Coord["GameSearchCoordinator"]
         PathRes["PathResolverService"]
         BackupSvc["BackupService (Zip, Copy, Restore)"]
@@ -116,8 +116,8 @@ flowchart TD
 ## 📁 Cấu Trúc Dự Án
 
 ```text
-SaveVault/
-├── SaveGameBackup.slnx              # Solution file định dạng XML mới của .NET 10
+Omnisave/
+├── Omnisave.slnx              # Solution file định dạng XML mới của .NET 10
 ├── version.json                     # Single Source of Truth cho toàn bộ phiên bản
 ├── Directory.Build.props            # Tự động đồng bộ version.json vào Assembly metadata
 ├── CHANGELOG.md                     # Lịch sử chi tiết các phiên bản phát hành
@@ -126,7 +126,7 @@ SaveVault/
 ├── build_exe.ps1                    # Script tự động build, tạo launcher và đóng gói ZIP
 ├── build_exe.bat                    # Batch wrapper chạy build_exe.ps1
 │
-├── SaveGameBackup.Core/             # [Core Logic Project]
+├── Omnisave.Core/             # [Core Logic Project]
 │   ├── Models/                      # GameSaveInfo, BackupRecord, AppSettings, Config
 │   └── Services/                    # Toàn bộ business logic & API clients
 │       ├── BackupService.cs         # Xử lý sao lưu, nén ZIP, khôi phục dữ liệu
@@ -138,7 +138,7 @@ SaveVault/
 │       ├── UpdateService.cs         # Kiểm tra, tải và thực thi tự động cập nhật
 │       └── Cloud/                   # GoogleDriveApiService, OneDriveApiService, OAuth
 │
-├── SaveGameBackup.UI/               # [Desktop Application UI]
+├── Omnisave.UI/               # [Desktop Application UI]
 │   ├── Components/                  # Blazor Razor Components
 │   │   ├── Pages/                   # HomeTab, HistoryTab, SettingsTab
 │   │   ├── Shared/                  # Navigation, Modals, UpdateModal
@@ -153,10 +153,10 @@ SaveVault/
 │   ├── wwwroot/                     # CSS, JS, Fonts, Tailwind output
 │   └── Program.cs                   # Điểm khởi đầu ứng dụng Photino.Blazor
 │
-├── SaveGameBackup.Launcher/         # [Launcher Wrapper]
+├── Omnisave.Launcher/         # [Launcher Wrapper]
 │   └── Launcher khởi động ứng dụng độc lập không phụ thuộc console
 │
-├── SaveGameBackup.Tests/            # [Automated Test Suite]
+├── Omnisave.Tests/            # [Automated Test Suite]
 │   └── Program.cs                   # 33+ bài kiểm thử tích hợp (End-to-End Core Tests)
 │
 └── data/                            # [DUY NHẤT] Toàn bộ dữ liệu của ứng dụng (Chuẩn Portable)
@@ -185,36 +185,36 @@ LaunchApp.bat
 ```
 Hoặc chạy lệnh từ terminal:
 ```bash
-dotnet run --project SaveGameBackup.UI/SaveGameBackup.UI.csproj
+dotnet run --project Omnisave.UI/Omnisave.UI.csproj
 ```
 
 ### 2. Chạy Bộ Kiểm Thử Tự Động (Integration Tests)
-SaveVault đi kèm bộ test tích hợp kiểm tra toàn bộ luồng nghiệp vụ (Phân giải đường dẫn, SQLite, Backup, ZIP, Khôi phục, Đám mây, Auto-Update):
+Omnisave đi kèm bộ test tích hợp kiểm tra toàn bộ luồng nghiệp vụ (Phân giải đường dẫn, SQLite, Backup, ZIP, Khôi phục, Đám mây, Auto-Update):
 ```bash
-dotnet run --project SaveGameBackup.Tests/SaveGameBackup.Tests.csproj
+dotnet run --project Omnisave.Tests/Omnisave.Tests.csproj
 ```
 
 ---
 
 ## ☁️ Cấu Hình Đồng Bộ Đám Mây
 
-SaveVault hỗ trợ đồng bộ dữ liệu đám mây độc lập thông qua giao thức **OAuth 2.0 PKCE** an toàn:
+Omnisave hỗ trợ đồng bộ dữ liệu đám mây độc lập thông qua giao thức **OAuth 2.0 PKCE** an toàn:
 
 ### 1. Google Drive
 1. Truy cập [Google Cloud Console](https://console.cloud.google.com/).
 2. Tạo một dự án mới và bật **Google Drive API**.
 3. Cấu hình **OAuth consent screen** (Loại: External, thêm scope `.../auth/drive.file`).
 4. Tạo **OAuth 2.0 Client ID** (Loại ứng dụng: **Desktop App**).
-5. Mở tab **Cài Đặt > Đồng Bộ Đám Mây** trong SaveVault, điền **Client ID** (và Client Secret nếu có) rồi bấm **"Kết Nối Google Drive"**.
+5. Mở tab **Cài Đặt > Đồng Bộ Đám Mây** trong Omnisave, điền **Client ID** (và Client Secret nếu có) rồi bấm **"Kết Nối Google Drive"**.
 6. Trình duyệt sẽ mở trang xác thực của Google để bạn cấp quyền trong 1-click.
 
-> 📖 *Xem hướng dẫn chi tiết kèm hình ảnh minh họa tại [GOOGLE_DRIVE_SETUP_GUIDE.md](file:///c:/Users/TuanNguyen/Desktop/New%20folder%20%289%29/SaveVault/GOOGLE_DRIVE_SETUP_GUIDE.md).*
+> 📖 *Xem hướng dẫn chi tiết kèm hình ảnh minh họa tại [GOOGLE_DRIVE_SETUP_GUIDE.md](file:///c:/Users/TuanNguyen/Desktop/New%20folder%20%289%29/Omnisave/GOOGLE_DRIVE_SETUP_GUIDE.md).*
 
 ### 2. Microsoft OneDrive
 1. Truy cập [Microsoft Entra / Azure Portal](https://portal.azure.com/).
 2. Đăng ký ứng dụng mới với quyền truy cập tài khoản cá nhân.
 3. Thêm quyền API: `Files.ReadWrite` và `offline_access`.
-4. Điền **Client ID** vào SaveVault và tiến hành kết nối an toàn.
+4. Điền **Client ID** vào Omnisave và tiến hành kết nối an toàn.
 
 ---
 
@@ -234,7 +234,7 @@ build_exe.bat
 **Quy trình tự động thực hiện:**
 1. Đọc phiên bản từ `version.json`.
 2. Biên dịch Self-Contained `.NET 10` cho Windows x64 (SingleFile/ReadyToRun).
-3. Biên dịch Launcher độc lập `SaveVault.exe`.
+3. Biên dịch Launcher độc lập `Omnisave.exe`.
 4. Tự động tích lũy lịch sử phát hành vào `changelogs.json` và sinh `CHANGELOG.md`.
 5. Đóng gói toàn bộ sản phẩm thành file `publish.zip` sẵn sàng phân phối cho người dùng cuối.
 

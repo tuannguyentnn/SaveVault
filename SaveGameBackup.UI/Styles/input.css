@@ -4,7 +4,7 @@
 @source "../Components";
 @source "../wwwroot";
 
-/* SaveVault Custom Styles & Design System Tokens */
+/* Omnisave Custom Styles & Design System Tokens */
 
 :root {
     --font-sans: 'Segoe UI Variable', 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -29,12 +29,22 @@ body {
     font-family: var(--font-sans);
     background-color: var(--bg-app);
     color: var(--text-primary);
-    user-select: none;
     overflow: hidden;
     height: 100vh;
     width: 100vw;
     font-size: 13px;
     line-height: 1.4;
+}
+
+/* Custom Text Selection Highlight (Cyan Accent) */
+::selection {
+    background-color: rgba(56, 189, 248, 0.35);
+    color: #FFFFFF;
+}
+
+/* Chỉ chặn bôi đen trên các nút bấm, tab và điều hướng để tránh vô tình bôi đen khi click */
+button, .btn, .btn-primary, .btn-secondary, .sv-tab, .sv-nav-bar, .sv-window-control-btn, .cursor-pointer {
+    user-select: none;
 }
 
 /* Global Reset For Inputs To PREVENT Browser Default White Background */
@@ -522,7 +532,7 @@ input[type="checkbox"]:checked::before {
 }
 
 /* =======================================================
-   SaveVault Exact Pixel-Perfect Design System
+   Omnisave Exact Pixel-Perfect Design System
    ======================================================= */
 
 .sv-app-container {

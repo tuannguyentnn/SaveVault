@@ -212,7 +212,7 @@ public class UpdateService
                 ReleaseDate = AppBuildInfo.BuildDate,
                 Changelog = new List<string>
                 {
-                    "🚀 Phát hành phiên bản SaveVault với hỗ trợ sao lưu và đồng bộ Cloud.",
+                    "🚀 Phát hành phiên bản Omnisave với hỗ trợ sao lưu và đồng bộ Cloud.",
                     "✨ Tự động nhận diện save game và bảo vệ dữ liệu bằng Safety Snapshots."
                 }
             });
@@ -229,10 +229,11 @@ public class UpdateService
         bool isSilent = false,
         CancellationToken cancellationToken = default)
     {
+        using var trace = LoggingService.BeginTrace("AutoUpdate_CheckForUpdate", new { isSilent });
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, _manifestUrl);
-            req.Headers.Add("User-Agent", "SaveVault-Updater");
+            req.Headers.Add("User-Agent", "Omnisave-Updater");
 
             using var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseContentRead, cancellationToken);
             if (!resp.IsSuccessStatusCode)
@@ -329,6 +330,7 @@ public class UpdateService
         CancellationToken cancellationToken = default,
         long expectedTotalBytes = -1)
     {
+        using var trace = LoggingService.BeginTrace("AutoUpdate_DownloadUpdatePackage", new { downloadUrl, expectedTotalBytes });
         var tempDir = AutoUpdateDirectory;
         var zipFilePath = Path.Combine(tempDir, "update_package.zip");
 
@@ -379,7 +381,7 @@ public class UpdateService
             bool isEstimated = false;
 
             // Nếu cả Content-Length và expectedTotalBytes đều không có (như khi tải repo zip từ GitHub qua chunked transfer encoding),
-            // ước tính kích thước trung bình của gói SaveVault publish (~45 MB) để tính toán tiến trình mượt mà.
+            // ước tính kích thước trung bình của gói Omnisave publish (~45 MB) để tính toán tiến trình mượt mà.
             const long defaultEstimatedBytes = 45L * 1024 * 1024;
             if (totalBytes <= 0)
             {
@@ -472,6 +474,8 @@ public class UpdateService
     /// </summary>
     public string ExtractUpdatePackage(string zipFilePath)
     {
+        using var trace = LoggingService.BeginTrace("AutoUpdate_ExtractPackage", new { zipFilePath });
+
         if (!File.Exists(zipFilePath))
         {
             throw new FileNotFoundException("Không tìm thấy tệp gói cập nhật update_package.zip để giải nén.", zipFilePath);
@@ -502,9 +506,9 @@ public class UpdateService
             throw new InvalidOperationException($"Giải nén gói cập nhật thất bại: {ex.Message}", ex);
         }
 
-        // Tự động tìm thư mục chứa các tệp phát hành (chứa SaveVault.exe hoặc thư mục app/)
+        // Tự động tìm thư mục chứa các tệp phát hành (chứa Omnisave.exe hoặc thư mục app/)
         string? targetDir = null;
-        if (File.Exists(Path.Combine(extractDir, "SaveVault.exe")) || Directory.Exists(Path.Combine(extractDir, "app")))
+        if (File.Exists(Path.Combine(extractDir, "Omnisave.exe")) || Directory.Exists(Path.Combine(extractDir, "app")))
         {
             targetDir = extractDir;
         }
@@ -513,7 +517,7 @@ public class UpdateService
             var subDirs = Directory.GetDirectories(extractDir);
             foreach (var sub in subDirs)
             {
-                if (File.Exists(Path.Combine(sub, "SaveVault.exe")) || Directory.Exists(Path.Combine(sub, "app")))
+                if (File.Exists(Path.Combine(sub, "Omnisave.exe")) || Directory.Exists(Path.Combine(sub, "app")))
                 {
                     targetDir = sub;
                     break;
@@ -523,7 +527,7 @@ public class UpdateService
 
         if (targetDir == null)
         {
-            throw new InvalidOperationException("Gói cập nhật không chứa tệp thực thi hợp lệ (SaveVault.exe hoặc thư mục app/).");
+            throw new InvalidOperationException("Gói cập nhật không chứa tệp thực thi hợp lệ (Omnisave.exe hoặc thư mục app/).");
         }
 
         return targetDir;
@@ -534,6 +538,7 @@ public class UpdateService
     /// </summary>
     public string GenerateRunnerScript(string extractedSourceDir, int targetProcessId, string targetVersion = "")
     {
+        using var trace = LoggingService.BeginTrace("AutoUpdate_GenerateRunnerScript", new { extractedSourceDir, targetVersion });
         var tempDir = AutoUpdateDirectory;
         var appDir = AppDirectory;
         var batPath = Path.Combine(tempDir, "update_runner.bat");
@@ -546,7 +551,7 @@ public class UpdateService
 
         // 1. Tạo script PowerShell với giao diện đồ họa console cao cấp, màu sắc sống động (đồng bộ build_exe.ps1)
         var ps1Content = $@"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = ""SaveVault Auto-Updater - Cap Nhat Phien Ban Moi""
+$Host.UI.RawUI.WindowTitle = ""Omnisave Auto-Updater - Cap Nhat Phien Ban Moi""
 
 $targetProcessId = {targetProcessId}
 $targetVersion = ""{targetVersion}""
@@ -569,7 +574,7 @@ if (Test-Path $backupDir) {{
 
 Clear-Host
 Write-Host ""==================================================================="" -ForegroundColor Cyan
-Write-Host ""         SaveVault - TIEN TRINH CAP NHAT TU DONG (Auto-Updater)    "" -ForegroundColor Cyan
+Write-Host ""         Omnisave - TIEN TRINH CAP NHAT TU DONG (Auto-Updater)    "" -ForegroundColor Cyan
 Write-Host ""==================================================================="" -ForegroundColor Cyan
 Write-Host """"
 Write-Host ""[THONG TIN BAN CAP NHAT]"" -ForegroundColor Green
@@ -579,10 +584,10 @@ Write-Host """"
 Write-Host ""==================================================================="" -ForegroundColor Cyan
 
 # -------------------------------------------------------------------
-# [1/5] Cho SaveVault dong hoan toan
+# [1/5] Cho Omnisave dong hoan toan
 # -------------------------------------------------------------------
 Write-Host """"
-Write-Host ""[1/5] Dang doi ung dung SaveVault (PID: $targetProcessId) dong an toan..."" -ForegroundColor Yellow
+Write-Host ""[1/5] Dang doi ung dung Omnisave (PID: $targetProcessId) dong an toan..."" -ForegroundColor Yellow
 
 while ($true) {{
     $proc = Get-Process -Id $targetProcessId -ErrorAction SilentlyContinue
@@ -615,9 +620,9 @@ try {{
         Write-Host ""xong."" -ForegroundColor Green
     }}
 
-    # 2. Sao luu SaveVault.exe va cac tep cau hinh
+    # 2. Sao luu Omnisave.exe va cac tep cau hinh
     Write-Host ""      • Sao luu launcher va tep cau hinh... "" -NoNewline -ForegroundColor Gray
-    $filesToBackup = @(""SaveVault.exe"", ""version.json"", ""changelogs.json"", ""CHANGELOG.md"", ""README.md"")
+    $filesToBackup = @(""Omnisave.exe"", ""version.json"", ""changelogs.json"", ""CHANGELOG.md"", ""README.md"")
     foreach ($file in $filesToBackup) {{
         $srcFile = Join-Path $appDir $file
         if (Test-Path $srcFile) {{
@@ -651,11 +656,11 @@ if ($backupFailed) {{
 
     try {{
         Add-Type -AssemblyName System.Windows.Forms
-        [System.Windows.Forms.MessageBox]::Show(""Khong the tao ban sao luu du phong truoc khi cap nhat. Qua trinh cap nhat da duoc huy an toan de bao ve ung dung."", ""SaveVault - Huy Cap Nhat"", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        [System.Windows.Forms.MessageBox]::Show(""Khong the tao ban sao luu du phong truoc khi cap nhat. Qua trinh cap nhat da duoc huy an toan de bao ve ung dung."", ""Omnisave - Huy Cap Nhat"", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
     }} catch {{ }}
 
     Start-Sleep -Seconds 5
-    $launcherPath = Join-Path $appDir ""SaveVault.exe""
+    $launcherPath = Join-Path $appDir ""Omnisave.exe""
     if (Test-Path $launcherPath) {{
         Start-Process $launcherPath -WorkingDirectory $appDir
     }}
@@ -687,7 +692,7 @@ try {{
 
     # 2. Cap nhat launcher va cac tep phat hanh
     Write-Host ""      • Cap nhat launcher va tai nguyen phat hanh... "" -NoNewline -ForegroundColor Gray
-    $filesToUpdate = @(""SaveVault.exe"", ""version.json"", ""changelogs.json"", ""CHANGELOG.md"", ""README.md"")
+    $filesToUpdate = @(""Omnisave.exe"", ""version.json"", ""changelogs.json"", ""CHANGELOG.md"", ""README.md"")
     foreach ($file in $filesToUpdate) {{
         $src = Join-Path $extractedSourceDir $file
         if (Test-Path $src) {{
@@ -725,7 +730,7 @@ if ($updateFailed) {{
             Copy-Item -Path ""$backupApp\*"" -Destination $targetApp -Recurse -Force -ErrorAction SilentlyContinue
         }}
 
-        $filesToRestore = @(""SaveVault.exe"", ""version.json"", ""changelogs.json"", ""CHANGELOG.md"", ""README.md"")
+        $filesToRestore = @(""Omnisave.exe"", ""version.json"", ""changelogs.json"", ""CHANGELOG.md"", ""README.md"")
         foreach ($file in $filesToRestore) {{
             $src = Join-Path $backupDir $file
             if (Test-Path $src) {{
@@ -745,14 +750,14 @@ if ($updateFailed) {{
 
     try {{
         Add-Type -AssemblyName System.Windows.Forms
-        [System.Windows.Forms.MessageBox]::Show(""Qua trinh cap nhat SaveVault gap su co khi sao chep tep tin. He thong da tu dong hoan tac (rollback) va khoi phuc an toan phien ban truoc do. Ung dung se khoi dong lai ngay bay gio."", ""SaveVault - Tu Dong Hoan Tac (Rollback)"", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+        [System.Windows.Forms.MessageBox]::Show(""Qua trinh cap nhat Omnisave gap su co khi sao chep tep tin. He thong da tu dong hoan tac (rollback) va khoi phuc an toan phien ban truoc do. Ung dung se khoi dong lai ngay bay gio."", ""Omnisave - Tu Dong Hoan Tac (Rollback)"", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
     }} catch {{ }}
 
     Write-Host """"
     Write-Host "" [OK] Hoan tac thanh cong! Dang khoi dong lai phien ban an toan..."" -ForegroundColor Green
     Start-Sleep -Seconds 5
 
-    $launcherPath = Join-Path $appDir ""SaveVault.exe""
+    $launcherPath = Join-Path $appDir ""Omnisave.exe""
     if (Test-Path $launcherPath) {{
         Start-Process $launcherPath -WorkingDirectory $appDir
     }}
@@ -792,10 +797,10 @@ Start-Sleep -Seconds 3
 # -------------------------------------------------------------------
 Write-Host """"
 Write-Host ""==================================================================="" -ForegroundColor Green
-Write-Host "" [THANH CONG] CAP NHAT HOAN TAT LEN PHIEN BAN SAVEVAULT v$targetVersion!   "" -ForegroundColor Green
+Write-Host "" [THANH CONG] CAP NHAT HOAN TAT LEN PHIEN BAN Omnisave v$targetVersion!   "" -ForegroundColor Green
 Write-Host ""==================================================================="" -ForegroundColor Green
 Write-Host """"
-Write-Host "" Ung dung SaveVault se tu dong khoi dong lai sau 5 giay:"" -ForegroundColor White
+Write-Host "" Ung dung Omnisave se tu dong khoi dong lai sau 5 giay:"" -ForegroundColor White
 Write-Host """"
 
 for ($i = 5; $i -ge 1; $i--) {{
@@ -808,14 +813,14 @@ for ($i = 5; $i -ge 1; $i--) {{
 }}
 
 Write-Host """"
-Write-Host "" [>>] DANG KHOI CHAY SAVEVAULT v$targetVersion..."" -ForegroundColor Green
+Write-Host "" [>>] DANG KHOI CHAY Omnisave v$targetVersion..."" -ForegroundColor Green
 Start-Sleep -Milliseconds 500
 
-$launcherPath = Join-Path $appDir ""SaveVault.exe""
+$launcherPath = Join-Path $appDir ""Omnisave.exe""
 if (Test-Path $launcherPath) {{
     Start-Process $launcherPath -WorkingDirectory $appDir
 }} else {{
-    $appExe = Join-Path $appDir ""app\SaveVault.exe""
+    $appExe = Join-Path $appDir ""app\Omnisave.exe""
     if (Test-Path $appExe) {{
         Start-Process $appExe -WorkingDirectory $appDir
     }}
@@ -826,12 +831,12 @@ exit 0
         // 2. Tạo wrapper script update_runner.bat để kích hoạt PowerShell có quyền Bypass
         var batContent = $@"@echo off
 chcp 65001 >nul
-title SaveVault Auto-Updater - Cap Nhat Phien Ban Moi
+title Omnisave Auto-Updater - Cap Nhat Phien Ban Moi
 cd /d ""%~dp0""
 
 REM Parameters: currentPid = {targetProcessId}, targetVersion = {targetVersion}
 REM Flags: update_error.flag, update_success.flag, update_rollback.flag
-REM Procedures: BACKUP_FAILED, UPDATE_FAILED, backup_prev, rollback_procedure, xcopy, SaveVault.exe
+REM Procedures: BACKUP_FAILED, UPDATE_FAILED, backup_prev, rollback_procedure, xcopy, Omnisave.exe
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""%~dp0update_runner.ps1""
 set PS_EXIT=%ERRORLEVEL%
@@ -853,11 +858,38 @@ exit /b %PS_EXIT%
             try { File.Delete(legacyCmdPath); } catch { }
         }
 
+        var currentTraceId = LoggingService.CurrentTraceId;
+        if (!string.IsNullOrEmpty(currentTraceId))
+        {
+            try { File.WriteAllText(Path.Combine(AutoUpdateDirectory, "update_trace.txt"), currentTraceId); } catch { }
+        }
+
         var utf8WithBom = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
         File.WriteAllText(ps1Path, ps1Content, utf8WithBom);
         File.WriteAllText(batPath, batContent, utf8WithBom);
 
         return batPath;
+    }
+
+    private string? GetSavedTraceId()
+    {
+        var flagPath = Path.Combine(AutoUpdateDirectory, "update_trace.txt");
+        if (!File.Exists(flagPath)) flagPath = Path.Combine(TempDirectory, "update_trace.txt");
+        if (File.Exists(flagPath))
+        {
+            try { return File.ReadAllText(flagPath, System.Text.Encoding.UTF8).Trim(); } catch { }
+        }
+        return null;
+    }
+
+    private void CleanupSavedTraceId()
+    {
+        var flagPath = Path.Combine(AutoUpdateDirectory, "update_trace.txt");
+        if (!File.Exists(flagPath)) flagPath = Path.Combine(TempDirectory, "update_trace.txt");
+        if (File.Exists(flagPath))
+        {
+            try { File.Delete(flagPath); } catch { }
+        }
     }
 
     /// <summary>
@@ -866,6 +898,7 @@ exit /b %PS_EXIT%
     /// </summary>
     public bool HasUpdateRollbackFlag(out string rollbackMessage)
     {
+        using var trace = LoggingService.BeginTrace("AutoUpdate_CheckRollbackFlag", null, GetSavedTraceId());
         rollbackMessage = string.Empty;
         var flagPath = Path.Combine(AutoUpdateDirectory, "update_rollback.flag");
         if (!File.Exists(flagPath)) flagPath = Path.Combine(TempDirectory, "update_rollback.flag");
@@ -875,6 +908,7 @@ exit /b %PS_EXIT%
             {
                 rollbackMessage = File.ReadAllText(flagPath, System.Text.Encoding.UTF8).Trim();
                 try { File.Delete(flagPath); } catch { }
+                CleanupSavedTraceId();
                 return true;
             }
             catch (Exception ex)
@@ -891,6 +925,7 @@ exit /b %PS_EXIT%
     /// </summary>
     public bool HasUpdateErrorFlag(out string errorMessage)
     {
+        using var trace = LoggingService.BeginTrace("AutoUpdate_CheckErrorFlag", null, GetSavedTraceId());
         errorMessage = string.Empty;
         var flagPath = Path.Combine(AutoUpdateDirectory, "update_error.flag");
         if (!File.Exists(flagPath)) flagPath = Path.Combine(TempDirectory, "update_error.flag");
@@ -900,6 +935,7 @@ exit /b %PS_EXIT%
             {
                 errorMessage = File.ReadAllText(flagPath, System.Text.Encoding.UTF8).Trim();
                 try { File.Delete(flagPath); } catch { }
+                CleanupSavedTraceId();
                 return true;
             }
             catch (Exception ex)
@@ -916,6 +952,7 @@ exit /b %PS_EXIT%
     /// </summary>
     public bool HasUpdateSuccessFlag(out string version)
     {
+        using var trace = LoggingService.BeginTrace("AutoUpdate_CheckSuccessFlag", null, GetSavedTraceId());
         version = string.Empty;
         var flagPath = Path.Combine(AutoUpdateDirectory, "update_success.flag");
         if (!File.Exists(flagPath)) flagPath = Path.Combine(TempDirectory, "update_success.flag");
@@ -925,6 +962,7 @@ exit /b %PS_EXIT%
             {
                 version = File.ReadAllText(flagPath, System.Text.Encoding.UTF8).Trim();
                 try { File.Delete(flagPath); } catch { }
+                CleanupSavedTraceId();
                 return true;
             }
             catch (Exception ex)
@@ -940,6 +978,7 @@ exit /b %PS_EXIT%
     /// </summary>
     public void LaunchRunnerScript(string scriptPath)
     {
+        using var trace = LoggingService.BeginTrace("AutoUpdate_LaunchRunnerScript", new { scriptPath });
         var psi = new ProcessStartInfo
         {
             FileName = "cmd.exe",

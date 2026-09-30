@@ -84,20 +84,20 @@ public static class LoggingService
 
                 Directory.CreateDirectory(_logDirectory);
 
-                // Tên file dạng: data/logs/yyyy-MM.json
-                // Khi vượt quá 5MB, Serilog tự động cuộn (roll) thành yyyy-MM_001.json, yyyy-MM_002.json,...
-                var currentMonthKey = DateTime.Now.ToString("yyyy-MM");
-                var logFilePath = Path.Combine(_logDirectory, $"{currentMonthKey}.json");
+                // Cấu hình file log với tên base là omnisave-log.json
+                // Serilog sẽ tự động thêm Hậu tố thời gian (theo tháng) và đánh số thứ tự khi vượt quá dung lượng.
+                var logFilePath = Path.Combine(_logDirectory, "omnisave-log.json");
 
                 Log.Logger = new LoggerConfiguration()
                     .MinimumLevel.Debug()
                     .Enrich.FromLogContext()
-                    .Enrich.WithProperty("Application", "SaveVault")
+                    .Enrich.WithProperty("Application", "Omnisave")
                     .Enrich.WithProperty("Environment", "Production")
                     .WriteTo.File(
                         formatter: new JsonFormatter(renderMessage: true),
                         path: logFilePath,
-                        fileSizeLimitBytes: 5 * 1024 * 1024, // 5 MB
+                        rollingInterval: RollingInterval.Month,
+                        fileSizeLimitBytes: 100 * 1024 * 1024, // 100 MB
                         rollOnFileSizeLimit: true,
                         shared: true,
                         flushToDiskInterval: TimeSpan.FromSeconds(1),
@@ -105,7 +105,7 @@ public static class LoggingService
                     .CreateLogger();
 
                 _isInitialized = true;
-                Log.Information("=== [SaveVault] Khởi động hệ thống Logging thành công tại {LogDirectory} ===", _logDirectory);
+                Log.Information("=== [Omnisave] Khởi động hệ thống Logging thành công tại {LogDirectory} ===", _logDirectory);
             }
             catch (Exception ex)
             {
@@ -180,7 +180,7 @@ public static class LoggingService
     {
         try
         {
-            Log.Information("=== [SaveVault] Tắt hệ thống Logging - Đóng và đẩy toàn bộ log ra đĩa ===");
+            Log.Information("=== [Omnisave] Tắt hệ thống Logging - Đóng và đẩy toàn bộ log ra đĩa ===");
             Log.CloseAndFlush();
         }
         catch { }
@@ -221,5 +221,80 @@ public static class LoggingService
             }
         }
         catch { }
+    }
+
+    public static string? CurrentTraceId => ActionTraceScope.CurrentTraceId;
+
+    /// <summary>
+    /// Bắt đầu một vòng đời Trace để theo dõi log. Tất cả các log nằm trong scope trả về 
+    /// sẽ tự động có thuộc tính TraceId. Có thể truyền forceTraceId để khôi phục trace từ file tạm.
+    /// </summary>
+    public static IDisposable BeginTrace(string actionName, object? details = null, string? forceTraceId = null)
+    {
+        EnsureInitialized();
+        return new ActionTraceScope(actionName, details, forceTraceId);
+    }
+
+    /// <summary>
+    /// Lớp quản lý vòng đời của một Trace, tự động đẩy TraceId vào LogContext và dọn dẹp khi kết thúc.
+    /// Kèm theo đo lường thời gian thực thi (Stopwatch).
+    /// </summary>
+    private class ActionTraceScope : IDisposable
+    {
+        private static readonly System.Threading.AsyncLocal<string?> _currentTraceId = new();
+        public static string? CurrentTraceId => _currentTraceId.Value;
+
+        private readonly string _actionName;
+        private readonly IDisposable _logContext;
+        private readonly System.Diagnostics.Stopwatch _stopwatch;
+        private readonly bool _isRootScope;
+
+        public ActionTraceScope(string actionName, object? details = null, string? forceTraceId = null)
+        {
+            _actionName = actionName;
+            string traceId;
+
+            if (!string.IsNullOrEmpty(forceTraceId))
+            {
+                traceId = forceTraceId;
+                _currentTraceId.Value = traceId;
+                _isRootScope = true;
+            }
+            else if (string.IsNullOrEmpty(_currentTraceId.Value))
+            {
+                traceId = Guid.NewGuid().ToString("N");
+                _currentTraceId.Value = traceId;
+                _isRootScope = true;
+            }
+            else
+            {
+                traceId = _currentTraceId.Value;
+                _isRootScope = false;
+            }
+            
+            // Đẩy TraceId vào LogContext
+            _logContext = Serilog.Context.LogContext.PushProperty("TraceId", traceId);
+            
+            _stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            
+            // Ghi log bắt đầu hành động với TraceId
+            LoggingService.Info($"[{_actionName}_Started]", details ?? new { });
+        }
+
+        public void Dispose()
+        {
+            _stopwatch.Stop();
+            // Ghi log kết thúc với thời gian chạy
+            LoggingService.Info($"[{_actionName}_Completed]", new { ElapsedMs = _stopwatch.ElapsedMilliseconds });
+            
+            // Hủy bỏ context (xóa push property khỏi Serilog)
+            _logContext.Dispose();
+
+            // Nếu đây là gốc khởi tạo TraceId, xóa nó khỏi AsyncLocal để dọn dẹp
+            if (_isRootScope)
+            {
+                _currentTraceId.Value = null;
+            }
+        }
     }
 }

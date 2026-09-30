@@ -55,11 +55,11 @@ public class DatabaseService
         var baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var dirInfo = new DirectoryInfo(baseDir);
 
-        // Trường hợp chạy từ thư mục app/ của gói xuất bản phân cấp (SaveVault/app/)
+        // Trường hợp chạy từ thư mục app/ của gói xuất bản phân cấp (Omnisave/app/)
         if (dirInfo.Name.Equals("app", StringComparison.OrdinalIgnoreCase) && dirInfo.Parent != null)
         {
             var parent = dirInfo.Parent;
-            if (File.Exists(Path.Combine(parent.FullName, "SaveVault.exe")) ||
+            if (File.Exists(Path.Combine(parent.FullName, "Omnisave.exe")) ||
                 Directory.Exists(Path.Combine(parent.FullName, "data")))
             {
                 return parent.FullName;

@@ -16,13 +16,13 @@ static class Program
         try
         {
             var baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            var targetExe = Path.Combine(baseDir, "app", "SaveVault.exe");
+            var targetExe = Path.Combine(baseDir, "app", "Omnisave.exe");
 
             if (!File.Exists(targetExe))
             {
                 MessageBox(IntPtr.Zero,
                     $"Không tìm thấy tệp thực thi chính của ứng dụng tại:\n{targetExe}\n\nVui lòng giải nén đầy đủ hoặc kiểm tra lại thư mục cài đặt.",
-                    "SaveVault - Lỗi Khởi Động", 0x10); // MB_ICONERROR
+                    "Omnisave - Lỗi Khởi Động", 0x10); // MB_ICONERROR
                 return;
             }
 
@@ -43,8 +43,8 @@ static class Program
         catch (Exception ex)
         {
             MessageBox(IntPtr.Zero,
-                $"Có lỗi khi khởi chạy SaveVault:\n{ex.Message}",
-                "SaveVault - Lỗi Khởi Động", 0x10);
+                $"Có lỗi khi khởi chạy Omnisave:\n{ex.Message}",
+                "Omnisave - Lỗi Khởi Động", 0x10);
         }
     }
 }

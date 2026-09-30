@@ -17,7 +17,7 @@ public partial class App : Application
     {
         var window = new Window(new MainPage())
         {
-            Title = "SaveVault - Game Save Backup Tool (.NET 10 & SQLite & Cloud Sync)",
+            Title = "Omnisave - Game Save Backup Tool (.NET 10 & SQLite & Cloud Sync)",
             Width = WindowWidth,
             Height = WindowHeight,
             MinimumWidth = WindowWidth,

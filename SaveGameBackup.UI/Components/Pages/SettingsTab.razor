@@ -3,7 +3,7 @@
 @inject INativeDialogService NativeDialog
 @implements IDisposable
 
-<div class="h-full flex flex-col p-5 space-y-4 overflow-hidden relative select-none">
+<div class="h-full flex flex-col p-5 space-y-4 overflow-hidden relative select-text">
     <!-- Floating Success Toast Notification -->
     @if (ShowSavedToast)
     {
@@ -27,7 +27,7 @@
             <div>
                 <div class="flex items-center space-x-2">
                     <h2 class="text-[15px] font-bold text-white tracking-wide">CÀI ĐẶT HỆ THỐNG &amp; ĐỒNG BỘ</h2>
-                    <span class="px-2 py-0.5 text-[10px] font-semibold bg-blue-950/80 text-blue-300 border border-blue-500/30 rounded-md">SaveVault Core</span>
+                    <span class="px-2 py-0.5 text-[10px] font-semibold bg-blue-950/80 text-blue-300 border border-blue-500/30 rounded-md">Omnisave Core</span>
                 </div>
                 <div class="text-[11.5px] text-slate-400 mt-0.5">
                     Quản lý thư mục lưu trữ, tài khoản Cloud REST API, SQLite database và nhật ký hoạt động.
@@ -1181,21 +1181,33 @@
 
             var targetFile = files[0];
             var parsed = new List<LogEntryItem>();
+            var latestLines = new List<string>();
 
             using (var fs = new FileStream(targetFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            using (var reader = new StreamReader(fs))
             {
-                var lines = new List<string>();
-                string? line;
-                while ((line = reader.ReadLine()) != null)
+                if (fs.Length > 0)
                 {
-                    if (!string.IsNullOrWhiteSpace(line))
-                        lines.Add(line);
+                    // Lấy tối đa khoảng 256KB cuối file để tìm 50 dòng cuối (tránh load cả file 100MB vào RAM)
+                    long readSize = Math.Min(fs.Length, 256 * 1024);
+                    fs.Seek(-readSize, SeekOrigin.End);
+                    
+                    using (var reader = new StreamReader(fs))
+                    {
+                        var content = reader.ReadToEnd();
+                        var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        
+                        // Bỏ qua dòng đầu tiên vì có thể bị cắt ngang cấu trúc JSON do Seek()
+                        if (lines.Length > 1 && readSize < fs.Length)
+                        {
+                            lines = lines.Skip(1).ToArray();
+                        }
+                        
+                        latestLines = lines.TakeLast(50).Reverse().ToList();
+                    }
                 }
+            }
 
-                var latestLines = lines.TakeLast(50).Reverse();
-
-                foreach (var rawLine in latestLines)
+            foreach (var rawLine in latestLines)
                 {
                     try
                     {
@@ -1226,7 +1238,6 @@
                         parsed.Add(new LogEntryItem(DateTime.Now, "Info", rawLine));
                     }
                 }
-            }
 
             RecentLogs = parsed;
         }

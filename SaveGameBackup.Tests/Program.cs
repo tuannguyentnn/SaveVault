@@ -206,8 +206,8 @@ try
     Console.WriteLine("\n[7] Testing Project Root, Default DB Path & AppConfigService");
     var projectRoot = DatabaseService.GetDefaultProjectRoot();
     Console.WriteLine($"  ✓ Detected Project Root: {projectRoot}");
-    if (!File.Exists(Path.Combine(projectRoot, "SaveVault.slnx")) && !File.Exists(Path.Combine(projectRoot, "LaunchApp.bat")))
-        throw new Exception("Detected project root does not contain SaveVault solution files!");
+    if (!File.Exists(Path.Combine(projectRoot, "Omnisave.slnx")) && !File.Exists(Path.Combine(projectRoot, "LaunchApp.bat")))
+        throw new Exception("Detected project root does not contain Omnisave solution files!");
 
     var defaultDbPath = Path.Combine(projectRoot, "data", "database", "save_backup.db");
     Console.WriteLine($"  ✓ Default DB Path: {defaultDbPath}");
@@ -1118,12 +1118,12 @@ try
         throw new Exception($"FAIL: LudusaviManifestService preloaded catalog too small ({ludusavi.TotalGamesCount} games)!");
     }
 
-    var convertedPath = LudusaviManifestService.ConvertLudusaviPathToSaveVaultPattern("<winLocalAppData>/Pal/Saved/SaveGames");
+    var convertedPath = LudusaviManifestService.ConvertLudusaviPathToOmnisavePattern("<winLocalAppData>/Pal/Saved/SaveGames");
     if (convertedPath != @"{{p|localappdata}}\Pal\Saved\SaveGames")
     {
         throw new Exception($"FAIL: Ludusavi path conversion failed! Got: {convertedPath}");
     }
-    Console.WriteLine($"  ✓ ConvertLudusaviPathToSaveVaultPattern verified OK: {convertedPath}");
+    Console.WriteLine($"  ✓ ConvertLudusaviPathToOmnisavePattern verified OK: {convertedPath}");
 
     var hogwartsInfo = ludusavi.CreateGameSaveInfo("Hogwarts Legacy");
     if (hogwartsInfo == null || !hogwartsInfo.RawPatterns.Any(p => p.Contains("Phoenix")))
@@ -1919,7 +1919,7 @@ try
     if (!File.Exists(runnerScriptPath))
         throw new Exception("FAIL: Runner script was not generated!");
     var scriptContent = File.ReadAllText(runnerScriptPath);
-    if (!scriptContent.Contains("xcopy") || !scriptContent.Contains("SaveVault.exe") || !scriptContent.Contains(currentPid.ToString()))
+    if (!scriptContent.Contains("xcopy") || !scriptContent.Contains("Omnisave.exe") || !scriptContent.Contains(currentPid.ToString()))
         throw new Exception("FAIL: Runner script content is missing expected commands or PID!");
     Console.WriteLine("  ✓ Runner script generated cleanly with xcopy and process supervision!");
 
@@ -2043,7 +2043,7 @@ try
     var testHistoryFile = new DatabaseCloudHistoryFile();
     var testEntry = new DatabaseCloudBackupEntry
     {
-        FileName = "savevault_db_backup_20260929_120000.zip",
+        FileName = "Omnisave_db_backup_20260929_120000.zip",
         FileSizeBytes = 123456,
         GameCount = 1,
         SnapshotCount = 1,
@@ -2114,7 +2114,7 @@ try
     {
         var entry = new DatabaseCloudBackupEntry
         {
-            FileName = $"savevault_db_backup_{i}.zip",
+            FileName = $"Omnisave_db_backup_{i}.zip",
             BackupTime = DateTime.UtcNow.AddHours(-i),
             FileSizeBytes = 1000 * i,
             GameCount = 1,
@@ -2146,8 +2146,8 @@ try
     if (mockCloudForRetention.LastDeletedFileId != "mock-file-id-6")
         throw new Exception($"FAIL: Oldest file (mock-file-id-6) was not deleted! Deleted: {mockCloudForRetention.LastDeletedFileId}");
 
-    if (retentionHistory.Entries.Any(e => e.FileName == "savevault_db_backup_6.zip"))
-        throw new Exception("FAIL: Oldest entry (savevault_db_backup_6.zip) still remains in history.Entries!");
+    if (retentionHistory.Entries.Any(e => e.FileName == "Omnisave_db_backup_6.zip"))
+        throw new Exception("FAIL: Oldest entry (Omnisave_db_backup_6.zip) still remains in history.Entries!");
 
     Console.WriteLine("  ✓ Strict 5-backup Retention Policy verified: pruned to 5, deleted oldest from cloud provider and purged from history!");
 

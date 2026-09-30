@@ -13,7 +13,7 @@ public static class SecurityHelper
 {
     private const string EncryptedPrefix = "ENC:v1:";
     // Khóa nội bộ ứng dụng làm nền tảng kết hợp với Salt ngẫu nhiên của từng giá trị
-    private static readonly byte[] MasterSecret = Encoding.UTF8.GetBytes("SaveVault_Secure_Credential_Engine_2026_@Key!");
+    private static readonly byte[] MasterSecret = Encoding.UTF8.GetBytes("Omnisave_Secure_Credential_Engine_2026_@Key!");
     private const int Iterations = 100_000;
     private const int SaltSize = 16;   // 128 bit salt
     private const int KeySize = 32;    // 256 bit key

@@ -151,14 +151,16 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             if (LudusaviManifestService.IsUpdateDue())
             {
                 await Task.Delay(3000);
-                int count = await _ludusaviService.CheckAndAutoSyncIfDueAsync();
-                if (count > 0)
-                {
-                    OnPropertyChanged(nameof(CatalogGamesCount));
-                    OnPropertyChanged(nameof(LastLudusaviSyncDate));
-                    int days = LudusaviAutoUpdateDays > 0 ? LudusaviAutoUpdateDays : 15;
-                    SyncCatalogStatus = $"Tự động cập nhật thành công {count:N0} game từ GitHub (chu kỳ {days} ngày).";
-                }
+                
+                int days = LudusaviAutoUpdateDays > 0 ? LudusaviAutoUpdateDays : 15;
+                _dialogService.ShowConfirm(
+                    "Cập Nhật Danh Mục Game",
+                    $"Đã đến thời hạn tự động cập nhật danh mục game mới nhất từ Ludusavi (chu kỳ {days} ngày). Bạn có muốn tải xuống và cập nhật bây giờ không?",
+                    "Cập Nhật Ngay",
+                    async () =>
+                    {
+                        await ExecuteSyncCatalogAsync();
+                    });
             }
         }
         catch (Exception ex)

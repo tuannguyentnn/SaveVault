@@ -9,11 +9,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableDefaultCssItems>false</EnableDefaultCssItems>
     <Nullable>enable</Nullable>
-    <AssemblyName>SaveVault</AssemblyName>
+    <AssemblyName>Omnisave</AssemblyName>
 
     <!-- Display Name & App Identifiers -->
-    <ApplicationTitle>SaveVault</ApplicationTitle>
-    <ApplicationId>com.savevault.gamesavebackup</ApplicationId>
+    <ApplicationTitle>Omnisave</ApplicationTitle>
+    <ApplicationId>com.Omnisave.gamesavebackup</ApplicationId>
+    <ApplicationIcon>Resources\AppIcon\appicon.ico</ApplicationIcon>
     <!-- Run unpackaged as standard .exe without MSIX requirement -->
     <WindowsPackageType>None</WindowsPackageType>
 
@@ -23,10 +24,10 @@
 
   <ItemGroup>
     <!-- App Icon -->
-    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#2563EB" />
+    <MauiIcon Include="Resources\AppIcon\appicon.png" />
 
     <!-- Splash Screen -->
-    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#0B0F19" BaseSize="128,128" />
+    <MauiSplashScreen Include="Resources\AppIcon\appicon.png" Color="#0B0F19" BaseSize="128,128" />
 
     <!-- Custom Fonts -->
     <MauiFont Include="Resources\Fonts\*" />

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hướng Dẫn Cấu Hình Google Drive Cho SaveVault (A - Z)</title>
+    <title>Hướng Dẫn Cấu Hình Google Drive Cho Omnisave (A - Z)</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -333,7 +333,7 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1>Hướng Dẫn Cấu Hình Google Drive Cho SaveVault</h1>
+            <h1>Hướng Dẫn Cấu Hình Google Drive Cho Omnisave</h1>
             <p>Từng bước lấy OAuth Client ID & Client Secret chuẩn Desktop App (Cập nhật giao diện Google Cloud mới nhất)</p>
         </div>
 
@@ -348,7 +348,7 @@
                 <div style="color: #F472B6;"><b>Client Secret:</b> <span style="color:#FFF;">GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxxxxxx</span></div>
             </div>
             <p style="font-size: 13px; color: #94A3B8; margin-top: 10px;">
-                👉 Giờ bạn chỉ cần mở <b>SaveVault ➔ Tab Cài đặt</b> và làm theo <b>Bước 7</b> bên dưới để đăng nhập!
+                👉 Giờ bạn chỉ cần mở <b>Omnisave ➔ Tab Cài đặt</b> và làm theo <b>Bước 7</b> bên dưới để đăng nhập!
             </p>
         </div>
 
@@ -374,7 +374,7 @@
                         <span style="color: #FCD34D;">Google Cloud hiện tại có chính sách bảo mật bắt buộc:</span> Khi bấm tạo, Google sẽ yêu cầu bạn hoàn tất cài đặt bảo mật 2 lớp (MFA qua số điện thoại hoặc app Google Authenticator) rồi mới cho phép tạo tài nguyên. Hãy làm theo hướng dẫn trên màn hình của Google.
                     </li>
                     <li>
-                        <b>Nhập tên dự án:</b> Sau khi hoàn tất xác thực 2FA, màn hình <i>New Project</i> sẽ mở ra ➔ Điền tên dự án là <b>SaveVault</b> vào ô <i>Project name</i> ➔ Bấm nút <b>Create (Tạo)</b> và đợi vài giây.
+                        <b>Nhập tên dự án:</b> Sau khi hoàn tất xác thực 2FA, màn hình <i>New Project</i> sẽ mở ra ➔ Điền tên dự án là <b>Omnisave</b> vào ô <i>Project name</i> ➔ Bấm nút <b>Create (Tạo)</b> và đợi vài giây.
                     </li>
                 </ol>
             </div>
@@ -441,7 +441,7 @@
                             </div>
                             <div class="input-group" style="margin-bottom: 10px;">
                                 <label style="font-size: 11px; color: #9AA0A6; margin-bottom: 2px;">Project name *</label>
-                                <input style="width: 100%; background: #121316; border: 1px solid #5F6368; color: #E8EAED; padding: 6px 10px; border-radius: 4px; font-size: 12px;" value="SaveVault" readonly>
+                                <input style="width: 100%; background: #121316; border: 1px solid #5F6368; color: #E8EAED; padding: 6px 10px; border-radius: 4px; font-size: 12px;" value="Omnisave" readonly>
                             </div>
                             <button style="background: #1A73E8; color: white; border: none; border-radius: 4px; padding: 6px 14px; font-size: 12px; font-weight: 600;">
                                 Create (Tạo)
@@ -504,7 +504,7 @@
                     <li>
                         <b>Mục 1 - App Information:</b>
                         <ul>
-                            <li><b>App name *:</b> Nhập <code>SaveVault</code>.</li>
+                            <li><b>App name *:</b> Nhập <code>Omnisave</code>.</li>
                             <li><b>User support email *:</b> Nhấp vào ô chọn email Google của bạn.</li>
                             <li>Bấm nút <b>Next</b>.</li>
                         </ul>
@@ -565,7 +565,7 @@
                             <div style="margin-bottom: 14px; border-left: 2px solid #8AB4F8; padding-left: 12px;">
                                 <div style="font-weight: 600; font-size: 13px; color: #8AB4F8;">1. App Information</div>
                                 <div style="display: flex; gap: 10px; margin-top: 6px;">
-                                    <input style="background: #121316; border: 1px solid #5F6368; color: #FFF; padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 160px;" value="SaveVault" readonly>
+                                    <input style="background: #121316; border: 1px solid #5F6368; color: #FFF; padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 160px;" value="Omnisave" readonly>
                                     <input style="background: #121316; border: 1px solid #5F6368; color: #9AA0A6; padding: 4px 8px; border-radius: 4px; font-size: 12px; width: 190px;" value="email_cua_ban@gmail.com" readonly>
                                 </div>
                             </div>
@@ -620,7 +620,7 @@
                     <div>
                         <b>Tại sao đây là bước quan trọng nhất?</b><br>
                         Vì app cá nhân đang ở trạng thái <b>"Testing"</b>. Google chỉ cho phép tối đa 100 email được thêm vào danh sách Test Users đăng nhập. Nếu <b>KHÔNG</b> thêm email của bạn, khi login app sẽ bị Google từ chối ngay với lỗi: <br>
-                        <code>Error 403: access_denied - SaveVault has not completed the Google verification process.</code>
+                        <code>Error 403: access_denied - Omnisave has not completed the Google verification process.</code>
                     </div>
                 </div>
                 <ol style="margin-top: 16px;">
@@ -734,7 +734,7 @@
                                 <span style="color: #F87171;">⚠️ TUYỆT ĐỐI KHÔNG CHỌN Web application (sẽ bị lỗi cổng Redirect URI).</span>
                             </li>
                             <li>
-                                <b>Name *:</b> Nhập tên định danh là <code>SaveVault Desktop</code>.
+                                <b>Name *:</b> Nhập tên định danh là <code>Omnisave Desktop</code>.
                             </li>
                         </ul>
                     </li>
@@ -803,7 +803,7 @@
                                     Name *
                                 </label>
                                 <input style="width: 100%; background: #121316; border: 1px solid #5F6368; color: #FFF; padding: 7px 10px; border-radius: 4px; font-size: 12px;" 
-                                       value="SaveVault Desktop" readonly>
+                                       value="Omnisave Desktop" readonly>
                                 <div style="color: #9AA0A6; font-size: 10px; margin-top: 3px;">
                                     Tên định danh client trong console, không hiển thị cho người dùng cuối.
                                 </div>
@@ -924,7 +924,7 @@
                 </p>
                 <ol>
                     <li>
-                        <b>Mở chi tiết Client:</b> Ở menu bên trái, vào <b>Google Auth Platform ➔ 🪪 Clients</b> ➔ Bấm chuột vào dòng tên client <b>SaveVault Desktop</b>.
+                        <b>Mở chi tiết Client:</b> Ở menu bên trái, vào <b>Google Auth Platform ➔ 🪪 Clients</b> ➔ Bấm chuột vào dòng tên client <b>Omnisave Desktop</b>.
                     </li>
                     <li>
                         <b>Lấy lại Client ID:</b> Nhìn sang khung <b>Additional information</b> bên phải ➔ Sao chép toàn bộ chuỗi tại dòng <b>Client ID</b>.
@@ -936,7 +936,7 @@
                                 <b>Cách 1 (Ưu tiên thử trước):</b> Tại dòng <b>Client secret ****xxxx</b>, bấm vào biểu tượng <b>Copy ❐</b> hoặc nút <b>Tải về JSON ⬇</b> cạnh nó. Nếu Google vẫn cho copy chuỗi gốc hoặc tải được file JSON chứa mã bí mật ➔ <b>Lấy dùng lại luôn, không cần tạo mới!</b>
                             </li>
                             <li>
-                                <b>Cách 2 (Nếu không copy được):</b> Nếu bấm copy không ra mã bí mật, hãy bấm vào nút <b>+ Add secret</b> ở ngay phía dưới. Google sẽ lập tức cấp thêm 1 Client Secret mới toanh hiển thị đầy đủ chuỗi để bạn copy dán vào SaveVault.
+                                <b>Cách 2 (Nếu không copy được):</b> Nếu bấm copy không ra mã bí mật, hãy bấm vào nút <b>+ Add secret</b> ở ngay phía dưới. Google sẽ lập tức cấp thêm 1 Client Secret mới toanh hiển thị đầy đủ chuỗi để bạn copy dán vào Omnisave.
                             </li>
                         </ul>
                     </li>
@@ -977,7 +977,7 @@
                                 <!-- Left side: Name -->
                                 <div>
                                     <label style="font-size: 11px; color: #9AA0A6; display: block; margin-bottom: 4px;">Name *</label>
-                                    <input style="width: 100%; background: #121316; border: 1px solid #5F6368; color: #FFF; padding: 6px 8px; border-radius: 4px; font-size: 12px;" value="SaveVault Desktop" readonly>
+                                    <input style="width: 100%; background: #121316; border: 1px solid #5F6368; color: #FFF; padding: 6px 8px; border-radius: 4px; font-size: 12px;" value="Omnisave Desktop" readonly>
                                 </div>
 
                                 <!-- Right side: Additional info & Secrets -->
@@ -1036,11 +1036,11 @@
         <div class="step-card" style="border-color: #3B82F6;">
             <div class="step-header">
                 <div class="step-num" style="background: #10B981;">7</div>
-                <div class="step-title" style="color: #6EE7B7;">Dán Vào Ứng Dụng SaveVault & Đăng Nhập</div>
+                <div class="step-title" style="color: #6EE7B7;">Dán Vào Ứng Dụng Omnisave & Đăng Nhập</div>
             </div>
             <div class="instructions">
                 <ol>
-                    <li>Mở app <b>SaveVault</b> ➔ Chọn tab <b>Cài đặt (Settings)</b> ⚙️.</li>
+                    <li>Mở app <b>Omnisave</b> ➔ Chọn tab <b>Cài đặt (Settings)</b> ⚙️.</li>
                     <li>Ở khung <b>Google Drive REST API</b>:
                         <ul>
                             <li>Tích chọn vào ô: <b>☑ Tùy chỉnh Google Cloud API riêng (Dành cho Developer)</b>.</li>
@@ -1051,13 +1051,13 @@
                     </li>
                     <li>Bấm nút <b>🔗 Đăng Nhập OAuth</b> ➔ Trình duyệt sẽ tự động bật lên.</li>
                     <li>Đăng nhập tài khoản Google (đã thêm ở Bước 4). Nếu thấy màn hình cảnh báo <i>"Google hasn't verified this app"</i>:
-                        ➔ Bấm <b>Advanced (Nâng cao)</b> ➔ Bấm <b>Go to SaveVault (unsafe)</b> ➔ Bấm <b>Continue (Tiếp tục)</b> để cấp quyền.
+                        ➔ Bấm <b>Advanced (Nâng cao)</b> ➔ Bấm <b>Go to Omnisave (unsafe)</b> ➔ Bấm <b>Continue (Tiếp tục)</b> để cấp quyền.
                     </li>
                     <li>Sau khi hoàn tất, app sẽ hiện huy hiệu xanh: <span style="color: #10B981; font-weight: bold;">✓ Đã kết nối (email của bạn)</span>!</li>
                 </ol>
             </div>
 
-            <!-- SaveVault App Screenshot Mockup -->
+            <!-- Omnisave App Screenshot Mockup -->
             <div class="app-mockup">
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 12px; margin-bottom: 16px;">
                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -1118,7 +1118,7 @@
             <div style="margin-bottom: 14px;">
                 <h4 style="color: #FBBF24; font-size: 14px;">2. Màn hình cảnh báo "Google hasn't verified this app" (Màu xám/đỏ)</h4>
                 <p style="color: #CBD5E1; font-size: 13px;">
-                    👉 <b>Xử lý:</b> Đây là cảnh báo tiêu chuẩn của Google cho ứng dụng cá nhân tự tạo. Bạn chỉ cần bấm vào chữ <b>Advanced (Nâng cao)</b> ở góc dưới bên trái ➔ Bấm tiếp <b>Go to SaveVault (unsafe)</b> ➔ Bấm <b>Continue (Tiếp tục)</b> là xong.
+                    👉 <b>Xử lý:</b> Đây là cảnh báo tiêu chuẩn của Google cho ứng dụng cá nhân tự tạo. Bạn chỉ cần bấm vào chữ <b>Advanced (Nâng cao)</b> ở góc dưới bên trái ➔ Bấm tiếp <b>Go to Omnisave (unsafe)</b> ➔ Bấm <b>Continue (Tiếp tục)</b> là xong.
                 </p>
             </div>
 
@@ -1134,13 +1134,13 @@
                 <h4 style="color: #EC4899; font-size: 14px;">4. Lỗi "Google Drive API has not been used in project... or it is disabled"</h4>
                 <p style="color: #CBD5E1; font-size: 13px;">
                     👉 <b>Nguyên nhân:</b> Dự án Google Cloud của bạn chưa <b>Bật (Enable)</b> dịch vụ Google Drive API.<br>
-                    👉 <b>Cách sửa:</b> Bấm trực tiếp nút <b>🌐 Mở Liên Kết Trong Trình Duyệt ↗</b> trên bảng báo lỗi của SaveVault (hoặc truy cập đường link dẫn tới trang Enable API mà thông báo hiển thị) ➔ Nhấn nút xanh <b>ENABLE (Bật)</b>. Sau khi bật, đợi 1-2 phút cho Google cập nhật rồi thực hiện lại.
+                    👉 <b>Cách sửa:</b> Bấm trực tiếp nút <b>🌐 Mở Liên Kết Trong Trình Duyệt ↗</b> trên bảng báo lỗi của Omnisave (hoặc truy cập đường link dẫn tới trang Enable API mà thông báo hiển thị) ➔ Nhấn nút xanh <b>ENABLE (Bật)</b>. Sau khi bật, đợi 1-2 phút cho Google cập nhật rồi thực hiện lại.
                 </p>
             </div>
         </div>
 
         <div style="text-align: center; color: #64748B; font-size: 13px; margin-top: 30px;">
-            SaveVault Cloud Sync System &copy; 2026. Hướng dẫn thiết lập chuẩn OAuth 2.0 PKCE.
+            Omnisave Cloud Sync System &copy; 2026. Hướng dẫn thiết lập chuẩn OAuth 2.0 PKCE.
         </div>
     </div>
 </body>

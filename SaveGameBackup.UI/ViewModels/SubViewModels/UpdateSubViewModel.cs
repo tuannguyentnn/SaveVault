@@ -214,7 +214,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
 
                 _dialogService.ShowMessage(
                     "Cập Nhật Thất Bại - Đã Tự Động Khôi Phục",
-                    $"Quá trình cập nhật SaveVault lên phiên bản mới đã gặp sự cố khi sao chép tệp tin:\n\n{detailMsg}\n\nHệ thống đã tự động hoàn tác (rollback) và khôi phục an toàn phiên bản hiện tại (v{CurrentVersion}). Toàn bộ dữ liệu save và cấu hình của bạn không bị ảnh hưởng.\n\nBạn có thể thử kiểm tra và cập nhật lại sau từ tab Cài đặt.",
+                    $"Quá trình cập nhật Omnisave lên phiên bản mới đã gặp sự cố khi sao chép tệp tin:\n\n{detailMsg}\n\nHệ thống đã tự động hoàn tác (rollback) và khôi phục an toàn phiên bản hiện tại (v{CurrentVersion}). Toàn bộ dữ liệu save và cấu hình của bạn không bị ảnh hưởng.\n\nBạn có thể thử kiểm tra và cập nhật lại sau từ tab Cài đặt.",
                     "Warning");
                 return;
             }
@@ -228,7 +228,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
 
                 _dialogService.ShowMessage(
                     "Lỗi Cập Nhật Trước Đó",
-                    $"Quá trình cập nhật SaveVault ở lần chạy trước đã gặp sự cố:\n\n{detailMsg}\n\nBạn có thể thử kiểm tra và cập nhật lại từ tab Cài đặt.",
+                    $"Quá trình cập nhật Omnisave ở lần chạy trước đã gặp sự cố:\n\n{detailMsg}\n\nBạn có thể thử kiểm tra và cập nhật lại từ tab Cài đặt.",
                     "Error");
                 return;
             }
@@ -240,7 +240,7 @@ public class UpdateSubViewModel : INotifyPropertyChanged
 
                 _dialogService.ShowMessage(
                     "Cập Nhật Thành Công",
-                    $"Chúc mừng! SaveVault đã được cập nhật thành công lên phiên bản {verStr}!\n\nBạn có thể vào Cài đặt để xem thông tin chi tiết và lịch sử thay đổi.",
+                    $"Chúc mừng! Omnisave đã được cập nhật thành công lên phiên bản {verStr}!\n\nBạn có thể vào Cài đặt để xem thông tin chi tiết và lịch sử thay đổi.",
                     "Success");
             }
         }
@@ -360,6 +360,8 @@ public class UpdateSubViewModel : INotifyPropertyChanged
     public async Task ExecuteApplyUpdateAsync()
     {
         if (UpdateInfo == null) return;
+
+        using var trace = LoggingService.BeginTrace("AutoUpdate_ExecuteApplyUpdate", null);
 
         // PRE-UPDATE SAFETY CHECK: Kiểm tra có tiến trình quan trọng nào đang chạy không
         var (isBusy, reason) = _checkBusyFunc();

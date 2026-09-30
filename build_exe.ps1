@@ -5,7 +5,7 @@ param (
 )
 
 # ===================================================================
-#               SaveVault - Build & Package Distribution
+#               Omnisave - Build & Package Distribution
 # ===================================================================
 $ErrorActionPreference = "Stop"
 
@@ -112,7 +112,7 @@ function Update-ChangelogsHistory {
     $mdLines = [System.Collections.Generic.List[string]]::new()
     $mdLines.Add("# Nhat Ky Thay Doi (Changelog)")
     $mdLines.Add("")
-    $mdLines.Add("Tat ca cac thay doi va ban cap nhat dang chu y cua du an **SaveVault** duoc ghi lai tai tai lieu nay.")
+    $mdLines.Add("Tat ca cac thay doi va ban cap nhat dang chu y cua du an **Omnisave** duoc ghi lai tai tai lieu nay.")
     $mdLines.Add("")
 
     foreach ($entry in $historyList) {
@@ -139,7 +139,7 @@ function Update-ChangelogsHistory {
 $defaultPublishDir = Join-Path $scriptDir "publish"
 
 Write-Host "===================================================================" -ForegroundColor Cyan
-Write-Host "         SaveVault - Build & Package Distribution Script           " -ForegroundColor Cyan
+Write-Host "         Omnisave - Build & Package Distribution Script           " -ForegroundColor Cyan
 Write-Host "===================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "[THONG TIN] Phien ban ung dung (tu version.json): v$appVersion" -ForegroundColor Green
@@ -196,8 +196,8 @@ $propsContent = @"
     <AssemblyVersion>`$(Version).0</AssemblyVersion>
     <FileVersion>`$(Version).0</FileVersion>
     <InformationalVersion>`$(Version)</InformationalVersion>
-    <Company>SaveVault</Company>
-    <Product>SaveVault</Product>
+    <Company>Omnisave</Company>
+    <Product>Omnisave</Product>
   </PropertyGroup>
 </Project>
 "@
@@ -280,15 +280,6 @@ if (Test-Path $versionJsonPath) {
     Write-Host "      [OK] Da sao chep version.json vao thu muc xuat ban" -ForegroundColor Green
 }
 
-$infoJsonSource = Join-Path $scriptDir "config\info.json"
-if (Test-Path $infoJsonSource) {
-    $pubConfigDir = Join-Path $publishDir "config"
-    if (-not (Test-Path $pubConfigDir)) { New-Item -ItemType Directory -Path $pubConfigDir -Force | Out-Null }
-    Copy-Item $infoJsonSource -Destination $pubConfigDir -Force
-    Copy-Item $infoJsonSource -Destination $configDir -Force
-    Write-Host "      [OK] Da sao chep config/info.json vao thu muc xuat ban" -ForegroundColor Green
-}
-
 # Cap nhat lich su changelogs va sao chep vao thu muc xuat ban
 $changelogFiles = Update-ChangelogsHistory -RootDir $scriptDir -CurrentVersionObj $versionObj
 if (Test-Path $changelogFiles.ChangelogsJson) {
@@ -307,7 +298,7 @@ if (Test-Path $publishReadme) {
 }
 
 Write-Host ""
-Write-Host "[5/6] Bien dich Root Launcher (SaveVault.exe) vao thu muc xuat ban..." -ForegroundColor Yellow
+Write-Host "[5/6] Bien dich Root Launcher (Omnisave.exe) vao thu muc xuat ban..." -ForegroundColor Yellow
 $launcherProj = Join-Path $scriptDir "SaveGameBackup.Launcher\SaveGameBackup.Launcher.csproj"
 dotnet publish $launcherProj -r win-x64 -c Release --self-contained false -p:PublishSingleFile=true -o $publishDir
 
@@ -316,22 +307,22 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-$launcherPdb = Join-Path $publishDir "SaveVault.pdb"
+$launcherPdb = Join-Path $publishDir "Omnisave.pdb"
 if (Test-Path $launcherPdb) {
     Remove-Item $launcherPdb -Force -ErrorAction SilentlyContinue
 }
 
 Write-Host ""
 Write-Host "[6/6] Kiem tra toan ven cau truc goi xuat ban..." -ForegroundColor Yellow
-$rootExe = Join-Path $publishDir "SaveVault.exe"
-$coreExe = Join-Path $appDir "SaveVault.exe"
+$rootExe = Join-Path $publishDir "Omnisave.exe"
+$coreExe = Join-Path $appDir "Omnisave.exe"
 
 if (-not (Test-Path $rootExe)) {
-    Write-Host "[LOI] Khong tim thay Root Launcher SaveVault.exe!" -ForegroundColor Red
+    Write-Host "[LOI] Khong tim thay Root Launcher Omnisave.exe!" -ForegroundColor Red
     exit 1
 }
 if (-not (Test-Path $coreExe)) {
-    Write-Host "[LOI] Khong tim thay Core App app\SaveVault.exe!" -ForegroundColor Red
+    Write-Host "[LOI] Khong tim thay Core App app\Omnisave.exe!" -ForegroundColor Red
     exit 1
 }
 
@@ -341,7 +332,7 @@ Write-Host "[THANH CONG] Qua trinh dong goi ung dung hoan tat!" -ForegroundColor
 Write-Host "Thong tin phien ban: v$appVersion" -ForegroundColor Cyan
 Write-Host "Duong dan phat hanh: $publishDir" -ForegroundColor Cyan
 Write-Host "Cau truc thu muc da duoc to chuc cuc ky gon gang:" -ForegroundColor Cyan
-Write-Host " - SaveVault.exe           (Launcher khoi chay ung dung)" -ForegroundColor Cyan
+Write-Host " - Omnisave.exe           (Launcher khoi chay ung dung)" -ForegroundColor Cyan
 Write-Host " - data/                   (CSDL, Backups, Logs, Covers, Reverts, Temp, Config)" -ForegroundColor Cyan
 Write-Host " - app/                    (Toan bo binaries, assets va huong dan)" -ForegroundColor Cyan
 Write-Host " - version.json            (Thong tin phien ban auto-update)" -ForegroundColor Cyan

@@ -138,13 +138,13 @@ public class LudusaviManifestService
         }
     }
 
-    public static string ConvertLudusaviPathToSaveVaultPattern(string ludusaviPath)
+    public static string ConvertLudusaviPathToOmnisavePattern(string ludusaviPath)
     {
         if (string.IsNullOrWhiteSpace(ludusaviPath)) return string.Empty;
 
         var converted = ludusaviPath.Trim();
 
-        // Chuyển đổi các placeholder của Ludusavi sang SaveVault
+        // Chuyển đổi các placeholder của Ludusavi sang Omnisave
         converted = Regex.Replace(converted, @"<winLocalAppData>", "{{p|localappdata}}", RegexOptions.IgnoreCase);
         converted = Regex.Replace(converted, @"<winAppData>", "{{p|appdata}}", RegexOptions.IgnoreCase);
         converted = Regex.Replace(converted, @"<winDocuments>", "{{p|documents}}", RegexOptions.IgnoreCase);
@@ -172,8 +172,8 @@ public class LudusaviManifestService
     /// </summary>
     public async Task<int> SyncFromGithubAsync(IProgress<ManifestSyncProgress>? progress = null, CancellationToken cancellationToken = default)
     {
+        using var trace = LoggingService.BeginTrace("Ludusavi_SyncManifest", new { Url = ManifestGithubUrl });
         progress?.Report(new ManifestSyncProgress(0, "Đang kết nối tới máy chủ GitHub...", "0%"));
-        LoggingService.LogAction("Ludusavi_Sync_Start", new { Url = ManifestGithubUrl });
 
         try
         {
@@ -392,7 +392,7 @@ public class LudusaviManifestService
                 if (pathMatch.Success)
                 {
                     var raw = pathMatch.Groups[1].Value;
-                    var converted = ConvertLudusaviPathToSaveVaultPattern(raw);
+                    var converted = ConvertLudusaviPathToOmnisavePattern(raw);
                     if (!string.IsNullOrWhiteSpace(converted) && !currentPatterns.Contains(converted, StringComparer.OrdinalIgnoreCase))
                     {
                         currentPatterns.Add(converted);

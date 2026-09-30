@@ -223,8 +223,8 @@ public class GoogleDriveApiService : ICloudStorageService
             Message = "Đang chuẩn bị thư mục trên Google Drive..."
         });
 
-        // 1. Tạo hoặc lấy thư mục gốc SaveVault_Backups
-        var rootFolderId = await GetOrCreateFolderAsync("SaveVault_Backups", null, cancellationToken);
+        // 1. Tạo hoặc lấy thư mục gốc Omnisave_Backups
+        var rootFolderId = await GetOrCreateFolderAsync("Omnisave_Backups", null, cancellationToken);
 
         // 2. Tạo hoặc lấy thư mục game con
         var gameFolderId = await GetOrCreateFolderAsync(remoteGameFolderName, rootFolderId, cancellationToken);
@@ -434,7 +434,7 @@ public class GoogleDriveApiService : ICloudStorageService
         try
         {
             await EnsureAccessTokenAsync(cancellationToken);
-            var rootFolderId = await FindFolderIdAsync("SaveVault_Backups", null, cancellationToken);
+            var rootFolderId = await FindFolderIdAsync("Omnisave_Backups", null, cancellationToken);
             if (rootFolderId != null)
             {
                 var gameFolderId = await FindFolderIdAsync(remoteFolderName, rootFolderId, cancellationToken);
@@ -462,7 +462,7 @@ public class GoogleDriveApiService : ICloudStorageService
 
         if (!string.IsNullOrEmpty(remoteGameFolderName))
         {
-            var rootFolderId = await FindFolderIdAsync("SaveVault_Backups", null, cancellationToken);
+            var rootFolderId = await FindFolderIdAsync("Omnisave_Backups", null, cancellationToken);
             if (rootFolderId != null)
             {
                 var gameFolderId = await FindFolderIdAsync(remoteGameFolderName, rootFolderId, cancellationToken);

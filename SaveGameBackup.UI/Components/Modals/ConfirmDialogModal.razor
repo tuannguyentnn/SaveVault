@@ -77,12 +77,13 @@
     var isRevert = title.Contains("Hoàn Tác", StringComparison.OrdinalIgnoreCase) || title.Contains("Revert", StringComparison.OrdinalIgnoreCase);
     var isRestore = title.Contains("Khôi Phục", StringComparison.OrdinalIgnoreCase) || title.Contains("Restore", StringComparison.OrdinalIgnoreCase);
     var isBackup = title.Contains("Sao Lưu", StringComparison.OrdinalIgnoreCase) || title.Contains("Backup", StringComparison.OrdinalIgnoreCase);
+    var isUpdate = title.Contains("Cập Nhật", StringComparison.OrdinalIgnoreCase) || title.Contains("Update", StringComparison.OrdinalIgnoreCase);
     var isGeneral = deleteType == ConfirmDeleteType.General;
 
-    var modalBorderClass = isRestore ? "border-emerald-500" : (isBackup ? "border-sky-500" : (isRevert ? "border-amber-500" : "border-red-500"));
-    var iconBoxClass = isRestore ? "bg-emerald-600/20 border border-emerald-500/40 text-emerald-400" : (isBackup ? "bg-sky-600/20 border border-sky-500/40 text-sky-400" : (isRevert ? "bg-amber-600/20 border border-amber-500/40 text-amber-400" : "bg-red-600/20 border border-red-500/40 text-red-400"));
-    var iconSymbol = isRestore ? "📥" : (isBackup ? "☁️" : (isRevert ? "🔄" : "⚠️"));
-    var subtitleLabel = isRestore ? "Xác nhận khôi phục cơ sở dữ liệu từ bản lưu đám mây" : (isBackup ? "Xác nhận tạo bản snapshot SQLite và đồng bộ lên đám mây" : (isRevert ? "Xác nhận đưa dữ liệu save game trở lại trạng thái an toàn trước đó" : (isGeneral ? "Xác nhận thao tác quản lý bản lưu" : (deleteType == ConfirmDeleteType.Snapshot ? "Bước 1/2: Chọn vị trí lưu trữ muốn xóa" : "Bước 1/2: Xác thực bảo mật xóa toàn bộ"))));
+    var modalBorderClass = isRestore ? "border-emerald-500" : (isBackup ? "border-sky-500" : (isRevert ? "border-amber-500" : (isUpdate ? "border-indigo-500" : "border-red-500")));
+    var iconBoxClass = isRestore ? "bg-emerald-600/20 border border-emerald-500/40 text-emerald-400" : (isBackup ? "bg-sky-600/20 border border-sky-500/40 text-sky-400" : (isRevert ? "bg-amber-600/20 border border-amber-500/40 text-amber-400" : (isUpdate ? "bg-indigo-600/20 border border-indigo-500/40 text-indigo-400" : "bg-red-600/20 border border-red-500/40 text-red-400")));
+    var iconSymbol = isRestore ? "📥" : (isBackup ? "☁️" : (isRevert ? "🔄" : (isUpdate ? "⚡" : "⚠️")));
+    var subtitleLabel = isRestore ? "Xác nhận khôi phục cơ sở dữ liệu từ bản lưu đám mây" : (isBackup ? "Xác nhận tạo bản snapshot SQLite và đồng bộ lên đám mây" : (isRevert ? "Xác nhận đưa dữ liệu save game trở lại trạng thái an toàn trước đó" : (isUpdate ? "Xác nhận thực hiện thao tác cập nhật" : (isGeneral ? "Xác nhận thao tác quản lý bản lưu" : (deleteType == ConfirmDeleteType.Snapshot ? "Bước 1/2: Chọn vị trí lưu trữ muốn xóa" : "Bước 1/2: Xác thực bảo mật xóa toàn bộ")))));
 }
 
 @if (isConfirmOpen)
@@ -253,7 +254,7 @@
                         <!-- THAO TÁC XÓA THÔNG THƯỜNG -->
                         @if (!string.IsNullOrEmpty(targetPath))
                         {
-                            var pathBoxClass = isRestore ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300" : (isBackup ? "bg-sky-950/20 border-sky-500/30 text-sky-300" : "bg-red-950/20 border-red-500/30 text-red-300");
+                            var pathBoxClass = isRestore ? "bg-emerald-950/20 border-emerald-500/30 text-emerald-300" : (isBackup ? "bg-sky-950/20 border-sky-500/30 text-sky-300" : (isUpdate ? "bg-indigo-950/20 border-indigo-500/30 text-indigo-300" : "bg-red-950/20 border-red-500/30 text-red-300"));
                             <div class="@pathBoxClass border rounded-lg p-3 font-mono text-[11px] select-text break-all">
                                 @targetPath
                             </div>
@@ -355,6 +356,22 @@
                                 else
                                 {
                                     <span>🔄 Xác Nhận Hoàn Tác</span>
+                                }
+                            </button>
+                        }
+                        else if (isUpdate)
+                        {
+                            <button class="py-2 px-6 text-[12.5px] font-bold flex items-center space-x-2 bg-indigo-600 border border-indigo-500 hover:bg-indigo-500 text-white rounded-lg shadow-md disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer active:scale-95 transition-all"
+                                    disabled="@isDeleting"
+                                    @onclick="ExecuteConfirm">
+                                @if (isDeleting)
+                                {
+                                    <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
+                                    <span>Đang Xử Lý...</span>
+                                }
+                                else
+                                {
+                                    <span>🚀 Xác Nhận Cập Nhật</span>
                                 }
                             </button>
                         }

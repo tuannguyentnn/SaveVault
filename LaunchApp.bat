@@ -22,10 +22,10 @@ if "%APP_VER%"=="1.0.0" if exist "version.json" (
     )
 )
 
-title SaveVault v%APP_VER% - Game Save Backup Tool (.NET 10 MAUI Blazor Hybrid)
+title Omnisave v%APP_VER% - Game Save Backup Tool (.NET 10 MAUI Blazor Hybrid)
 
 echo ===================================================================
-echo   SaveVault v%APP_VER% [.NET 10 MAUI Blazor Hybrid]
+echo   Omnisave v%APP_VER% [.NET 10 MAUI Blazor Hybrid]
 echo ===================================================================
 echo.
 
@@ -57,7 +57,7 @@ if "!NEED_BUILD!"=="1" (
         echo %APP_VER%> "%VERSION_CACHE_FILE%"
     )
 ) else (
-    echo [KHOI DONG NHANH] Dang mo SaveVault v%APP_VER% [Fast Launch]...
+    echo [KHOI DONG NHANH] Dang mo Omnisave v%APP_VER% [Fast Launch]...
     dotnet run --project SaveGameBackup.UI/SaveGameBackup.UI.csproj -f net10.0-windows10.0.19041.0 --no-build
     if !ERRORLEVEL! neq 0 (
         echo.

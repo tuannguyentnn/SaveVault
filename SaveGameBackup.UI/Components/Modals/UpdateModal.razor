@@ -5,16 +5,19 @@
 @if (UpdateVM.IsUpdateModalOpen)
 {
     <div class="modal-backdrop">
-        <div class="modal-content w-full max-w-xl border border-cyan-500/40 bg-[#0F172A] flex flex-col p-6 shadow-2xl mx-4 rounded-2xl relative select-none">
+        <div
+            class="modal-content w-full max-w-xl border border-cyan-500/40 bg-[#0F172A] flex flex-col p-6 shadow-2xl mx-4 rounded-2xl relative select-text">
             <!-- Header -->
             <div class="flex items-center justify-between pb-4 border-b border-[#1E293B]">
                 <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-xl shadow-inner">
+                    <div
+                        class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-xl shadow-inner">
                         🚀
                     </div>
                     <div>
                         <h3 class="text-[16px] font-bold text-white tracking-wide">BẢN CẬP NHẬT MỚI CÓ SẴN!</h3>
-                        <div class="text-[11.5px] text-slate-400">Phiên bản mới nhất đã được build publish sẵn sàng tải về.</div>
+                        <div class="text-[11.5px] text-slate-400">Phiên bản mới nhất đã được build publish sẵn sàng tải về.
+                        </div>
                     </div>
                 </div>
 
@@ -29,15 +32,18 @@
             </div>
 
             <!-- Version Comparison Banner -->
-            <div class="mt-4 p-3.5 bg-[#131C2E] border border-[#2D3748] rounded-xl flex items-center justify-between flex-wrap gap-2">
+            <div
+                class="mt-4 p-3.5 bg-[#131C2E] border border-[#2D3748] rounded-xl flex items-center justify-between flex-wrap gap-2">
                 <div class="flex items-center space-x-2.5">
                     <span class="text-[12px] text-slate-400">Hiện tại:</span>
-                    <span class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                    <span
+                        class="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-slate-800 text-slate-300 border border-slate-700">
                         v@(UpdateVM.CurrentVersion)
                     </span>
                     <span class="text-cyan-400 font-bold">➔</span>
                     <span class="text-[12px] text-slate-400">Bản mới:</span>
-                    <span class="px-2.5 py-0.5 rounded text-[11.5px] font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-sm animate-pulse">
+                    <span
+                        class="px-2.5 py-0.5 rounded text-[11.5px] font-mono font-bold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-sm animate-pulse">
                         v@(UpdateVM.UpdateInfo?.Version ?? "Mới")
                     </span>
                 </div>
@@ -75,15 +81,17 @@
             <!-- DOWNLOAD ERROR BANNER (Nếu có lỗi tải hoặc giải nén) -->
             @if (UpdateVM.HasDownloadError)
             {
-                <div class="mt-3.5 p-3.5 bg-red-950/70 border border-red-500/70 rounded-xl space-y-2.5 text-left shadow-lg shadow-red-950/50">
+                <div
+                    class="mt-3.5 p-3.5 bg-red-950/70 border border-red-500/70 rounded-xl space-y-2.5 text-left shadow-lg shadow-red-950/50">
                     <div class="flex items-center space-x-2 text-red-300 font-bold text-[12.5px]">
                         <span class="text-base">🚨</span>
                         <span>Quá Trình Tải Bản Cập Nhật Gặp Sự Cố</span>
                     </div>
-                    <div class="text-[11.5px] text-red-200/90 leading-relaxed font-mono bg-red-950/60 p-2.5 rounded-lg border border-red-500/30 whitespace-pre-wrap break-words max-h-[100px] overflow-y-auto">
+                    <div
+                        class="text-[11.5px] text-red-200/90 leading-relaxed font-mono bg-red-950/60 p-2.5 rounded-lg border border-red-500/30 whitespace-pre-wrap break-words max-h-[100px] overflow-y-auto">
                         @UpdateVM.DownloadErrorMessage
                     </div>
-                    <div class="flex items-center justify-end space-x-2 pt-1">
+                    @* <div class="flex items-center justify-end space-x-2 pt-1">
                         <button type="button"
                                 class="btn-secondary text-[11px] py-1 px-3 text-slate-300 border-slate-600 hover:text-white hover:border-slate-500 flex items-center space-x-1.5 transition-all"
                                 @onclick="() => UpdateVM.RemindLaterCommand.Execute(null)">
@@ -96,7 +104,7 @@
                             <span>🔄</span>
                             <span>Thử Tải Lại</span>
                         </button>
-                    </div>
+                    </div> *@
                 </div>
             }
 
@@ -106,7 +114,8 @@
                     📋 Những Điểm Mới Trong Phiên Bản Này:
                 </label>
                 <div class="sv-scroll-wrapper" data-scroll-text="Còn nội dung bên dưới (Cuộn)">
-                    <div class="bg-[#0A0F1D] border border-[#2D3748] rounded-xl p-3.5 max-h-[160px] overflow-y-auto space-y-2 text-[12px] text-slate-300 shadow-inner sv-scroll-area">
+                    <div
+                        class="bg-[#0A0F1D] border border-[#2D3748] rounded-xl p-3.5 max-h-[160px] overflow-y-auto space-y-2 text-[12px] text-slate-300 shadow-inner sv-scroll-area">
                         @if (UpdateVM.UpdateInfo?.Changelog != null && UpdateVM.UpdateInfo.Changelog.Count > 0)
                         {
                             <ul class="space-y-1.5 list-none">
@@ -121,95 +130,95 @@
                         }
                         else
                         {
-                            <div class="text-slate-400 italic">Bản cập nhật tối ưu hóa hiệu năng, cập nhật thư mục lưu trữ và sửa lỗi hệ thống.</div>
+                            <div class="text-slate-400 italic">Bản cập nhật tối ưu hóa hiệu năng, cập nhật thư mục lưu trữ và
+                                sửa lỗi hệ thống.</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Download Progress Bar (Khi đang tải) -->
+                @if (UpdateVM.IsDownloading)
+                {
+                    <div class="mt-4 p-4 bg-[#131C2E] border border-cyan-500/30 rounded-xl space-y-2.5 text-left">
+                        <div class="flex items-center justify-between text-[11.5px]">
+                            <span class="text-cyan-300 font-semibold flex items-center space-x-1.5">
+                                <span class="animate-spin">⏳</span>
+                                <span>@UpdateVM.DownloadProgressText</span>
+                            </span>
+                            <span class="font-bold text-cyan-400 font-mono text-[12.5px]">@UpdateVM.DownloadPercent%</span>
+                        </div>
+
+                        <div class="w-full bg-[#0A0F1D] rounded-full h-3 overflow-hidden border border-slate-700">
+                            <div class="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 h-3 rounded-full transition-all duration-200"
+                                 style="width: @(Math.Clamp(UpdateVM.DownloadPercent, 0, 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%;">
+                            </div>
+                        </div>
+
+                        <div class="text-[10.5px] text-slate-400 flex items-center justify-between">
+                            <span>Đang lưu vào thư mục: <code class="font-mono text-slate-300">.\temp\</code></span>
+                            <span>Sau khi tải xong sẽ tự động khởi động lại</span>
+                        </div>
+                    </div>
+                }
+
+                <!-- Footer Actions -->
+                <div class="mt-5 pt-4 border-t border-[#1E293B] flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                        @if (!UpdateVM.IsDownloading)
+                        {
+                            <button type="button"
+                                    class="btn-secondary text-[11.5px] py-2 px-3 text-slate-400 hover:text-red-300 hover:border-red-500/40 flex items-center space-x-1.5 transition-all"
+                                    @onclick="() => UpdateVM.SkipVersionCommand.Execute(null)"
+                                    title="Không bao giờ nhắc lại phiên bản này nữa">
+                                <span>🚫</span>
+                                <span>Bỏ Qua Phiên Bản Này</span>
+                            </button>
+                        }
+                    </div>
+
+                    <div class="flex items-center space-x-2.5">
+                        @if (UpdateVM.IsDownloading)
+                        {
+                            <button type="button"
+                                    class="btn-secondary text-[12px] py-2 px-4 text-red-300 hover:text-white hover:bg-red-600/30 border-red-500/40"
+                                    @onclick="() => UpdateVM.CancelDownloadCommand.Execute(null)">
+                                ✕ Hủy Tải
+                            </button>
+                        }
+                        else if (UpdateVM.HasDownloadError)
+                        {
+                            <button type="button" class="btn-secondary text-[12px] py-2 px-4 text-slate-300 hover:text-white"
+                                    @onclick="() => UpdateVM.RemindLaterCommand.Execute(null)">
+                                Đóng
+                            </button>
+
+                            <button type="button"
+                                    class="btn-danger text-[12px] py-2 px-4 flex items-center space-x-2 shadow-lg hover:shadow-red-500/30 transition-all"
+                                    @onclick="() => UpdateVM.RetryDownloadCommand.Execute(null)">
+                                <span>🔄</span>
+                                <span>Thử Tải Lại</span>
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="btn-secondary text-[12px] py-2 px-4 text-slate-300 hover:text-white"
+                                    @onclick="() => UpdateVM.RemindLaterCommand.Execute(null)">
+                                Để Sau
+                            </button>
+
+                            <button type="button"
+                                    class="btn-cyan text-[12px] py-2 px-4 flex items-center space-x-2 shadow-lg hover:shadow-cyan-500/20"
+                                    @onclick="() => UpdateVM.ApplyUpdateCommand.Execute(null)">
+                                <span>🚀</span>
+                                <span>Cập Nhật Ngay</span>
+                            </button>
                         }
                     </div>
                 </div>
             </div>
-
-            <!-- Download Progress Bar (Khi đang tải) -->
-            @if (UpdateVM.IsDownloading)
-            {
-                <div class="mt-4 p-4 bg-[#131C2E] border border-cyan-500/30 rounded-xl space-y-2.5 text-left">
-                    <div class="flex items-center justify-between text-[11.5px]">
-                        <span class="text-cyan-300 font-semibold flex items-center space-x-1.5">
-                            <span class="animate-spin">⏳</span>
-                            <span>@UpdateVM.DownloadProgressText</span>
-                        </span>
-                        <span class="font-bold text-cyan-400 font-mono text-[12.5px]">@UpdateVM.DownloadPercent%</span>
-                    </div>
-
-                    <div class="w-full bg-[#0A0F1D] rounded-full h-3 overflow-hidden border border-slate-700">
-                        <div class="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 h-3 rounded-full transition-all duration-200"
-                             style="width: @(Math.Clamp(UpdateVM.DownloadPercent, 0, 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%;"></div>
-                    </div>
-
-                    <div class="text-[10.5px] text-slate-400 flex items-center justify-between">
-                        <span>Đang lưu vào thư mục: <code class="font-mono text-slate-300">.\temp\</code></span>
-                        <span>Sau khi tải xong sẽ tự động khởi động lại</span>
-                    </div>
-                </div>
-            }
-
-            <!-- Footer Actions -->
-            <div class="mt-5 pt-4 border-t border-[#1E293B] flex items-center justify-between flex-wrap gap-2">
-                <div>
-                    @if (!UpdateVM.IsDownloading)
-                    {
-                        <button type="button"
-                                class="btn-secondary text-[11.5px] py-2 px-3 text-slate-400 hover:text-red-300 hover:border-red-500/40 flex items-center space-x-1.5 transition-all"
-                                @onclick="() => UpdateVM.SkipVersionCommand.Execute(null)"
-                                title="Không bao giờ nhắc lại phiên bản này nữa">
-                            <span>🚫</span>
-                            <span>Bỏ Qua Phiên Bản Này</span>
-                        </button>
-                    }
-                </div>
-
-                <div class="flex items-center space-x-2.5">
-                    @if (UpdateVM.IsDownloading)
-                    {
-                        <button type="button"
-                                class="btn-secondary text-[12px] py-2 px-4 text-red-300 hover:text-white hover:bg-red-600/30 border-red-500/40"
-                                @onclick="() => UpdateVM.CancelDownloadCommand.Execute(null)">
-                            ✕ Hủy Tải
-                        </button>
-                    }
-                    else if (UpdateVM.HasDownloadError)
-                    {
-                        <button type="button"
-                                class="btn-secondary text-[12px] py-2 px-4 text-slate-300 hover:text-white"
-                                @onclick="() => UpdateVM.RemindLaterCommand.Execute(null)">
-                            Đóng
-                        </button>
-
-                        <button type="button"
-                                class="btn-danger text-[12px] py-2 px-4 flex items-center space-x-2 shadow-lg hover:shadow-red-500/30 transition-all"
-                                @onclick="() => UpdateVM.RetryDownloadCommand.Execute(null)">
-                            <span>🔄</span>
-                            <span>Thử Tải Lại</span>
-                        </button>
-                    }
-                    else
-                    {
-                        <button type="button"
-                                class="btn-secondary text-[12px] py-2 px-4 text-slate-300 hover:text-white"
-                                @onclick="() => UpdateVM.RemindLaterCommand.Execute(null)">
-                            Để Sau
-                        </button>
-
-                        <button type="button"
-                                class="btn-cyan text-[12px] py-2 px-4 flex items-center space-x-2 shadow-lg hover:shadow-cyan-500/20"
-                                @onclick="() => UpdateVM.ApplyUpdateCommand.Execute(null)">
-                            <span>🚀</span>
-                            <span>Cập Nhật Ngay</span>
-                        </button>
-                    }
-                </div>
-            </div>
         </div>
-    </div>
-}
+    }
 
 @code {
     private UpdateSubViewModel UpdateVM => VM.UpdateVM;

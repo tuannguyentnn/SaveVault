@@ -52,6 +52,7 @@ public class BackupService
         CancellationToken cancellationToken = default,
         string? onlineCoverUrl = null)
     {
+        using var trace = LoggingService.BeginTrace("Backup_BackupGameAsync", new { GameName = gameInfo.GameName });
         var pathsToBackup = selectedPaths != null && selectedPaths.Count > 0
             ? selectedPaths
             : gameInfo.DetectedPathItems.Where(p => p.IsSelected).Select(p => p.Path).ToList();
@@ -347,6 +348,7 @@ public class BackupService
         IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        using var trace = LoggingService.BeginTrace("Backup_SyncSnapshotToCloudAsync", new { SnapshotId = detail?.Id, Provider = cloudService?.ProviderName });
         if (detail == null) throw new ArgumentNullException(nameof(detail));
         if (cloudService == null) throw new ArgumentNullException(nameof(cloudService));
 
@@ -700,6 +702,7 @@ public class BackupService
         IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        using var trace = LoggingService.BeginTrace("Backup_RestoreAsync", new { BackupId = detail.Id, IsCloud = restoreFromCloud });
         var selectedItems = itemsToRestore
             .Where(i => i.IsSelected && !string.IsNullOrWhiteSpace(i.RestoreDestinationPath))
             .ToList();
@@ -747,7 +750,7 @@ public class BackupService
                             throw new InvalidOperationException($"Bản sao lưu này chưa có mã tệp trên {cloudService.DisplayName}!");
                         }
 
-                        tempDownloadedZip = Path.Combine(Path.GetTempPath(), $"SaveVault_CloudDl_{Guid.NewGuid():N}.zip");
+                        tempDownloadedZip = Path.Combine(Path.GetTempPath(), $"Omnisave_CloudDl_{Guid.NewGuid():N}.zip");
                         innerProgress?.Report(new BackupProgress { Percent = 0, Message = $"Bắt đầu tải từ {cloudService.DisplayName}..." });
 
                         var dlProgress = new Progress<BackupProgress>(p =>
@@ -1187,6 +1190,7 @@ public class BackupService
         CancellationToken cancellationToken = default,
         Func<string, ICloudStorageService?>? cloudServiceResolver = null)
     {
+        using var trace = LoggingService.BeginTrace("Backup_DeleteSnapshotWithProgressAsync", new { SnapshotId = detail?.Id });
         if (detail == null) return;
 
         progress?.Report(new BackupProgress { Percent = 5, Message = "Bắt đầu xử lý xóa bản sao lưu..." });
@@ -1362,6 +1366,7 @@ public class BackupService
         CancellationToken cancellationToken = default,
         Func<string, ICloudStorageService?>? cloudServiceResolver = null)
     {
+        using var trace = LoggingService.BeginTrace("Backup_DeleteGameHistoryWithProgressAsync", new { GameId = gameHistory?.Id, GameName = gameHistory?.GameName });
         if (gameHistory == null) return;
 
         progress?.Report(new BackupProgress { Percent = 5, Message = $"Bắt đầu xóa toàn bộ lịch sử game '{gameHistory.GameName}'..." });

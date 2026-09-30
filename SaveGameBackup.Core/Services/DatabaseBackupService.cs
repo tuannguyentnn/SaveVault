@@ -178,6 +178,7 @@ public class DatabaseBackupService
         IProgress<BackupProgress>? progress = null, 
         CancellationToken cancellationToken = default)
     {
+        using var trace = LoggingService.BeginTrace("Database_BackupDatabaseToCloudAsync", new { TargetOption = targetOption });
         var option = string.IsNullOrWhiteSpace(targetOption) ? "GoogleDrive" : targetOption.Trim();
         var providersToUpload = new List<ICloudStorageService>();
 
@@ -216,7 +217,7 @@ public class DatabaseBackupService
 
         // 1. Tạo snapshot zip
         var timestampStr = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-        var zipFileName = $"savevault_db_backup_{timestampStr}.zip";
+        var zipFileName = $"Omnisave_db_backup_{timestampStr}.zip";
         var tempZipPath = Path.Combine(GetTempDirectory(), zipFileName);
 
         await CreateDatabaseSnapshotZipAsync(tempZipPath, cancellationToken);
@@ -404,6 +405,7 @@ public class DatabaseBackupService
         IProgress<BackupProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        using var trace = LoggingService.BeginTrace("Database_RestoreDatabaseFromHistoryEntryAsync", new { BackupDate = entry.BackupTime });
         if (entry.CloudUploads.Count == 0)
         {
             throw new InvalidOperationException("Bản sao lưu này không chứa thông tin file trên Cloud.");
@@ -655,7 +657,7 @@ public class DatabaseBackupService
                             BackupTime = file.ModifiedTime ?? DateTime.UtcNow,
                             GameCount = 0,
                             SnapshotCount = 0,
-                            AppVersion = "SaveVault"
+                            AppVersion = "Omnisave"
                         };
                         history.Entries.Add(existingEntry);
                         scannedCount++;
