@@ -211,60 +211,268 @@ public class PCGamingWikiService
     {
         var patterns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Pattern 1: {{Game data/saves|Windows|...}}
-        var matches = Regex.Matches(wikitext, @"\{\{Game data/saves\|Windows\|([^\|\}]+)", RegexOptions.IgnoreCase);
-        foreach (Match m in matches)
+        // 1. Phân tích cú pháp template {{Game data/saves ...}} có tính đến ngoặc lồng nhau {{...}}
+        foreach (var tpl in ExtractTemplates(wikitext, "Game data/saves"))
         {
-            var p = CleanPattern(m.Groups[1].Value);
-            if (!string.IsNullOrWhiteSpace(p)) patterns.Add(p);
-        }
+            var parameters = SplitTemplateParameters(tpl);
+            if (parameters.Count < 2) continue;
 
-        // Pattern 2: {{Game data/saves|...}} where Windows might be first or second parameter
-        var generalMatches = Regex.Matches(wikitext, @"\{\{Game data/saves\|([^\{\}]+)\}\}", RegexOptions.IgnoreCase);
-        foreach (Match gm in generalMatches)
-        {
-            var content = gm.Groups[1].Value;
-            var parts = content.Split('|');
-            foreach (var part in parts)
+            // Template thường có dạng:
+            // Vị trí 0: Game data/saves
+            // Vị trí 1: Hệ điều hành / Nền tảng (Windows, Steam, Microsoft Store, GOG.com, Steam Play (Linux)...)
+            // Vị trí 2: Đường dẫn lưu game
+            // Vị trí 3 (tùy chọn): Hệ điều hành phụ (ví dụ: Store | Path | Windows)
+            string? detectedPlatform = null;
+            string? detectedPath = null;
+
+            // Kiểm tra positional parameters
+            if (parameters.Count >= 3 && !parameters[1].Contains('=') && !parameters[2].Contains('='))
             {
-                if (part.Contains("{{p|", StringComparison.OrdinalIgnoreCase) ||
-                    part.Contains("%USERPROFILE%", StringComparison.OrdinalIgnoreCase) ||
-                    part.Contains("%APPDATA%", StringComparison.OrdinalIgnoreCase) ||
-                    part.Contains("%LOCALAPPDATA%", StringComparison.OrdinalIgnoreCase))
+                var p1 = parameters[1].Trim();
+                var p2 = parameters[2].Trim();
+                var p3 = parameters.Count > 3 ? parameters[3].Trim() : string.Empty;
+
+                bool isNonWindows = p1.Contains("Linux", StringComparison.OrdinalIgnoreCase) ||
+                                    p1.Contains("Steam Play", StringComparison.OrdinalIgnoreCase) ||
+                                    p1.Contains("OS X", StringComparison.OrdinalIgnoreCase) ||
+                                    p1.Contains("macOS", StringComparison.OrdinalIgnoreCase) ||
+                                    p1.Contains("Android", StringComparison.OrdinalIgnoreCase) ||
+                                    p1.Contains("iOS", StringComparison.OrdinalIgnoreCase);
+
+                bool isWindows = p1.Contains("Windows", StringComparison.OrdinalIgnoreCase) ||
+                                 p1.Contains("Steam", StringComparison.OrdinalIgnoreCase) ||
+                                 p1.Contains("Store", StringComparison.OrdinalIgnoreCase) ||
+                                 p1.Contains("GOG", StringComparison.OrdinalIgnoreCase) ||
+                                 p1.Contains("Epic", StringComparison.OrdinalIgnoreCase) ||
+                                 p1.Contains("Xbox", StringComparison.OrdinalIgnoreCase) ||
+                                 p3.Contains("Windows", StringComparison.OrdinalIgnoreCase);
+
+                if (!isNonWindows && isWindows)
                 {
-                    var p = CleanPattern(part);
-                    if (!string.IsNullOrWhiteSpace(p)) patterns.Add(p);
+                    detectedPlatform = p1;
+                    detectedPath = p2;
+                }
+            }
+
+            // Kiểm tra named parameters hoặc quét các tham số chứa path tag Windows
+            if (string.IsNullOrEmpty(detectedPath))
+            {
+                foreach (var param in parameters.Skip(1))
+                {
+                    var kv = param.Split(new[] { '=' }, 2);
+                    if (kv.Length == 2)
+                    {
+                        var key = kv[0].Trim();
+                        var val = kv[1].Trim();
+                        if (key.Contains("Windows", StringComparison.OrdinalIgnoreCase) ||
+                            key.Contains("Steam", StringComparison.OrdinalIgnoreCase) ||
+                            key.Contains("Store", StringComparison.OrdinalIgnoreCase))
+                        {
+                            detectedPath = val;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        var trimmed = param.Trim();
+                        if (trimmed.Contains("{{p|localappdata}}", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.Contains("{{p|appdata}}", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.Contains("{{p|userprofile}}", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.Contains("{{p|savedgames}}", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.Contains("{{p|documents}}", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.Contains("%LOCALAPPDATA%", StringComparison.OrdinalIgnoreCase) ||
+                            trimmed.Contains("%APPDATA%", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (!trimmed.Contains("compatdata", StringComparison.OrdinalIgnoreCase) &&
+                                !trimmed.Contains("/drive_c/", StringComparison.OrdinalIgnoreCase) &&
+                                !trimmed.Contains("/home/", StringComparison.OrdinalIgnoreCase))
+                            {
+                                detectedPath = trimmed;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(detectedPath))
+            {
+                var cleaned = CleanPattern(detectedPath);
+                if (!string.IsNullOrWhiteSpace(cleaned))
+                {
+                    patterns.Add(cleaned);
+
+                    // Nếu pattern kết thúc bằng {{p|uid}} hoặc tương đương (ví dụ: Sandfall\Saved\SaveGames\{{p|uid}}),
+                    // cũng thêm luôn thư mục cha (Sandfall\Saved\SaveGames) vào RawPatterns
+                    var parentPattern = Regex.Replace(cleaned, @"[\\/](?:\{\{p\|(?:uid|steamid|uplayid|originid|gogid|accountid)\}\}|<[^>]+>|%USERID%)[\\/]?$", "", RegexOptions.IgnoreCase);
+                    if (!string.Equals(parentPattern, cleaned, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var parentCleaned = CleanPattern(parentPattern);
+                        if (!string.IsNullOrWhiteSpace(parentCleaned))
+                        {
+                            patterns.Add(parentCleaned);
+                        }
+                    }
                 }
             }
         }
 
-        // Pattern 3: Search within Save game data location section
+        // 2. Tìm kiếm phụ trợ trong toàn bộ mục '=== Save game data location ==='
         var saveSectionMatch = Regex.Match(wikitext, @"===\s*Save game data location\s*===([\s\S]*?)(?:===|==|\z)", RegexOptions.IgnoreCase);
         if (saveSectionMatch.Success)
         {
             var sectionText = saveSectionMatch.Groups[1].Value;
-            var lineMatches = Regex.Matches(sectionText, @"(\{\{p\|[^\r\n\}]+\}\}[^\r\n\|\}]*)", RegexOptions.IgnoreCase);
+
+            // Regex quét đường dẫn bắt đầu bằng root tag Windows và bao gồm cả các tag lồng {{p|...}} tiếp theo
+            var pathRegex = new Regex(@"(?:\{\{p\|(?:localappdata|appdata|locallow|userprofile|documents|savedgames|programdata|steam)\}\}|%[A-Z0-9_]+%|[a-zA-Z]:\\)(?:[\\/][^\\/\r\n\|\}<>\[\]]+|\{\{p\|[^}]+\}\})*", RegexOptions.IgnoreCase);
+            var lineMatches = pathRegex.Matches(sectionText);
             foreach (Match lm in lineMatches)
             {
-                var p = CleanPattern(lm.Groups[1].Value);
-                if (!string.IsNullOrWhiteSpace(p)) patterns.Add(p);
+                var p = CleanPattern(lm.Value);
+                if (!string.IsNullOrWhiteSpace(p) && !p.Contains("compatdata", StringComparison.OrdinalIgnoreCase))
+                {
+                    patterns.Add(p);
+
+                    var parentPattern = Regex.Replace(p, @"[\\/](?:\{\{p\|(?:uid|steamid|uplayid|originid|gogid|accountid)\}\}|<[^>]+>|%USERID%)[\\/]?$", "", RegexOptions.IgnoreCase);
+                    if (!string.Equals(parentPattern, p, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var parentCleaned = CleanPattern(parentPattern);
+                        if (!string.IsNullOrWhiteSpace(parentCleaned))
+                        {
+                            patterns.Add(parentCleaned);
+                        }
+                    }
+                }
             }
         }
 
         return patterns.ToList();
     }
 
+    private static IEnumerable<string> ExtractTemplates(string wikitext, string templateName)
+    {
+        var tag = "{{" + templateName;
+        int startIndex = 0;
+        while ((startIndex = wikitext.IndexOf(tag, startIndex, StringComparison.OrdinalIgnoreCase)) != -1)
+        {
+            int depth = 0;
+            int endIndex = -1;
+            for (int i = startIndex; i < wikitext.Length - 1; i++)
+            {
+                if (wikitext[i] == '{' && wikitext[i + 1] == '{')
+                {
+                    depth++;
+                    i++;
+                }
+                else if (wikitext[i] == '}' && wikitext[i + 1] == '}')
+                {
+                    depth--;
+                    i++;
+                    if (depth == 0)
+                    {
+                        endIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (endIndex != -1)
+            {
+                yield return wikitext.Substring(startIndex, endIndex - startIndex + 1);
+                startIndex = endIndex + 1;
+            }
+            else
+            {
+                startIndex += tag.Length;
+            }
+        }
+    }
+
+    private static List<string> SplitTemplateParameters(string templateText)
+    {
+        var parameters = new List<string>();
+        if (templateText.StartsWith("{{") && templateText.EndsWith("}}"))
+        {
+            templateText = templateText.Substring(2, templateText.Length - 4);
+        }
+
+        int depthBraces = 0;
+        int depthBrackets = 0;
+        int lastPos = 0;
+
+        for (int i = 0; i < templateText.Length; i++)
+        {
+            if (i < templateText.Length - 1 && templateText[i] == '{' && templateText[i + 1] == '{')
+            {
+                depthBraces++;
+                i++;
+            }
+            else if (i < templateText.Length - 1 && templateText[i] == '}' && templateText[i + 1] == '}')
+            {
+                depthBraces--;
+                i++;
+            }
+            else if (i < templateText.Length - 1 && templateText[i] == '[' && templateText[i + 1] == '[')
+            {
+                depthBrackets++;
+                i++;
+            }
+            else if (i < templateText.Length - 1 && templateText[i] == ']' && templateText[i + 1] == ']')
+            {
+                depthBrackets--;
+                i++;
+            }
+            else if (templateText[i] == '|' && depthBraces == 0 && depthBrackets == 0)
+            {
+                parameters.Add(templateText.Substring(lastPos, i - lastPos));
+                lastPos = i + 1;
+            }
+        }
+
+        if (lastPos < templateText.Length)
+        {
+            parameters.Add(templateText.Substring(lastPos));
+        }
+
+        return parameters;
+    }
+
     private static string CleanPattern(string p)
     {
+        if (string.IsNullOrWhiteSpace(p)) return string.Empty;
         p = p.Trim();
-        // Remove trailing comment or notes like <ref ...> or {{note|...}}
+
+        // Xóa trailing comment hoặc notes
         p = Regex.Replace(p, @"<ref[\s\S]*?(?:/>|</ref>)", "");
         p = Regex.Replace(p, @"\{\{note\|[\s\S]*?\}\}", "");
         p = Regex.Replace(p, @"\[\[.*?\|(.*?)\]\]", "$1"); // [[link|text]] -> text
         p = Regex.Replace(p, @"\[\[(.*?)\]\]", "$1");
 
+        // Bỏ {{file|...}} nếu có
+        if (p.StartsWith("{{file|", StringComparison.OrdinalIgnoreCase) && p.EndsWith("}}"))
+        {
+            p = p.Substring(7, p.Length - 9).Trim();
+        }
+
         // Loại bỏ phần đuôi chỉ file mask như \*.png, \*.sav, /*.dat để lấy đúng thư mục cha chứa save
         p = Regex.Replace(p, @"[\\/]\*(\.[a-zA-Z0-9_-]+)?$", "");
+
+        // Cân bằng ngoặc nhọn nếu có ngoặc đóng dư thừa ở cuối
+        int openBraces = p.Count(c => c == '{');
+        int closeBraces = p.Count(c => c == '}');
+        while (closeBraces > openBraces && p.EndsWith("}"))
+        {
+            p = p.Substring(0, p.Length - 1);
+            closeBraces--;
+        }
+
+        // Loại bỏ thẻ dở dang hoặc dấu pipe thừa ở cuối nếu có
+        p = Regex.Replace(p, @"[\\/]?\{\{p(?:\|[^}]*)?$", "", RegexOptions.IgnoreCase);
+        p = p.TrimEnd('\\', '/', '|', ' ', '\t');
+
+        // Bỏ nếu chỉ là thẻ {{p hoặc quá ngắn không phải đường dẫn hợp lệ
+        if (p.Equals("{{p", StringComparison.OrdinalIgnoreCase) || p.Length < 4)
+            return string.Empty;
 
         return p.Trim();
     }

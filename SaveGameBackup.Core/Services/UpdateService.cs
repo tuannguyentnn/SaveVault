@@ -18,7 +18,7 @@ namespace SaveGameBackup.Core.Services;
 /// </summary>
 public class UpdateService
 {
-    public const string DefaultManifestUrl = "https://raw.githubusercontent.com/tuannguyen01101995/SaveVault-Publish/main/version.json";
+    public const string DefaultManifestUrl = "https://raw.githubusercontent.com/tuannguyen01101995/Omnisave/main/version.json";
 
     private readonly HttpClient _httpClient;
     private string _manifestUrl;

@@ -108,12 +108,31 @@ public class SearchSubViewModel : INotifyPropertyChanged
         _ = LoadRecentCacheSuggestionsAsync();
     }
 
+    private void RunOnMainThread(Action action)
+    {
+        try
+        {
+            if (Microsoft.Maui.ApplicationModel.MainThread.IsMainThread)
+            {
+                action();
+            }
+            else
+            {
+                Microsoft.Maui.ApplicationModel.MainThread.BeginInvokeOnMainThread(action);
+            }
+        }
+        catch
+        {
+            action();
+        }
+    }
+
     public async Task LoadRecentCacheSuggestionsAsync()
     {
         try
         {
             var recent = await _databaseService.GetRecentCachedGamesAsync(10);
-            MainThread.BeginInvokeOnMainThread(() =>
+            RunOnMainThread(() =>
             {
                 PopularGameSuggestions.Clear();
                 foreach (var g in recent)
@@ -131,10 +150,33 @@ public class SearchSubViewModel : INotifyPropertyChanged
         }
     }
 
+    public async Task<bool> DeleteGameCacheAsync(string gameName)
+    {
+        if (string.IsNullOrWhiteSpace(gameName)) return false;
+
+        try
+        {
+            var success = await _databaseService.DeleteGameCacheAsync(gameName);
+            if (success)
+            {
+                LoggingService.LogAction("Game_Cache_Deleted", new { GameName = gameName });
+                StatusMessage = $"Đã xóa cache cho game '{gameName}'.";
+                await LoadRecentCacheSuggestionsAsync();
+            }
+            return success;
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(ex, "Lỗi xóa cache game {Game}: {Message}", gameName, ex.Message);
+            StatusMessage = $"Lỗi xóa cache cho game '{gameName}': {ex.Message}";
+            return false;
+        }
+    }
+
     public Task<string?> PromptChooseCandidateAsync(List<string> candidates)
     {
         _candidateSelectionTcs = new TaskCompletionSource<string?>();
-        MainThread.BeginInvokeOnMainThread(() =>
+        RunOnMainThread(() =>
         {
             GameCandidates.Clear();
             foreach (var c in candidates.Take(5))

@@ -3,15 +3,17 @@
 namespace SaveGameBackup.Core.Constants;
 
 /// <summary>
-/// Chá»©a thÃ´ng tin á»©ng dá»¥ng Ä‘Æ°á»£c náº¡p tÄ©nh trá»±c tiáº¿p vÃ o mÃ£ nguá»“n lÃºc build tá»« file config/info.json.
+/// Chá»©a thÃ´ng tin á»©ng dá»¥ng Ä‘Æ°á»£c náº¡p tÄ©nh trá»±c tiáº¿p vÃ o mÃ£ nguá»“n lÃºc build.
+/// Version vÃ  BuildDate Ä‘Æ°á»£c tá»± Ä‘á»™ng Ä‘á»c tá»« version.json (Single Source of Truth).
+/// CÃ¡c thÃ´ng tin mÃ´ táº£ vÃ  há»— trá»£ Ä‘Æ°á»£c náº¡p tá»« config/info.json.
 /// GiÃºp á»©ng dá»¥ng khá»Ÿi cháº¡y tá»©c thÃ¬ 0ms (Zero Disk I/O) mÃ  khÃ´ng cáº§n Ä‘á»c á»• Ä‘Ä©a má»—i khi má»Ÿ app.
 /// </summary>
 public static class AppBuildInfo
 {
     public const string AppName = "Omnisave";
     public const string AppTitle = "Omnisave - Game Save Backup & Cloud Sync";
-    public const string Version = "1.3.4";
-    public const string BuildDate = "2026-09-29";
+    public const string Version = "1.3.5";
+    public const string BuildDate = "2026-10-02";
     public const string Author = "Nguyễn Ngọc Tuấn (tuannguyen01101995)";
     public const string Description = "Ứng dụng chuyên nghiệp tự động nhận diện, sao lưu và đồng bộ save game lên đám mây (Google Drive & OneDrive) dành riêng cho game thủ PC.";
     public const string License = "MIT License - Tự do sử dụng và tùy biến cho mục đích cá nhân phi thương mại.";
@@ -27,10 +29,10 @@ public static class AppBuildInfo
 
     public static class Links
     {
-        public const string GitHub = "https://github.com/tuannguyen01101995/Omnisave-Publish";
-        public const string Issues = "https://github.com/tuannguyen01101995/Omnisave-Publish/issues";
-        public const string Releases = "https://github.com/tuannguyen01101995/Omnisave-Publish/releases";
-        public const string Guide = "https://github.com/tuannguyen01101995/Omnisave-Publish/blob/main/README.md";
+        public const string GitHub = "https://github.com/tuannguyen01101995/Omnisave";
+        public const string Issues = "https://github.com/tuannguyen01101995/Omnisave/issues";
+        public const string Releases = "https://github.com/tuannguyen01101995/Omnisave/releases";
+        public const string Guide = "https://github.com/tuannguyen01101995/Omnisave/blob/main/README.md";
     }
 
     public static class Support

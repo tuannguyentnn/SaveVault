@@ -148,6 +148,10 @@ public class HistorySubViewModel : INotifyPropertyChanged
         _eventBus.Subscribe<HistoryChangedEvent>(async _ =>
         {
             await RefreshHistoryAsync();
+            if (IsHistoryDetailsModalOpen && SelectedGameHistory != null)
+            {
+                await RefreshCurrentGameDetailsAsync();
+            }
         });
     }
 
@@ -497,6 +501,54 @@ public class HistorySubViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             LoggingService.Error(ex, "Lỗi khi nạp snapshot theo trang: {Message}", ex.Message);
+        }
+    }
+
+    public async Task RefreshCurrentGameDetailsAsync()
+    {
+        if (SelectedGameHistory == null) return;
+        
+        try
+        {
+            var freshDetails = await _databaseService.GetHistoryDetailsByGameIdAsync(SelectedGameHistory.Id);
+            
+            RunOnMainThread(() =>
+            {
+                CurrentHistoryDetails.Clear();
+                foreach (var fd in freshDetails)
+                {
+                    CurrentHistoryDetails.Add(fd);
+                }
+            });
+
+            if (UseSqlPagination)
+            {
+                var pageSize = Math.Max(1, AppConfigService.GetConfig().PageSize);
+                await LoadGameDetailsPagedAsync(SelectedGameHistory.Id, CurrentDetailPage, pageSize, DetailSortAscending);
+            }
+            else
+            {
+                PagedTotalSnapshots = freshDetails.Count;
+            }
+
+            if (SelectedHistoryDetail != null)
+            {
+                SelectedHistoryDetail = PagedHistoryDetails.FirstOrDefault(d => d.Id == SelectedHistoryDetail.Id) 
+                                     ?? CurrentHistoryDetails.FirstOrDefault(d => d.Id == SelectedHistoryDetail.Id);
+            }
+            else
+            {
+                SelectedHistoryDetail = PagedHistoryDetails.FirstOrDefault() ?? CurrentHistoryDetails.FirstOrDefault();
+            }
+
+            OnPropertyChanged(nameof(CurrentHistoryDetails));
+            OnPropertyChanged(nameof(PagedHistoryDetails));
+            OnPropertyChanged(nameof(PagedTotalSnapshots));
+            OnPropertyChanged(nameof(SelectedHistoryDetail));
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(ex, "Lỗi khi refresh chi tiết game: {Message}", ex.Message);
         }
     }
 

@@ -22,18 +22,26 @@ try {
     $infoRaw = Get-Content -Path $infoJsonPath -Raw -Encoding UTF8
     $info = $infoRaw | ConvertFrom-Json
 
-    # Dong bo phien ban tu version.json neu co
+    # Doc phien ban va ngay build tu version.json (Single Source of Truth nhu logic cu - khong lay tu info.json)
+    $version = "1.0.0"
+    $buildDate = (Get-Date -Format "yyyy-MM-dd")
+
     if (Test-Path $versionJsonPath) {
-        $verRaw = Get-Content -Path $versionJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        if (-not [string]::IsNullOrWhiteSpace($verRaw.version)) {
-            $info.version = $verRaw.version
+        try {
+            $verRaw = Get-Content -Path $versionJsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if (-not [string]::IsNullOrWhiteSpace($verRaw.version)) {
+                $version = [string]$verRaw.version
+            }
+            if (-not [string]::IsNullOrWhiteSpace($verRaw.releaseDate)) {
+                $buildDate = [string]$verRaw.releaseDate
+            }
+        } catch {
+            Write-Warning "Khong doc duoc version.json: $_"
         }
     }
 
     $appName = [string]$info.appName
     $appTitle = [string]$info.appTitle
-    $version = [string]$info.version
-    $buildDate = [string]$info.buildDate
     $author = [string]$info.author
     $description = [string]$info.description
     $license = [string]$info.license
@@ -67,7 +75,9 @@ using System.Collections.Generic;
 namespace SaveGameBackup.Core.Constants;
 
 /// <summary>
-/// Chứa thông tin ứng dụng được nạp tĩnh trực tiếp vào mã nguồn lúc build từ file config/info.json.
+/// Chứa thông tin ứng dụng được nạp tĩnh trực tiếp vào mã nguồn lúc build.
+/// Version và BuildDate được tự động đọc từ version.json (Single Source of Truth).
+/// Các thông tin mô tả và hỗ trợ được nạp từ config/info.json.
 /// Giúp ứng dụng khởi chạy tức thì 0ms (Zero Disk I/O) mà không cần đọc ổ đĩa mỗi khi mở app.
 /// </summary>
 public static class AppBuildInfo
@@ -112,7 +122,7 @@ $featuresBlock
 "@
 
     Set-Content -Path $appBuildInfoCsPath -Value $csCode -Encoding UTF8
-    Write-Host "[OK] Da dong bo AppBuildInfo.cs tu config/info.json thanh cong." -ForegroundColor Green
+    Write-Host "[OK] Da dong bo AppBuildInfo.cs (Version: $version, BuildDate: $buildDate tu version.json) thanh cong." -ForegroundColor Green
 } catch {
     Write-Warning "Loi khi dong bo AppBuildInfo.cs: $_"
 }

@@ -230,6 +230,11 @@ public class DatabaseService
         return _cacheRepository.TouchGameCacheAsync(gameName);
     }
 
+    public Task<bool> DeleteGameCacheAsync(string gameName)
+    {
+        return _cacheRepository.DeleteGameCacheAsync(gameName);
+    }
+
     // --- History Delegation to IBackupHistoryRepository (Dapper) ---
 
     public Task<long> InsertOrUpdateBackupHistoryAsync(BackupHistoryDetail detail)

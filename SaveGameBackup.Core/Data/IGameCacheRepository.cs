@@ -10,6 +10,7 @@ public interface IGameCacheRepository
     Task SaveGameCacheAsync(GameSaveInfo game);
     Task<List<GameSaveInfo>> GetRecentCachedGamesAsync(int limit = 10);
     Task TouchGameCacheAsync(string gameName);
+    Task<bool> DeleteGameCacheAsync(string gameName);
 }
 
 public class GameCacheRepository : IGameCacheRepository
@@ -172,6 +173,27 @@ public class GameCacheRepository : IGameCacheRepository
             Normalized = normalized,
             Name = gameName.Trim()
         });
+    }
+
+    public async Task<bool> DeleteGameCacheAsync(string gameName)
+    {
+        if (string.IsNullOrWhiteSpace(gameName)) return false;
+
+        var normalized = NormalizeGameName(gameName);
+        using var connection = await _connectionFactory.CreateOpenConnectionAsync();
+
+        const string sql = @"
+            DELETE FROM games_cache 
+            WHERE NormalizedName = @Normalized OR LOWER(GameName) = LOWER(@Name);
+        ";
+
+        var affected = await connection.ExecuteAsync(sql, new
+        {
+            Normalized = normalized,
+            Name = gameName.Trim()
+        });
+
+        return affected > 0;
     }
 
     public static string NormalizeGameName(string name)
