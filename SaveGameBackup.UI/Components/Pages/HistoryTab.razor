@@ -85,7 +85,7 @@
                         @foreach (var entry in PagedHistories)
                         {
                             var isSelected = SelectedEntry == entry;
-                            <div class="group relative bg-[#101726] border @(isSelected ? "border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-950/40" : "border-[#1E293B] hover:border-blue-500/70") rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-950/20 aspect-[2/3]"
+                            <div class="group relative bg-[#0F172A] border @(isSelected ? "border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-950/40" : "border-[#1E293B] hover:border-blue-500/70") rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-blue-950/20 aspect-[2/3]"
                                  style="aspect-ratio: 2/3;" @onclick="() => SelectedEntry = entry" @onclick:stopPropagation="true"
                                  @ondblclick="() => OpenGameDetails(entry)">
 
@@ -143,13 +143,13 @@
 
                                     <!-- Gradient Shadow mờ dần ở chân ảnh bìa -->
                                     <div
-                                        class="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[#0F172A] to-transparent pointer-events-none">
+                                        class="absolute inset-x-0 -bottom-0.5 h-10 bg-gradient-to-t from-[#0F172A] via-[#0F172A]/90 to-transparent pointer-events-none z-10">
                                     </div>
                                 </div>
 
                                 <!-- Thân Card Thông Tin: Tên Game tinh gọn chuẩn phong cách Steam/GOG -->
                                 <div
-                                    class="py-2 px-2 bg-[#0F172A] border-t border-[#1E293B]/60 flex items-center justify-center text-center flex-shrink-0">
+                                    class="py-2 px-2 bg-[#0F172A] -mt-px relative z-10 flex items-center justify-center text-center flex-shrink-0">
                                     <h3 class="font-bold text-white text-[12px] line-clamp-1 leading-snug group-hover:text-blue-400 transition-colors"
                                         title="@entry.GameName">
                                         @entry.GameName

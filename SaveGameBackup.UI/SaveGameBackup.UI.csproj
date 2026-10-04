@@ -48,6 +48,7 @@
 
   <ItemGroup>
     <None Include="..\GoogleDrive_Setup_Guide.html" Link="GoogleDrive_Setup_Guide.html" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\data\database\executables.json" Link="data\database\executables.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="Exists('..\data\database\executables.json')" />
   </ItemGroup>
 
   <!-- Auto compile Tailwind CSS on build if npm is present -->

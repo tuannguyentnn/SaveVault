@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using SaveGameBackup.Core.Models;
@@ -97,6 +98,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
         RemoveDetectedPathCommand = new RelayCommand(param => ExecuteRemoveDetectedPath(param as DetectedPathItem));
         SelectCandidateCommand = new RelayCommand(param => ExecuteSelectCandidate(param as string));
         CancelCandidateModalCommand = new RelayCommand(_ => ExecuteCancelCandidate());
+        PickExecutableFileManuallyCommand = new RelayCommand(async _ => await PickExecutableFileManuallyAsync());
 
         // Lắng nghe sự kiện Backup thành công để tự động nạp lại 10 game gợi ý từ cache
         _eventBus.Subscribe<BackupCompletedEvent>(async _ =>
@@ -302,6 +304,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
     public ICommand RemoveDetectedPathCommand { get; }
     public ICommand SelectCandidateCommand { get; }
     public ICommand CancelCandidateModalCommand { get; }
+    public ICommand PickExecutableFileManuallyCommand { get; }
 
     public async Task ExecuteSearchAsync(string? explicitQuery = null)
     {
@@ -431,6 +434,18 @@ public class SearchSubViewModel : INotifyPropertyChanged
             IsGameFoundOnDisk = DetectedPathItems.Count > 0;
 
             UpdateSelectedPathsStats();
+
+            // Luôn đọc lại file thực thi (.exe) trên đĩa để lấy phiên bản mới nhất
+            var freshVersion = ResolveLatestVersion(
+                gameInfo.GameName,
+                gameInfo.ExecutablePath,
+                gameInfo.CurrentGameVersion != "Không tìm ra phiên bản" ? gameInfo.CurrentGameVersion : null,
+                gameInfo.OnlineSource);
+
+            if (freshVersion != null && freshVersion.IsDetected)
+            {
+                gameInfo.DetectedVersion = freshVersion;
+            }
 
             if (IsGameFoundOnDisk)
             {
@@ -592,6 +607,131 @@ public class SearchSubViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Mở thư mục chứa file thực thi (.exe) đã tìm được trong Windows Explorer và tự động chọn (highlight) file đó.
+    /// </summary>
+    public void OpenExecutableFolder()
+    {
+        var exePath = CurrentGame?.ExecutablePath;
+        if (string.IsNullOrWhiteSpace(exePath))
+        {
+            _dialogService.ShowMessage("Thông báo", "Chưa phát hiện được đường dẫn file thực thi của game này.", "Warning");
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(exePath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{exePath}\"",
+                    UseShellExecute = true
+                });
+                LoggingService.LogAction("Open_Executable_Folder", new { Path = exePath, Mode = "SelectFile" });
+                return;
+            }
+
+            var dir = Path.GetDirectoryName(exePath);
+            if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = dir,
+                    UseShellExecute = true
+                });
+                LoggingService.LogAction("Open_Executable_Folder", new { Path = dir, Mode = "Directory" });
+                return;
+            }
+
+            _dialogService.ShowMessage("Thông báo", "File hoặc thư mục thực thi không còn tồn tại trên máy tính.", "Warning");
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(ex, "Không thể mở thư mục file thực thi: {Path}", exePath);
+            _dialogService.ShowMessage("Lỗi", $"Không thể mở thư mục: {ex.Message}", "Error");
+        }
+    }
+
+    /// <summary>
+    /// Cho phép người dùng chọn file thực thi (.exe) thủ công từ máy tính để phân tích và cập nhật phiên bản game.
+    /// </summary>
+    public async Task PickExecutableFileManuallyAsync()
+    {
+        if (CurrentGame == null)
+        {
+            _dialogService.ShowMessage("Thông báo", "Vui lòng tìm kiếm hoặc chọn một game trước khi chỉ định file thực thi.", "Warning");
+            return;
+        }
+
+        if (_nativeDialog == null)
+        {
+            _dialogService.ShowMessage("Lỗi", "Dịch vụ chọn tệp không khả dụng trên hệ thống này.", "Error");
+            return;
+        }
+
+        try
+        {
+            var selectedFile = await _nativeDialog.PickExecutableFileAsync("Chọn file thực thi (.exe) của game");
+            if (string.IsNullOrWhiteSpace(selectedFile))
+            {
+                return; // Người dùng đã hủy chọn
+            }
+
+            if (!File.Exists(selectedFile))
+            {
+                _dialogService.ShowMessage("Lỗi", "File được chọn không tồn tại trên hệ thống.", "Error");
+                return;
+            }
+
+            if (!selectedFile.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                _dialogService.ShowMessage("Cảnh báo", "Vui lòng chọn một file thực thi có định dạng .exe.", "Warning");
+                return;
+            }
+
+            var dir = Path.GetDirectoryName(selectedFile) ?? string.Empty;
+            var versionInfo = GameVersionDetectorService.ExtractVersionFromExe(selectedFile, dir);
+
+            if (versionInfo == null)
+            {
+                var fi = new FileInfo(selectedFile);
+                versionInfo = new GameVersionInfo
+                {
+                    DisplayVersion = $"Build {fi.LastWriteTime:yyyy.MM.dd}",
+                    ExecutablePath = selectedFile,
+                    InstallDirectory = dir,
+                    ExecutableModifiedDate = fi.LastWriteTime,
+                    DetectionSource = "ExecutableMetadata"
+                };
+            }
+
+            versionInfo.DetectionMechanism = "Manual";
+            versionInfo.OnlineSource = "Manual Selection";
+            CurrentGame.DetectedVersion = versionInfo;
+
+            var detectedVersion = versionInfo.DisplayVersion;
+            OnPropertyChanged(nameof(CurrentGame));
+            LoggingService.LogAction("Manual_Exe_Selected", new
+            {
+                Game = CurrentGame.GameName,
+                ExePath = selectedFile,
+                Version = detectedVersion
+            });
+
+            _dialogService.ShowMessage(
+                "Thành công",
+                $"Đã cập nhật file thực thi cho '{CurrentGame.GameName}':\n• Phiên bản: {detectedVersion}\n• File: {selectedFile}",
+                "Success");
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(ex, "Lỗi khi chọn file thực thi thủ công");
+            _dialogService.ShowMessage("Lỗi", $"Không thể phân tích file thực thi: {ex.Message}", "Error");
+        }
+    }
+
     public void OpenWikiPage()
     {
         var url = CurrentGame?.WikiUrl;
@@ -694,12 +834,13 @@ public class SearchSubViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Nạp dữ liệu cấu hình trực tiếp từ một bản snapshot cụ thể (BackupHistoryDetail) lên giao diện Tab 1.
-    /// Hoạt động 100% offline, không gọi API online, không truy cập Cache, nạp chính xác danh sách SavePathsList của bản đó.
+    /// Nạp dữ liệu cấu hình trực tiếp từ một bản snapshot cụ thể (BackupHistoryDetail) lên giao diện Tab 1 để chuẩn bị sao lưu.
+    /// Trích xuất toàn bộ đường dẫn từ bản snapshot (SavePathsList, SourcePath, ManifestJson) và hợp nhất (parse thêm) vào dữ liệu hiện có trong Cache.
+    /// Đồng thời nạp thông tin phiên bản, file .exe và nguồn tìm ra .exe.
     /// </summary>
-    public Task LoadGameFromDetailAsync(BackupHistoryDetail detail)
+    public async Task LoadGameFromDetailAsync(BackupHistoryDetail detail)
     {
-        if (detail == null || string.IsNullOrWhiteSpace(detail.GameName)) return Task.CompletedTask;
+        if (detail == null || string.IsNullOrWhiteSpace(detail.GameName)) return;
 
         ClearPreviousDetectedPaths();
 
@@ -708,29 +849,122 @@ public class SearchSubViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SearchQuery));
         (SearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
 
-        StatusMessage = $"Đang nạp cấu hình bản sao lưu ngày {detail.BackupDate:dd/MM/yyyy HH:mm:ss} cho '{gameName}'...";
+        StatusMessage = $"Đang nạp và hợp nhất cấu hình từ bản sao lưu ngày {detail.BackupDate:dd/MM/yyyy HH:mm:ss} cho '{gameName}'...";
 
         try
         {
-            var paths = new List<string>(detail.SavePathsList);
-            if (paths.Count == 0 && !string.IsNullOrWhiteSpace(detail.SourcePath))
+            // 1. Trích xuất tất cả các đường dẫn từ bản snapshot (SavePathsList, SourcePath, ManifestJson Items)
+            var snapshotPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in detail.SavePathsList)
             {
-                paths.Add(detail.SourcePath);
+                if (!string.IsNullOrWhiteSpace(p)) snapshotPaths.Add(p.Trim());
+            }
+            if (!string.IsNullOrWhiteSpace(detail.SourcePath))
+            {
+                foreach (var p in detail.SourcePath.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    if (!string.IsNullOrWhiteSpace(p)) snapshotPaths.Add(p.Trim());
+                }
             }
 
-            // 1. Kiểm tra các thư mục/tệp tin thực tế trên đĩa
-            var detectedItems = new List<DetectedPathItem>();
-            foreach (var p in paths)
+            // Trích xuất thêm từ ManifestJson nếu có các Items con
+            if (!string.IsNullOrWhiteSpace(detail.ManifestJson))
             {
-                var item = InspectPath(p);
+                try
+                {
+                    var manifest = JsonSerializer.Deserialize<BackupManifest>(detail.ManifestJson);
+                    if (manifest?.Items != null)
+                    {
+                        foreach (var item in manifest.Items)
+                        {
+                            if (!string.IsNullOrWhiteSpace(item.SourcePath))
+                            {
+                                snapshotPaths.Add(item.SourcePath.Trim());
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // 2. Lấy dữ liệu hiện có (Cache của game từ SQLite) để parse thêm vào
+            var cachedGame = await _databaseService.GetCachedGameAsync(gameName);
+            
+            // Tập hợp toàn bộ RawPatterns: giữ lại các pattern gốc PCGW / Ludusavi và bổ sung thêm các đường dẫn từ snapshot
+            var allRawPatterns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (cachedGame?.RawPatterns != null)
+            {
+                foreach (var p in cachedGame.RawPatterns)
+                {
+                    if (!string.IsNullOrWhiteSpace(p)) allRawPatterns.Add(p.Trim());
+                }
+            }
+            foreach (var p in snapshotPaths)
+            {
+                if (!string.IsNullOrWhiteSpace(p)) allRawPatterns.Add(p.Trim());
+            }
+
+            // 3. Phân giải tất cả các mẫu (patterns) thành các đường dẫn thực tế trên máy tính
+            var pathResolver = _searchCoordinator.PathResolver ?? new PathResolverService();
+            var candidateConcretePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Bổ sung các đường dẫn từ snapshot
+            foreach (var p in snapshotPaths)
+            {
+                if (p.Contains("{{p|", StringComparison.OrdinalIgnoreCase))
+                {
+                    var resolved = pathResolver.ResolveRawPattern(p);
+                    foreach (var r in resolved) candidateConcretePaths.Add(r);
+                }
+                else
+                {
+                    candidateConcretePaths.Add(p);
+                }
+            }
+
+            // Phân giải các RawPatterns từ Cache (ví dụ {{p|userprofile}}\..., {{p|steam}}\..., v.v.)
+            foreach (var pat in allRawPatterns)
+            {
+                if (pat.Contains("{{p|", StringComparison.OrdinalIgnoreCase))
+                {
+                    var resolved = pathResolver.ResolveRawPattern(pat);
+                    foreach (var r in resolved) candidateConcretePaths.Add(r);
+                }
+                else
+                {
+                    candidateConcretePaths.Add(pat);
+                }
+            }
+
+            // 4. Kiểm tra các thư mục/tệp tin thực tế trên đĩa (LOẠI BỎ hoàn toàn các mẫu {{p|...}} hoặc đường dẫn ảo không tồn tại)
+            var detectedItems = pathResolver.InspectDetectedPathItems(candidateConcretePaths);
+
+            // Nếu InspectDetectedPathItems không tìm thấy gì nhưng snapshot có đường dẫn cụ thể trên đĩa,
+            // kiểm tra thêm các đường dẫn cụ thể (không chứa {{p|...}}) từ snapshot
+            if (detectedItems.Count == 0 && snapshotPaths.Count > 0)
+            {
+                foreach (var sp in snapshotPaths)
+                {
+                    if (!sp.Contains("{{p|", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var item = InspectPath(sp);
+                        if (item.FileCount > 0 || Directory.Exists(item.Path) || File.Exists(item.Path))
+                        {
+                            detectedItems.Add(item);
+                        }
+                    }
+                }
+            }
+
+            foreach (var item in detectedItems)
+            {
                 item.PropertyChanged += DetectedPathItem_PropertyChanged;
-                detectedItems.Add(item);
                 DetectedPathItems.Add(item);
                 DetectedPathsList.Add(item.Path);
-                OnlinePatternsList.Add(p);
+                OnlinePatternsList.Add(item.Path);
             }
 
-            // 2. Nạp ảnh bìa cục bộ (ưu tiên Covers/ -> Temp/covers/)
+            // 4. Nạp ảnh bìa cục bộ (ưu tiên Covers/ -> detail.CoverPath -> cache)
             string? coverUri = null;
             if (!string.IsNullOrEmpty(detail.CoverPath) && File.Exists(detail.CoverPath))
             {
@@ -742,6 +976,10 @@ public class SearchSubViewModel : INotifyPropertyChanged
                 if (File.Exists(localCover))
                 {
                     coverUri = GameCoverService.GetCoverImageUri(localCover);
+                }
+                else if (!string.IsNullOrEmpty(cachedGame?.OnlineCoverUrl))
+                {
+                    coverUri = cachedGame.OnlineCoverUrl;
                 }
                 else
                 {
@@ -755,45 +993,69 @@ public class SearchSubViewModel : INotifyPropertyChanged
 
             OnlineCoverUrl = coverUri;
 
-            // 3. Tạo GameSaveInfo và nạp vào ViewModel
+            // 5. Luôn đọc lại file thực thi (.exe) trên đĩa để lấy phiên bản mới nhất từ snapshot / cache / quét mới
+            var versionStr = detail.GameVersion ?? cachedGame?.CurrentGameVersion;
+            var exePath = detail.ExecutablePath ?? cachedGame?.ExecutablePath;
+            var exeSource = detail.ExeSource ?? cachedGame?.OnlineSource ?? cachedGame?.DetectedVersion?.DetectionSource;
+
+            var versionInfo = ResolveLatestVersion(
+                gameName,
+                exePath,
+                versionStr,
+                exeSource);
+
+            // 6. Tạo GameSaveInfo và nạp vào ViewModel
             var gameInfo = new GameSaveInfo
             {
                 GameName = gameName,
-                Source = "Chi tiết lịch sử sao lưu",
-                RawPatterns = paths,
-                ResolvedPaths = paths,
+                SteamAppId = cachedGame?.SteamAppId,
+                WikiPageTitle = cachedGame?.WikiPageTitle,
+                Source = cachedGame?.Source ?? "Chi tiết lịch sử sao lưu (Snapshot)",
+                RawPatterns = allRawPatterns.ToList(),
+                ResolvedPaths = candidateConcretePaths.ToList(),
                 DetectedPathItems = detectedItems,
-                DetectedPathsOnDisk = detectedItems.Select(i => i.Path).ToList(),
-                TotalSizeBytes = detectedItems.Sum(i => i.TotalSizeBytes),
-                FileCount = detectedItems.Sum(i => i.FileCount),
+                DetectedPathsOnDisk = detectedItems.Where(i => i.FileCount > 0 || Directory.Exists(i.Path) || File.Exists(i.Path)).Select(i => i.Path).ToList(),
+                TotalSizeBytes = detectedItems.Where(i => i.IsSelected).Sum(i => i.TotalSizeBytes),
+                FileCount = detectedItems.Where(i => i.IsSelected).Sum(i => i.FileCount),
                 OnlineCoverUrl = coverUri,
+                DetectedVersion = versionInfo,
                 LastScanned = DateTime.Now
             };
 
             CurrentGame = gameInfo;
             DetectedSizeFormatted = FormatBytes(gameInfo.TotalSizeBytes);
             DetectedFileCount = gameInfo.FileCount;
-            IsGameFoundOnDisk = DetectedPathItems.Count > 0;
+            IsGameFoundOnDisk = DetectedPathItems.Any(i => i.FileCount > 0 || Directory.Exists(i.Path) || File.Exists(i.Path));
 
             UpdateSelectedPathsStats();
 
+            // 7. Cập nhật / lưu lại cache với dữ liệu đã được parse thêm vào
+            try
+            {
+                await _databaseService.SaveGameCacheAsync(gameInfo);
+            }
+            catch (Exception exCache)
+            {
+                LoggingService.Warn("Lỗi cập nhật cache khi nạp snapshot: {Message}", exCache.Message);
+            }
+
             if (IsGameFoundOnDisk)
             {
-                StatusMessage = $"Đã nạp {DetectedPathItems.Count} vị trí lưu từ bản sao lưu {detail.BackupDate:dd/MM/yyyy HH:mm:ss} ({DetectedFileCount} tệp, {DetectedSizeFormatted}). Sẵn sàng sao lưu!";
+                StatusMessage = $"Đã nạp và hợp nhất {DetectedPathItems.Count} vị trí lưu ({DetectedFileCount} tệp, {DetectedSizeFormatted}) từ bản snapshot ngày {detail.BackupDate:dd/MM/yyyy HH:mm:ss}. Sẵn sàng sao lưu!";
             }
             else
             {
-                StatusMessage = $"Đã nạp thông tin từ bản sao lưu {detail.BackupDate:dd/MM/yyyy HH:mm:ss}, nhưng chưa thấy file save thực tế trên các ổ đĩa của bạn.";
+                StatusMessage = $"Đã nạp {DetectedPathItems.Count} vị trí lưu từ bản snapshot ngày {detail.BackupDate:dd/MM/yyyy HH:mm:ss}, nhưng các thư mục này hiện chưa thấy trên máy của bạn.";
             }
 
             _eventBus.Publish(new GameSelectedForBackupEvent(gameName));
 
-            LoggingService.LogAction("Detail_Snapshot_Loaded_For_Backup", new
+            LoggingService.LogAction("Detail_Snapshot_Merged_For_Backup", new
             {
                 GameName = gameName,
                 DetailId = detail.Id,
                 detail.BackupDate,
-                PathsCount = paths.Count,
+                MergedCount = allRawPatterns.Count,
                 DetectedCount = detectedItems.Count
             });
         }
@@ -802,8 +1064,6 @@ public class SearchSubViewModel : INotifyPropertyChanged
             StatusMessage = $"Lỗi nạp cấu hình từ bản sao lưu: {ex.Message}";
             LoggingService.Error(ex, "Lỗi nạp game từ snapshot chi tiết cho {Game}: {Message}", gameName, ex.Message);
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -876,7 +1136,17 @@ public class SearchSubViewModel : INotifyPropertyChanged
 
             OnlineCoverUrl = coverUri;
 
-            // 4. Tạo GameSaveInfo và nạp vào ViewModel
+            // 4. Tạo GameSaveInfo và nạp vào ViewModel - Luôn đọc lại file thực thi (.exe) trên đĩa lấy phiên bản mới nhất
+            var versionStr = latestSnapshot?.GameVersion ?? historyEntry.GameVersion;
+            var exePath = latestSnapshot?.ExecutablePath ?? historyEntry.ExecutablePath;
+            var exeSource = latestSnapshot?.ExeSource ?? historyEntry.ExeSource;
+
+            var versionInfo = ResolveLatestVersion(
+                gameName,
+                exePath,
+                versionStr,
+                exeSource);
+
             var gameInfo = new GameSaveInfo
             {
                 GameName = gameName,
@@ -888,6 +1158,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
                 TotalSizeBytes = detectedItems.Sum(i => i.TotalSizeBytes),
                 FileCount = detectedItems.Sum(i => i.FileCount),
                 OnlineCoverUrl = coverUri,
+                DetectedVersion = versionInfo,
                 LastScanned = DateTime.Now
             };
 
@@ -921,6 +1192,68 @@ public class SearchSubViewModel : INotifyPropertyChanged
             StatusMessage = $"Lỗi nạp cấu hình từ lịch sử: {ex.Message}";
             LoggingService.Error(ex, "Lỗi nạp game từ lịch sử cho {Game}: {Message}", gameName, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Đảm bảo luôn đọc lại file thực thi (.exe) trên đĩa để lấy phiên bản mới nhất khi nạp game vào giao diện sao lưu
+    /// (chỉ giữ lại duy nhất Ưu tiên 1: Đọc trực tiếp từ file .exe đã xác định).
+    /// </summary>
+    private static GameVersionInfo? ResolveLatestVersion(
+        string gameName,
+        string? preferredExePath,
+        string? fallbackVersionStr,
+        string? exeSource)
+    {
+        if (string.IsNullOrWhiteSpace(gameName)) return null;
+
+        // Ưu tiên 1: Nếu đã có đường dẫn .exe chỉ định (từ snapshot, history, hoặc cache) và file này tồn tại trên máy
+        if (!string.IsNullOrWhiteSpace(preferredExePath) && File.Exists(preferredExePath))
+        {
+            try
+            {
+                var dir = Path.GetDirectoryName(preferredExePath) ?? string.Empty;
+                var freshInfo = GameVersionDetectorService.ExtractVersionFromExe(preferredExePath, dir);
+                if (freshInfo != null && freshInfo.IsDetected)
+                {
+                    freshInfo.OnlineSource = !string.IsNullOrWhiteSpace(exeSource) ? exeSource : "ExecutableMetadata";
+                    freshInfo.DetectionMechanism = "ExecutableMetadata";
+                    freshInfo.DetectionSource = !string.IsNullOrWhiteSpace(exeSource) ? exeSource : "ExecutableFile";
+                    LoggingService.LogAction("Fresh_Exe_Version_Extracted", new
+                    {
+                        GameName = gameName,
+                        ExePath = preferredExePath,
+                        Version = freshInfo.DisplayVersion,
+                        Source = freshInfo.OnlineSource
+                    });
+                    return freshInfo;
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("Lỗi đọc file .exe trực tiếp cho {Game}: {Message}", gameName, ex.Message);
+            }
+        }
+
+        // Fallback: Nếu không có file .exe trên máy hoặc không đọc được, fallback về phiên bản đã ghi nhận trước đó (nếu có)
+        if (!string.IsNullOrWhiteSpace(fallbackVersionStr))
+        {
+            return new GameVersionInfo
+            {
+                DisplayVersion = fallbackVersionStr,
+                ExecutablePath = preferredExePath,
+                DetectionSource = exeSource ?? "HistoricalRecord",
+                DetectionMechanism = "HistoricalFallback",
+                OnlineSource = exeSource
+            };
+        }
+
+        return new GameVersionInfo
+        {
+            DisplayVersion = "Không tìm ra phiên bản",
+            DetectionSource = "NotDetected",
+            DetectionMechanism = "None",
+            OnlineSource = "Offline / Local"
+        };
     }
 
     private static DetectedPathItem InspectPath(string path)

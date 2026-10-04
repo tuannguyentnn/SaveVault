@@ -105,9 +105,50 @@ public class BackupService
             }
         }
 
+        var gameVersion = gameInfo.CurrentGameVersion;
+        string? exePath = gameInfo.ExecutablePath;
+        string? exeSource = gameInfo.OnlineSource ?? gameInfo.DetectedVersion?.DetectionSource ?? gameInfo.DetectionMechanism;
+
+        if (string.IsNullOrWhiteSpace(gameVersion) || gameVersion.Equals("Không tìm ra phiên bản", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(exePath))
+        {
+            try
+            {
+                var detector = new GameVersionDetectorService();
+                var detected = detector.DetectGameVersion(gameInfo.GameName, gameInfo.SteamAppId);
+                if (detected != null)
+                {
+                    if ((string.IsNullOrWhiteSpace(gameVersion) || gameVersion.Equals("Không tìm ra phiên bản", StringComparison.OrdinalIgnoreCase)) && detected.IsDetected)
+                    {
+                        gameVersion = detected.DisplayVersion;
+                    }
+                    if (string.IsNullOrWhiteSpace(exePath) && !string.IsNullOrWhiteSpace(detected.ExecutablePath))
+                    {
+                        exePath = detected.ExecutablePath;
+                    }
+                    if (string.IsNullOrWhiteSpace(exeSource))
+                    {
+                        exeSource = detected.OnlineSource ?? detected.DetectionSource ?? detected.DetectionMechanism;
+                    }
+                    if (gameInfo.DetectedVersion == null && detected.IsDetected)
+                    {
+                        gameInfo.DetectedVersion = detected;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        if (gameVersion != null && gameVersion.Equals("Không tìm ra phiên bản", StringComparison.OrdinalIgnoreCase))
+        {
+            gameVersion = null;
+        }
+
         var manifest = new BackupManifest
         {
             GameName = gameInfo.GameName,
+            GameVersion = gameVersion,
+            ExecutablePath = exePath,
+            ExeSource = exeSource,
             BackupDate = backupDateTime
         };
 
@@ -290,7 +331,10 @@ public class BackupService
             Status = "Success",
             Note = $"Đã backup {totalCopiedFiles} file từ {pathsToBackup.Count} vị trí lưu.",
             CoverUrl = coverPath,
-            CoverPath = coverPath
+            CoverPath = coverPath,
+            GameVersion = gameVersion,
+            ExecutablePath = exePath,
+            ExeSource = exeSource
         };
 
         var detailId = await _databaseService.InsertOrUpdateBackupHistoryAsync(detail);
@@ -301,6 +345,9 @@ public class BackupService
         {
             Id = detailId,
             GameName = gameInfo.GameName,
+            GameVersion = gameVersion,
+            ExecutablePath = exePath,
+            ExeSource = exeSource,
             BackupPath = finalBackupPath,
             SourcePath = sourcePathRecord,
             SavePaths = JsonSerializer.Serialize(pathsToBackup),

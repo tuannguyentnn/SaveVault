@@ -122,7 +122,10 @@ public class DatabaseService
                 Status TEXT NOT NULL DEFAULT 'Success',
                 Note TEXT,
                 CoverUrl TEXT,
-                CoverPath TEXT
+                CoverPath TEXT,
+                GameVersion TEXT,
+                ExecutablePath TEXT,
+                ExeSource TEXT
             );
 
             CREATE TABLE IF NOT EXISTS backup_history_details (
@@ -146,7 +149,10 @@ public class DatabaseService
                 CloudSyncDate TEXT,
                 CloudSyncJson TEXT,
                 CoverUrl TEXT,
-                CoverPath TEXT
+                CoverPath TEXT,
+                GameVersion TEXT,
+                ExecutablePath TEXT,
+                ExeSource TEXT
             );
 
             CREATE TABLE IF NOT EXISTS restore_history (
@@ -179,8 +185,14 @@ public class DatabaseService
         EnsureColumnExists(connection, "games_cache", "CoverUrl", "TEXT");
         EnsureColumnExists(connection, "backup_history", "CoverUrl", "TEXT");
         EnsureColumnExists(connection, "backup_history", "CoverPath", "TEXT");
+        EnsureColumnExists(connection, "backup_history", "GameVersion", "TEXT");
+        EnsureColumnExists(connection, "backup_history", "ExecutablePath", "TEXT");
+        EnsureColumnExists(connection, "backup_history", "ExeSource", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CoverUrl", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CoverPath", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "GameVersion", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "ExecutablePath", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "ExeSource", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "IsCloudSynced", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumnExists(connection, "backup_history_details", "CloudProvider", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CloudFileId", "TEXT");

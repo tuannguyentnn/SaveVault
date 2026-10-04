@@ -884,6 +884,151 @@
                         }
                     </div>
                 </div>
+
+                <!-- Card Trợ Lý AI Google Gemini (Resolver Executable & Path) -->
+                <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
+                    <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                        <div class="flex items-center space-x-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-base">
+                                ✨
+                            </div>
+                            <div>
+                                <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">TRỢ LÝ AI GOOGLE GEMINI (EXE &amp; PATH RESOLVER)</h3>
+                                <div class="text-[11px] text-slate-400">Tự động nhận diện file thực thi .exe và đường dẫn cài đặt cho game lạ, indie, repack mà không cần đăng nhập</div>
+                            </div>
+                        </div>
+                        <span class="px-3 py-1 text-[11px] font-bold rounded-full @(SettingsVM.EnableGeminiExeSearch && !string.IsNullOrWhiteSpace(SettingsVM.GeminiApiKey) ? "bg-purple-950/80 text-purple-300 border border-purple-500/40" : "bg-slate-800 text-slate-400 border border-slate-700") flex items-center space-x-1.5">
+                            <span>@(SettingsVM.EnableGeminiExeSearch && !string.IsNullOrWhiteSpace(SettingsVM.GeminiApiKey) ? "✨ Đang Kích Hoạt" : "○ Chưa Cấu Hình")</span>
+                        </span>
+                    </div>
+
+                    <!-- Bật/Tắt tính năng Gemini AI Resolver -->
+                    <div class="p-4 bg-[#0F172A] border border-[#2D3748] rounded-xl space-y-3">
+                        <div class="flex items-start justify-between space-x-3">
+                            <div class="space-y-1">
+                                <div class="text-[13px] font-bold text-white flex items-center space-x-2">
+                                    <span>Tự động tra cứu bằng Gemini AI khi catalog không có dữ liệu</span>
+                                    @if (SettingsVM.EnableGeminiExeSearch)
+                                    {
+                                        <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-700">Đang bật</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">Đã tắt</span>
+                                    }
+                                </div>
+                                <div class="text-[11px] text-slate-400 leading-relaxed">
+                                    Khi phát hiện game mà Steam Store và danh bạ built-in không có, ứng dụng sẽ gửi truy vấn REST ngầm đến Gemini AI để suy luận file gameplay chính và thư mục con chuẩn (&lt;4s timeout).
+                                </div>
+                            </div>
+                            <label class="switch-toggle mt-1">
+                                <input type="checkbox" @bind="SettingsVM.EnableGeminiExeSearch" />
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+
+                        @if (SettingsVM.EnableGeminiExeSearch)
+                        {
+                            <div class="pt-3 border-t border-slate-800/80 space-y-3.5">
+                                <!-- API Key Input -->
+                                <div class="space-y-1.5">
+                                    <div class="flex items-center justify-between">
+                                        <label class="text-[11.5px] font-semibold text-slate-300 flex items-center space-x-1.5">
+                                            <span>🔑</span>
+                                            <span>Google Gemini API Key (Miễn phí, không cần đăng nhập tài khoản khi dùng app):</span>
+                                        </label>
+                                        <button type="button"
+                                                class="text-[11px] text-purple-400 hover:text-purple-300 flex items-center space-x-1 underline cursor-pointer"
+                                                @onclick="() => SettingsVM.OpenGoogleAiStudioCommand.Execute(null)">
+                                            <span>🔗</span>
+                                            <span>Lấy Key miễn phí tại Google AI Studio</span>
+                                        </button>
+                                    </div>
+                                    <div class="relative">
+                                        <input type="@(ShowGeminiApiKey ? "text" : "password")"
+                                               class="input-dark w-full pr-10 text-[12px] font-mono bg-[#0A0F1D] border-[#334155] text-slate-100"
+                                               placeholder="AIzaSy..."
+                                               @bind="SettingsVM.GeminiApiKey" />
+                                        <button type="button"
+                                                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
+                                                @onclick="() => ShowGeminiApiKey = !ShowGeminiApiKey">
+                                            @(ShowGeminiApiKey ? "🙈" : "👁️")
+                                        </button>
+                                    </div>
+                                    <div class="text-[10.5px] text-slate-500">
+                                        API Key được mã hóa AES-256 đối xứng với Salt an toàn trước khi lưu vào app_config.json.
+                                    </div>
+                                </div>
+
+                                <!-- Model Selection & Test Button -->
+                                <div class="flex items-center justify-between flex-wrap gap-3 pt-1">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-[11.5px] text-slate-300 font-medium">Model:</span>
+                                        <select class="input-dark py-1 px-2.5 text-[11.5px] bg-[#0A0F1D] border-[#334155] text-slate-200 cursor-pointer"
+                                                @bind="SettingsVM.GeminiModel">
+                                            <option value="gemini-3.8-flash">gemini-3.8-flash (Khuyên dùng - Nhanh &amp; Mới nhất)</option>
+                                            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Siêu nhẹ)</option>
+                                            <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Suy luận sâu)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="flex items-center space-x-2">
+                                        <button type="button"
+                                                class="btn-secondary py-1 px-3 text-[11.5px] flex items-center space-x-1.5 text-purple-300 hover:text-white border-purple-500/40 hover:bg-purple-900/30 cursor-pointer"
+                                                disabled="@SettingsVM.IsTestingGemini"
+                                                @onclick="() => SettingsVM.TestGeminiConnectionCommand.Execute(null)">
+                                            <span>@(SettingsVM.IsTestingGemini ? "⏳" : "🧪")</span>
+                                            <span>@(SettingsVM.IsTestingGemini ? "Đang kiểm tra..." : "Kiểm Tra Kết Nối API")</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Thông tin Hạn Mức Gói Miễn Phí (Free Tier Rate Limits) -->
+                                <div class="p-3 rounded-lg bg-[#0A0F1D]/80 border border-purple-500/25 space-y-2">
+                                    <div class="flex items-center justify-between">
+                                        <div class="text-[11.5px] font-semibold text-purple-300 flex items-center space-x-1.5">
+                                            <span>⚡</span>
+                                            <span>Hạn mức Free Tier của Google AI Studio (Hoàn toàn miễn phí):</span>
+                                        </div>
+                                        <span class="text-[10px] text-purple-400 font-mono bg-purple-950/60 px-2 py-0.5 rounded border border-purple-500/30">
+                                            Reset 07:00 AM (giờ VN)
+                                        </span>
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+                                        <div class="bg-black/30 p-2 rounded border border-slate-800 flex flex-col">
+                                            <span class="text-slate-400 text-[10px]">Lượt truy vấn / ngày (RPD):</span>
+                                            <span class="font-bold text-emerald-400 font-mono text-[12.5px]">1.500 lượt / ngày</span>
+                                            <span class="text-[9.5px] text-slate-500 mt-0.5">Tìm được ~1.500 game mới mỗi ngày</span>
+                                        </div>
+                                        <div class="bg-black/30 p-2 rounded border border-slate-800 flex flex-col">
+                                            <span class="text-slate-400 text-[10px]">Tốc độ truy vấn / phút (RPM):</span>
+                                            <span class="font-bold text-cyan-400 font-mono text-[12.5px]">15 lượt / phút</span>
+                                            <span class="text-[9.5px] text-slate-500 mt-0.5">Tìm kiếm liên tục không bị nghẽn</span>
+                                        </div>
+                                        <div class="bg-black/30 p-2 rounded border border-slate-800 flex flex-col">
+                                            <span class="text-slate-400 text-[10px]">Giới hạn token (TPM):</span>
+                                            <span class="font-bold text-amber-400 font-mono text-[12.5px]">1.000.000 tokens / phút</span>
+                                            <span class="text-[9.5px] text-slate-500 mt-0.5">Mỗi game chỉ tốn ~300 tokens</span>
+                                        </div>
+                                    </div>
+                                    <div class="text-[10px] text-slate-400 flex items-center space-x-1 pt-0.5">
+                                        <span>💡</span>
+                                        <span>Ứng dụng tự động lưu cache vào RAM sau khi tra cứu thành công, không gửi lại request cho game cũ.</span>
+                                    </div>
+                                </div>
+
+                                <!-- Test Result Alert -->
+                                @if (!string.IsNullOrEmpty(SettingsVM.GeminiTestResult))
+                                {
+                                    <div class="p-2.5 rounded-lg text-[11.5px] flex items-center space-x-2 @(SettingsVM.GeminiTestSuccess == true ? "bg-emerald-950/70 border border-emerald-500/50 text-emerald-300" : (SettingsVM.GeminiTestSuccess == false ? "bg-red-950/70 border border-red-500/50 text-red-300" : "bg-purple-950/70 border border-purple-500/50 text-purple-300"))">
+                                        <span>@(SettingsVM.GeminiTestSuccess == true ? "✓" : (SettingsVM.GeminiTestSuccess == false ? "✕" : "ℹ️"))</span>
+                                        <span class="break-all">@SettingsVM.GeminiTestResult</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
             </div>
         }
 
@@ -1039,6 +1184,7 @@
 
     private int ActiveSubTab { get; set; } = 0;
     private bool ShowGSecret { get; set; }
+    private bool ShowGeminiApiKey { get; set; }
     private bool ShowSavedToast { get; set; }
     private string SelectedLogLevelFilter { get; set; } = "ALL";
     private string SearchLogKeyword { get; set; } = string.Empty;

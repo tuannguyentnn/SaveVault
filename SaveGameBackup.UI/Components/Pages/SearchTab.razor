@@ -216,6 +216,22 @@
                                                 <div style="color: #FFFFFF; font-weight: 700; font-size: 14px;">
                                                     @SearchVM.CurrentGame.GameName
                                                 </div>
+                                                @if (SearchVM.CurrentGame.DetectedVersion?.IsDetected == true)
+                                                {
+                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-mono"
+                                                          title="@($"Phiên bản: {SearchVM.CurrentGame.CurrentGameVersion}\nCơ chế: {SearchVM.CurrentGame.DetectionMechanism ?? "Local"}\nNguồn: {SearchVM.CurrentGame.OnlineSource ?? SearchVM.CurrentGame.DetectedVersion?.DetectionSource}\nThời gian: {SearchVM.CurrentGame.ResolutionDurationMs ?? 0} ms\nFile: {SearchVM.CurrentGame.ExecutablePath ?? "(Không xác định)"}")">
+                                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                                        <span>@SearchVM.CurrentGame.CurrentGameVersion</span>
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800/80 border border-slate-700/80 text-slate-400 font-sans"
+                                                          title="Chưa tìm thấy phiên bản của game trên máy tính. Bạn có thể bấm 'Tìm file .exe thủ công' bên dưới để trích xuất phiên bản.">
+                                                        <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                                                        <span>Không tìm ra phiên bản</span>
+                                                    </span>
+                                                }
                                                 <button type="button"
                                                         class="text-slate-400 hover:text-cyan-400 p-1 rounded hover:bg-slate-800 transition-colors cursor-pointer text-[13px] leading-none"
                                                         title="Chỉnh sửa tên game" @onclick="StartEditGameName">
@@ -232,6 +248,40 @@
                                         <div style="font-size: 11.5px; color: #8D9CB0; margin-top: 2px;">
                                             Tìm thấy @SearchVM.DetectedPathItems.Count vị trí lưu game trên máy
                                             (@SearchVM.DetectedFileCount tệp, @SearchVM.DetectedSizeFormatted).
+                                            <div class="flex items-center flex-wrap gap-2 mt-1">
+                                                @if (!string.IsNullOrEmpty(SearchVM.CurrentGame.ExecutablePath))
+                                                {
+                                                    <span class="inline-flex items-center text-[11px] text-slate-400/90 truncate max-w-md" title="@($"File: {SearchVM.CurrentGame.ExecutablePath}\nCơ chế: {SearchVM.CurrentGame.DetectionMechanism}\nNguồn: {SearchVM.CurrentGame.OnlineSource}")">
+                                                        <span class="text-cyan-400/80 font-medium mr-1">🎮 Thực thi:</span>
+                                                        <span class="font-mono text-slate-300 truncate">@SearchVM.CurrentGame.ExecutablePath</span>
+                                                        @if (!string.IsNullOrEmpty(SearchVM.CurrentGame.DetectionMechanism))
+                                                        {
+                                                            <span class="ml-1 text-[10px] px-1.5 py-0.2 rounded bg-blue-950/60 text-blue-300 border border-blue-500/30 font-sans shrink-0">@SearchVM.CurrentGame.DetectionMechanism</span>
+                                                        }
+                                                    </span>
+                                                    <button type="button"
+                                                            class="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-medium rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-cyan-200 border border-slate-700 hover:border-cyan-500/50 shadow-sm transition-all cursor-pointer"
+                                                            title="Mở thư mục chứa file .exe trong Windows Explorer"
+                                                            @onclick="() => SearchVM.OpenExecutableFolder()">
+                                                        <span>📂</span>
+                                                        <span>Mở thư mục .exe</span>
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <span class="inline-flex items-center text-[11px] text-slate-400/70 italic">
+                                                        <span class="text-slate-400 font-medium mr-1 not-italic">🎮 Thực thi:</span>
+                                                        <span>Chưa tìm thấy file .exe tự động</span>
+                                                    </span>
+                                                }
+                                                <button type="button"
+                                                        class="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-medium rounded bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-slate-700 hover:border-amber-500/50 shadow-sm transition-all cursor-pointer"
+                                                        title="Chọn file thực thi (.exe) thủ công từ máy tính để phân tích và cập nhật phiên bản"
+                                                        @onclick="() => SearchVM.PickExecutableFileManuallyAsync()">
+                                                    <span>🎯</span>
+                                                    <span>@(string.IsNullOrEmpty(SearchVM.CurrentGame.ExecutablePath) ? "Tìm file .exe thủ công" : "Đổi file .exe")</span>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

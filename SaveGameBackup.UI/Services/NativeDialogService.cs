@@ -6,6 +6,7 @@ public interface INativeDialogService
 {
     Task<string?> PickFolderAsync(string? title = null);
     Task<string?> PickDatabaseFileAsync(string? title = null);
+    Task<string?> PickExecutableFileAsync(string? title = null);
     void OpenFolderInExplorer(string folderPath);
     void OpenFileInExplorer(string filePath);
     void OpenUrl(string url);
@@ -72,6 +73,38 @@ public class NativeDialogService : INativeDialogService
         catch (Exception ex)
         {
             Debug.WriteLine($"PickDatabaseFileAsync error: {ex.Message}");
+            return null;
+        }
+#else
+        return await Task.FromResult<string?>(null);
+#endif
+    }
+
+    public async Task<string?> PickExecutableFileAsync(string? title = null)
+    {
+#if WINDOWS
+        try
+        {
+            return await Microsoft.Maui.ApplicationModel.MainThread.InvokeOnMainThreadAsync(async () =>
+            {
+                var filePicker = new Windows.Storage.Pickers.FileOpenPicker();
+                filePicker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.ComputerFolder;
+                filePicker.FileTypeFilter.Add(".exe");
+
+                var window = Microsoft.Maui.Controls.Application.Current?.Windows.FirstOrDefault()?.Handler?.PlatformView as Microsoft.UI.Xaml.Window;
+                if (window != null)
+                {
+                    var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+                    WinRT.Interop.InitializeWithWindow.Initialize(filePicker, hwnd);
+                }
+
+                var file = await filePicker.PickSingleFileAsync();
+                return file?.Path;
+            });
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"PickExecutableFileAsync error: {ex.Message}");
             return null;
         }
 #else

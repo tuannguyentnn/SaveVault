@@ -14,18 +14,24 @@ public class GameSearchCoordinator
     private readonly PCGamingWikiService _wikiService;
     private readonly PathResolverService _pathResolver;
     private readonly LudusaviManifestService _ludusaviService;
+    private readonly GameVersionDetectorService _versionDetector;
 
     public GameSearchCoordinator(
         DatabaseService databaseService,
         PCGamingWikiService? wikiService = null,
         PathResolverService? pathResolver = null,
-        LudusaviManifestService? ludusaviService = null)
+        LudusaviManifestService? ludusaviService = null,
+        GameVersionDetectorService? versionDetector = null)
     {
         _databaseService = databaseService;
         _wikiService = wikiService ?? new PCGamingWikiService();
         _pathResolver = pathResolver ?? new PathResolverService();
         _ludusaviService = ludusaviService ?? new LudusaviManifestService();
+        _versionDetector = versionDetector ?? new GameVersionDetectorService(_pathResolver);
     }
+
+    public PathResolverService PathResolver => _pathResolver;
+    public GameVersionDetectorService VersionDetector => _versionDetector;
 
     public async Task<GameSaveInfo?> SearchAndDetectGameAsync(
         string gameName,
@@ -197,6 +203,23 @@ public class GameSearchCoordinator
         statusProgress?.Report(gameInfo.IsFoundOnDisk
             ? $"Đã tìm thấy {gameInfo.FileCount} file save ({gameInfo.DetectedPathsOnDisk.Count} thư mục) từ nguồn: {gameInfo.Source}!"
             : $"Đã hoàn tất tìm kiếm từ nguồn: {gameInfo.Source}, nhưng chưa phát hiện file save thực tế trên máy tính.");
+
+        // Step 7: Auto-detect installed game version
+        try
+        {
+            var detectedVersion = await _versionDetector.DetectGameVersionAsync(gameInfo.GameName, gameInfo.SteamAppId, cancellationToken: cancellationToken).ConfigureAwait(false);
+            gameInfo.DetectedVersion = detectedVersion;
+            if (detectedVersion.IsDetected)
+            {
+                LoggingService.LogAction("Search_Game_Version_Detected", new
+                {
+                    GameName = gameInfo.GameName,
+                    Version = detectedVersion.DisplayVersion,
+                    Source = detectedVersion.DetectionSource
+                });
+            }
+        }
+        catch { }
 
         return gameInfo;
     }

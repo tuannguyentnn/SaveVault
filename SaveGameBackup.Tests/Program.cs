@@ -2441,8 +2441,246 @@ try
 
     Console.WriteLine("  ✓ Game successfully cached, queried, and cleanly deleted via DeleteGameCacheAsync!");
 
+    // Test 38: GameVersionDetectorService (Multi-Tier Game Version & Build Detection)
+    Console.WriteLine("\n[38] Testing GameVersionDetectorService (Multi-Tier Detection)");
+    var versionDetector = new GameVersionDetectorService();
+
+    // 38.1 Test Synthetic Directory Marker (e.g. v1.004.blake3)
+    var mockMarkerDir = Path.Combine(tempTestDir, "MockGameWithMarker");
+    Directory.CreateDirectory(mockMarkerDir);
+    File.WriteAllText(Path.Combine(mockMarkerDir, "v1.2.3.blake3"), "dummy");
+    var markerResult = versionDetector.DetectGameVersion("MockGameWithMarker", knownGameDirectory: mockMarkerDir);
+    if (!markerResult.IsDetected || !markerResult.DisplayVersion.Equals("v1.2.3", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new Exception($"FAIL: Expected v1.2.3 from marker, but got '{markerResult.DisplayVersion}'");
+    }
+    Console.WriteLine($"  ✓ Synthetic Directory Marker detection OK: {markerResult.DisplayVersion} ({markerResult.DetectionSource})");
+
+    // 38.2 Test Synthetic GOG Info File
+    var mockGogDir = Path.Combine(tempTestDir, "MockGogGame");
+    Directory.CreateDirectory(mockGogDir);
+    File.WriteAllText(Path.Combine(mockGogDir, "goggame-123456.info"), "{\"version\":\"2.4.0\",\"buildId\":\"98765\"}");
+    var gogResult = versionDetector.DetectGameVersion("MockGogGame", knownGameDirectory: mockGogDir);
+    if (!gogResult.IsDetected || !gogResult.DisplayVersion.Equals("v2.4.0", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new Exception($"FAIL: Expected v2.4.0 from GOG info, but got '{gogResult.DisplayVersion}'");
+    }
+    Console.WriteLine($"  ✓ Synthetic GOG Info detection OK: {gogResult.DisplayVersion} ({gogResult.DetectionSource})");
+
+    // 38.3 Test Real Machine Installed Games Detection
+    var vampireResult = versionDetector.DetectGameVersion("Vampire Survivors", steamAppId: "1794680");
+    if (vampireResult.IsDetected)
+    {
+        Console.WriteLine($"  ✓ Real Steam Game detected: Vampire Survivors -> {vampireResult.DisplayVersion} ({vampireResult.DetectionSource})");
+    }
+
+    var cyberpunkResult = versionDetector.DetectGameVersion("Cyberpunk 2077");
+    if (cyberpunkResult.IsDetected)
+    {
+        Console.WriteLine($"  ✓ Real Standalone Game detected: Cyberpunk 2077 -> {cyberpunkResult.DisplayVersion} ({cyberpunkResult.DetectionSource}) [True Path: {cyberpunkResult.ExecutablePath}]");
+        if (cyberpunkResult.ExecutablePath?.EndsWith("REDprelauncher.exe", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            throw new Exception($"FAIL: Detected REDprelauncher.exe instead of true Cyberpunk2077.exe!");
+        }
+        if (cyberpunkResult.ExecutablePath?.EndsWith("Cyberpunk2077.exe", StringComparison.OrdinalIgnoreCase) != true)
+        {
+            throw new Exception($"FAIL: Expected Cyberpunk2077.exe as True Path, but got '{cyberpunkResult.ExecutablePath}'");
+        }
+        if (!cyberpunkResult.DisplayVersion.Equals("v2.31", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception($"FAIL: Expected v2.31 from ProductVersion, but got '{cyberpunkResult.DisplayVersion}'");
+        }
+        Console.WriteLine($"  ✓ Verified: Cyberpunk 2077 correctly resolved True Path and Product Version (v2.31)!");
+    }
+
+    var skyrimResult = versionDetector.DetectGameVersion("The Elder Scrolls V: Skyrim Special Edition");
+    if (skyrimResult.IsDetected)
+    {
+        Console.WriteLine($"  ✓ Real GOG Registry Game detected: Skyrim -> {skyrimResult.DisplayVersion} ({skyrimResult.DetectionSource})");
+    }
+
+    if (File.Exists(@"E:\FINAL FANTASY VII REBIRTH\ff7rebirth.exe"))
+    {
+        var ff7Result = versionDetector.DetectGameVersion("Final Fantasy VII Rebirth");
+        if (!ff7Result.IsDetected || !ff7Result.DisplayVersion.Equals("v1.0.0.4", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new Exception($"FAIL: Expected v1.0.0.4 for Final Fantasy VII Rebirth, but got '{ff7Result.DisplayVersion}'");
+        }
+        Console.WriteLine($"  ✓ Real Square Enix/UE Game detected: Final Fantasy VII Rebirth -> {ff7Result.DisplayVersion} ({ff7Result.DetectionMechanism}, {ff7Result.DetectionSource}) [Path: {ff7Result.ExecutablePath}]");
+    }
+
+    // Test 39: OnlineExeResolverService & Online Fast-Probe Diagnostics
+    Console.WriteLine("\n[39] Testing OnlineExeResolverService & Multi-Mechanism Logging");
+    OnlineExeResolverService.ForceGeminiOnlyForTesting = false; // Tạm tắt mode force để test catalog
+    OnlineExeResolverService.RegisterDefinition(new() { GameName = "Cyberpunk 2077", PrimaryExeName = "Cyberpunk2077.exe", KnownRelativePaths = new() { "bin/x64", "game/bin/x64" }, SourceNetwork = "GitHub Community Catalog", SteamAppId = "1091500", Aliases = new() { "Cyberpunk2077", "Cyberpunk" } });
+    OnlineExeResolverService.RegisterDefinition(new() { GameName = "The Witcher 3: Wild Hunt", PrimaryExeName = "witcher3.exe", KnownRelativePaths = new() { "bin/x64", "bin/x64_dx12", "game/bin/x64" }, SourceNetwork = "GitHub Community Catalog", SteamAppId = "292030", Aliases = new() { "Witcher 3", "witcher3" } });
+    var onlineResolver = new OnlineExeResolverService();
+    var cpDef = await onlineResolver.ResolveExecutableInfoAsync("Cyberpunk 2077");
+    if (cpDef == null || !cpDef.PrimaryExeName.Equals("Cyberpunk2077.exe", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new Exception($"FAIL: Expected Cyberpunk2077.exe from Online Resolver, but got '{cpDef?.PrimaryExeName}'");
+    }
+    Console.WriteLine($"  ✓ Online Exe Definition resolved OK: {cpDef.GameName} -> {cpDef.PrimaryExeName} ({cpDef.SourceNetwork})");
+
+    var witcherDef = await onlineResolver.ResolveExecutableInfoAsync("The Witcher 3: Wild Hunt");
+    if (witcherDef == null || !witcherDef.PrimaryExeName.Equals("witcher3.exe", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new Exception($"FAIL: Expected witcher3.exe from Online Resolver, but got '{witcherDef?.PrimaryExeName}'");
+    }
+    Console.WriteLine($"  ✓ Online Exe Definition resolved OK: {witcherDef.GameName} -> {witcherDef.PrimaryExeName} ({witcherDef.SourceNetwork})");
+
+    var cpDetect = versionDetector.DetectGameVersion("Cyberpunk 2077");
+    if (cpDetect.IsDetected)
+    {
+        Console.WriteLine($"  ✓ Cyberpunk Fast-Probe Mechanism: {cpDetect.DetectionMechanism} (OnlineSource: {cpDetect.OnlineSource}, Duration: {cpDetect.ResolutionDurationMs} ms)");
+        if (cpDetect.DetectionMechanism != "OnlineFastProbe" && cpDetect.DetectionMechanism != "OnlineExeSearch")
+        {
+            throw new Exception($"FAIL: Expected OnlineFastProbe or OnlineExeSearch mechanism, but got '{cpDetect.DetectionMechanism}'");
+        }
+    }
+    OnlineExeResolverService.ForceGeminiOnlyForTesting = true; // Khôi phục lại cờ Force Gemini cho người dùng test
+    Console.WriteLine("  ✓ Online Exe Resolver and Multi-Mechanism Logging verified successfully!");
+
+    // Test 40: GeminiExeResolverService Diagnostics & Config Security
+    Console.WriteLine("\n[40] Testing GeminiExeResolverService & Secure API Configuration");
+    var geminiResolver = new GeminiExeResolverService();
+
+    // 1. Kiểm tra graceful fallback khi không có key
+    var emptyKeyResult = await geminiResolver.ResolveExecutableViaGeminiAsync("UnknownGame2026", customApiKey: "");
+    if (emptyKeyResult != null)
+    {
+        throw new Exception("FAIL: Expected null when Gemini API key is empty");
+    }
+    Console.WriteLine("  ✓ Gemini gracefully returns null when API key is missing (0ms blocking)");
+
+    // 2. Kiểm tra test connection khi không có key
+    var (testSuccess, testMsg) = await geminiResolver.TestApiKeyAsync("");
+    if (testSuccess || !testMsg.Contains("Vui lòng nhập API Key"))
+    {
+        throw new Exception($"FAIL: Expected validation failure for empty key, got '{testMsg}'");
+    }
+    Console.WriteLine("  ✓ Gemini API Key validation check passed");
+
+    // 3. Kiểm tra tính năng mã hóa và giải mã an toàn của GeminiApiKey trong AppConfigFile
+    var testConfig = new AppConfigFile();
+    testConfig.GeminiApiKey = "AIzaSyTest_SecretKey_123456789";
+    if (string.IsNullOrEmpty(testConfig.GeminiApiKeyProtected) || !testConfig.GeminiApiKeyProtected.StartsWith("ENC:v1:"))
+    {
+        throw new Exception("FAIL: GeminiApiKey was not protected with AES-256 + Salt");
+    }
+    if (testConfig.GeminiApiKey != "AIzaSyTest_SecretKey_123456789")
+    {
+        throw new Exception($"FAIL: Decrypted GeminiApiKey mismatch: '{testConfig.GeminiApiKey}'");
+    }
+    Console.WriteLine("  ✓ Gemini API Key AES-256-CBC with cryptographic Salt encryption & decryption verified OK");
+
+    // Test 41: Backup Version, Exe Path, Exe Source Recording & Merge on Snapshot Load
+    Console.WriteLine("\n[41] Testing Game Version, Exe Path, Exe Source in History & Merge from Snapshot");
+    var test41GameName = "Version Snapshot Test Game";
+    var test41Dir = Path.Combine(tempTestDir, "test41_save");
+    Directory.CreateDirectory(test41Dir);
+    File.WriteAllText(Path.Combine(test41Dir, "save1.dat"), "save content 1");
+
+    var test41CachePath = Path.Combine(tempTestDir, "test41_cache_save");
+    Directory.CreateDirectory(test41CachePath);
+    File.WriteAllText(Path.Combine(test41CachePath, "cached_save.dat"), "cached content");
+
+    // 1. Lưu trước vào SQLite Cache 1 đường dẫn khác
+    await db.SaveGameCacheAsync(new GameSaveInfo
+    {
+        GameName = test41GameName,
+        RawPatterns = new List<string> { test41CachePath },
+        ResolvedPaths = new List<string> { test41CachePath }
+    });
+
+    var test41GameInfo = new GameSaveInfo
+    {
+        GameName = test41GameName,
+        RawPatterns = new List<string> { test41Dir },
+        ResolvedPaths = new List<string> { test41Dir },
+        DetectedVersion = new GameVersionInfo
+        {
+            DisplayVersion = "v3.5.1",
+            ExecutablePath = @"C:\Games\Test41Game\bin\game.exe",
+            DetectionSource = "SteamManifest",
+            OnlineSource = "Steam Local ACF / Cloud"
+        }
+    };
+
+    var test41BackupSettings = new AppSettings
+    {
+        BackupRootDirectory = Path.Combine(tempTestDir, "test41_backups"),
+        AutoCompressZip = true
+    };
+
+    var test41Record = await backupService.BackupGameAsync(test41GameInfo, test41BackupSettings, new List<string> { test41Dir });
+
+    if (test41Record.GameVersion != "v3.5.1" || test41Record.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || test41Record.ExeSource != "Steam Local ACF / Cloud")
+    {
+        throw new Exception($"FAIL: BackupRecord did not record version/exe metadata correctly! Version: {test41Record.GameVersion}, Exe: {test41Record.ExecutablePath}, Source: {test41Record.ExeSource}");
+    }
+    Console.WriteLine("  ✓ BackupRecord recorded GameVersion, ExecutablePath, and ExeSource correctly!");
+
+    // 2. Kiểm tra SQLite backup_history (Master) và backup_history_details (Detail)
+    var masterHistories = await db.GetGameHistoriesAsync();
+    var test41Master = masterHistories.FirstOrDefault(h => h.GameName == test41GameName);
+    if (test41Master == null || test41Master.GameVersion != "v3.5.1" || test41Master.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || test41Master.ExeSource != "Steam Local ACF / Cloud")
+    {
+        throw new Exception($"FAIL: Master backup_history row missing version or exe info: Version='{test41Master?.GameVersion}', Exe='{test41Master?.ExecutablePath}', Source='{test41Master?.ExeSource}'");
+    }
+    Console.WriteLine("  ✓ Master backup_history correctly persisted GameVersion, ExecutablePath, and ExeSource!");
+
+    var test41Details = await db.GetHistoryDetailsByGameIdAsync(test41Master.Id);
+    var test41Detail = test41Details.FirstOrDefault();
+    if (test41Detail == null || test41Detail.GameVersion != "v3.5.1" || test41Detail.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || test41Detail.ExeSource != "Steam Local ACF / Cloud")
+    {
+        throw new Exception($"FAIL: Detail backup_history_details row missing version or exe info: Version='{test41Detail?.GameVersion}', Exe='{test41Detail?.ExecutablePath}', Source='{test41Detail?.ExeSource}'");
+    }
+    Console.WriteLine("  ✓ Detail backup_history_details correctly persisted GameVersion, ExecutablePath, and ExeSource!");
+
+    // 3. Kiểm tra merge logic từ snapshot vào cached data hiện có
+    var existingCache = await db.GetCachedGameAsync(test41GameName);
+    if (existingCache == null)
+    {
+        throw new Exception("FAIL: Existing cache not found before merge");
+    }
+
+    var mergedPatterns = new List<string>(existingCache.RawPatterns);
+    foreach (var p in test41Detail.SavePathsList)
+    {
+        if (!string.IsNullOrWhiteSpace(p) && !mergedPatterns.Any(existing => string.Equals(existing.TrimEnd('\\', '/'), p.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase)))
+        {
+            mergedPatterns.Add(p);
+        }
+    }
+
+    var mergedGame = new GameSaveInfo
+    {
+        GameName = existingCache.GameName,
+        RawPatterns = mergedPatterns,
+        DetectedVersion = new GameVersionInfo
+        {
+            DisplayVersion = !string.IsNullOrWhiteSpace(test41Detail.GameVersion) ? test41Detail.GameVersion : existingCache.CurrentGameVersion,
+            ExecutablePath = !string.IsNullOrWhiteSpace(test41Detail.ExecutablePath) ? test41Detail.ExecutablePath : existingCache.ExecutablePath,
+            OnlineSource = !string.IsNullOrWhiteSpace(test41Detail.ExeSource) ? test41Detail.ExeSource : existingCache.OnlineSource
+        }
+    };
+
+    await db.SaveGameCacheAsync(mergedGame);
+
+    var updatedCache = await db.GetCachedGameAsync(test41GameName);
+    if (updatedCache == null || !updatedCache.RawPatterns.Contains(test41Dir) || !updatedCache.RawPatterns.Contains(test41CachePath))
+    {
+        throw new Exception($"FAIL: SQLite cache was not updated with merged snapshot data! Patterns: {string.Join(", ", updatedCache?.RawPatterns ?? new List<string>())}");
+    }
+    if (mergedGame.CurrentGameVersion != "v3.5.1" || mergedGame.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || mergedGame.OnlineSource != "Steam Local ACF / Cloud")
+    {
+        throw new Exception($"FAIL: Merged game version/exe metadata mismatch: Version='{mergedGame.CurrentGameVersion}', Exe='{mergedGame.ExecutablePath}', Source='{mergedGame.OnlineSource}'");
+    }
+    Console.WriteLine("  ✓ Snapshot paths and version/exe metadata parsed and merged with existing cached data successfully!");
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 37 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 41 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally

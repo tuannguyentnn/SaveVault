@@ -57,6 +57,14 @@ public class GameSaveInfo
     public string Source { get; set; } = "Unknown";
     public DateTime? LastScanned { get; set; }
     public string? OnlineCoverUrl { get; set; }
+    public GameVersionInfo? DetectedVersion { get; set; }
+    public string CurrentGameVersion => (DetectedVersion != null && DetectedVersion.IsDetected)
+        ? DetectedVersion.DisplayVersion
+        : "Không tìm ra phiên bản";
+    public string? ExecutablePath => DetectedVersion?.ExecutablePath;
+    public string? DetectionMechanism => DetectedVersion?.DetectionMechanism;
+    public string? OnlineSource => DetectedVersion?.OnlineSource;
+    public double? ResolutionDurationMs => DetectedVersion?.ResolutionDurationMs;
 
     public string? WikiUrl
     {
@@ -93,6 +101,9 @@ public class BackupManifestItem
 public class BackupManifest
 {
     public string GameName { get; set; } = string.Empty;
+    public string? GameVersion { get; set; }
+    public string? ExecutablePath { get; set; }
+    public string? ExeSource { get; set; }
     public DateTime BackupDate { get; set; } = DateTime.Now;
     public List<BackupManifestItem> Items { get; set; } = new();
 }
@@ -101,6 +112,9 @@ public class BackupRecord
 {
     public long Id { get; set; }
     public string GameName { get; set; } = string.Empty;
+    public string? GameVersion { get; set; }
+    public string? ExecutablePath { get; set; }
+    public string? ExeSource { get; set; }
     private string _backupPath = string.Empty;
     public string BackupPath
     {
@@ -415,6 +429,30 @@ public class GameHistoryEntry : INotifyPropertyChanged
     private string _savePaths = string.Empty;
     private string _status = "Success";
     private string? _note;
+    private string? _gameVersion;
+    private string? _executablePath;
+    private string? _exeSource;
+
+    public string? GameVersion
+    {
+        get => _gameVersion;
+        set => SetField(ref _gameVersion, value);
+    }
+
+    public string? ExecutablePath
+    {
+        get => _executablePath;
+        set => SetField(ref _executablePath, value);
+    }
+
+    public string? ExeSource
+    {
+        get => _exeSource;
+        set => SetField(ref _exeSource, value);
+    }
+
+    public string ExeFileName => !string.IsNullOrEmpty(ExecutablePath) ? Path.GetFileName(ExecutablePath) : string.Empty;
+    public string ExeTooltip => $"Phiên bản: {(!string.IsNullOrEmpty(GameVersion) ? GameVersion : "Không rõ")}\nFile .exe: {ExecutablePath ?? "Chưa xác định"}\nNguồn .exe: {ExeSource ?? "Chưa xác định"}";
 
     public long Id
     {
@@ -916,6 +954,84 @@ public class BackupHistoryDetail : INotifyPropertyChanged
 
     public CloudSyncInfo? GetSyncInfo(string provider) =>
         CloudSyncList.FirstOrDefault(c => c.Provider.Equals(provider, StringComparison.OrdinalIgnoreCase));
+
+    private string? _gameVersion;
+    public string? GameVersion
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(_gameVersion)) return _gameVersion;
+            if (!string.IsNullOrWhiteSpace(_manifestJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(_manifestJson);
+                    if (doc.RootElement.TryGetProperty("GameVersion", out var gv))
+                    {
+                        var str = gv.GetString();
+                        if (!string.IsNullOrWhiteSpace(str)) return str;
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+        set => SetField(ref _gameVersion, value);
+    }
+
+    private string? _executablePath;
+    public string? ExecutablePath
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(_executablePath)) return _executablePath;
+            if (!string.IsNullOrWhiteSpace(_manifestJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(_manifestJson);
+                    if (doc.RootElement.TryGetProperty("ExecutablePath", out var ep))
+                    {
+                        var str = ep.GetString();
+                        if (!string.IsNullOrWhiteSpace(str)) return str;
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+        set => SetField(ref _executablePath, value);
+    }
+
+    private string? _exeSource;
+    public string? ExeSource
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(_exeSource)) return _exeSource;
+            if (!string.IsNullOrWhiteSpace(_manifestJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(_manifestJson);
+                    if (doc.RootElement.TryGetProperty("ExeSource", out var es) ||
+                        doc.RootElement.TryGetProperty("DetectionSource", out es))
+                    {
+                        var str = es.GetString();
+                        if (!string.IsNullOrWhiteSpace(str)) return str;
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+        set => SetField(ref _exeSource, value);
+    }
+
+    public string ExeFileName => !string.IsNullOrEmpty(ExecutablePath) ? Path.GetFileName(ExecutablePath) : string.Empty;
+    public string ExeTooltip => $"Phiên bản: {GameVersionFormatted}\nFile .exe: {ExecutablePath ?? "Chưa xác định"}\nNguồn .exe: {ExeSource ?? "Chưa xác định"}";
+
+    public string GameVersionFormatted => !string.IsNullOrWhiteSpace(GameVersion) ? GameVersion : "Không rõ version";
 
     public string CloudStatusFormatted => IsCloudSynced 
         ? (!string.IsNullOrWhiteSpace(CloudProvider) ? $"Đã đồng bộ ({CloudProvider})" : "Đã đồng bộ Cloud") 

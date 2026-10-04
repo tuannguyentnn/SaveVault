@@ -42,6 +42,15 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     private bool _isDatabaseRestoreModalOpen;
     private bool _isScanningCloudDatabaseBackups;
 
+    // Gemini AI Resolver fields
+    private readonly GeminiExeResolverService _geminiService;
+    private bool _enableGeminiExeSearch = true;
+    private string _geminiApiKey = string.Empty;
+    private string _geminiModel = "gemini-3.8-flash";
+    private bool _isTestingGemini;
+    private string _geminiTestResult = string.Empty;
+    private bool? _geminiTestSuccess;
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<DatabaseCloudBackupEntry> DatabaseCloudBackups { get; } = new();
@@ -53,7 +62,8 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         INativeDialogService? nativeDialog = null,
         LudusaviManifestService? ludusaviService = null,
         DatabaseBackupService? databaseBackupService = null,
-        CloudManagerService? cloudManager = null)
+        CloudManagerService? cloudManager = null,
+        GeminiExeResolverService? geminiService = null)
     {
         _databaseService = databaseService;
         _dialogService = dialogService;
@@ -62,6 +72,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _ludusaviService = ludusaviService ?? new LudusaviManifestService();
         _cloudManager = cloudManager;
         _databaseBackupService = databaseBackupService ?? new DatabaseBackupService(databaseService, cloudManager ?? new CloudManagerService(databaseService));
+        _geminiService = geminiService ?? new GeminiExeResolverService();
 
         var config = AppConfigService.GetConfig();
 
@@ -73,6 +84,10 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _ludusaviAutoUpdateDays = config.LudusaviAutoUpdateDays > 0 ? config.LudusaviAutoUpdateDays : 15;
         _databaseCloudBackupTarget = !string.IsNullOrWhiteSpace(config.DatabaseCloudBackupTarget) ? config.DatabaseCloudBackupTarget : "GoogleDrive";
 
+        _enableGeminiExeSearch = config.EnableGeminiExeSearch;
+        _geminiApiKey = config.GeminiApiKey ?? string.Empty;
+        _geminiModel = !string.IsNullOrWhiteSpace(config.GeminiModel) && !config.GeminiModel.Contains("2.5") ? config.GeminiModel : "gemini-3.8-flash";
+
         SaveSettingsCommand = new RelayCommand(async _ => await ExecuteSaveSettingsAsync());
         SyncCatalogCommand = new RelayCommand(async _ => await ExecuteSyncCatalogAsync(), _ => !IsSyncingCatalog);
 
@@ -82,6 +97,9 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         RestoreDatabaseCommand = new RelayCommand(async param => await ExecuteRestoreDatabaseAsync(param as DatabaseCloudBackupEntry));
         ScanCloudDatabaseBackupsCommand = new RelayCommand(async _ => await ExecuteScanCloudDatabaseBackupsAsync(), _ => !_isScanningCloudDatabaseBackups);
         OpenCloudWebUrlCommand = new RelayCommand(param => OpenCloudWebUrl(param?.ToString()));
+
+        TestGeminiConnectionCommand = new RelayCommand(async _ => await ExecuteTestGeminiConnectionAsync(), _ => !IsTestingGemini);
+        OpenGoogleAiStudioCommand = new RelayCommand(_ => OpenCloudWebUrl("https://aistudio.google.com/app/apikey"));
 
         // Nạp lịch sử sao lưu database trong nền
         _ = LoadDatabaseCloudHistoryAsync();
@@ -138,6 +156,79 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             {
                 AppConfigService.UpdateConfig(cfg => cfg.LudusaviAutoUpdateDays = value);
             }
+        }
+    }
+
+    public bool EnableGeminiExeSearch
+    {
+        get => _enableGeminiExeSearch;
+        set => SetField(ref _enableGeminiExeSearch, value);
+    }
+
+    public string GeminiApiKey
+    {
+        get => _geminiApiKey;
+        set => SetField(ref _geminiApiKey, value);
+    }
+
+    public string GeminiModel
+    {
+        get => _geminiModel;
+        set => SetField(ref _geminiModel, value);
+    }
+
+    public bool IsTestingGemini
+    {
+        get => _isTestingGemini;
+        set
+        {
+            if (SetField(ref _isTestingGemini, value))
+            {
+                (TestGeminiConnectionCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+    }
+
+    public string GeminiTestResult
+    {
+        get => _geminiTestResult;
+        set => SetField(ref _geminiTestResult, value);
+    }
+
+    public bool? GeminiTestSuccess
+    {
+        get => _geminiTestSuccess;
+        set => SetField(ref _geminiTestSuccess, value);
+    }
+
+    public async Task ExecuteTestGeminiConnectionAsync()
+    {
+        if (IsTestingGemini) return;
+        if (string.IsNullOrWhiteSpace(GeminiApiKey))
+        {
+            GeminiTestSuccess = false;
+            GeminiTestResult = "Vui lòng nhập Gemini API Key trước khi kiểm tra.";
+            return;
+        }
+
+        IsTestingGemini = true;
+        GeminiTestResult = "Đang kết nối tới Google Gemini API...";
+        GeminiTestSuccess = null;
+
+        try
+        {
+            var (success, message) = await _geminiService.TestApiKeyAsync(GeminiApiKey, GeminiModel);
+            GeminiTestSuccess = success;
+            GeminiTestResult = message;
+        }
+        catch (Exception ex)
+        {
+            GeminiTestSuccess = false;
+            GeminiTestResult = $"Lỗi: {ex.Message}";
+        }
+        finally
+        {
+            IsTestingGemini = false;
         }
     }
 
@@ -206,6 +297,8 @@ public class SettingsSubViewModel : INotifyPropertyChanged
 
     public ICommand SaveSettingsCommand { get; }
     public ICommand SyncCatalogCommand { get; }
+    public ICommand TestGeminiConnectionCommand { get; }
+    public ICommand OpenGoogleAiStudioCommand { get; }
 
     public async Task ExecuteSyncCatalogAsync()
     {
@@ -292,6 +385,9 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             cfg.UseSqlPagination = UseSqlPagination;
             cfg.AutoUpdateLudusaviManifest = AutoUpdateLudusaviManifest;
             cfg.LudusaviAutoUpdateDays = LudusaviAutoUpdateDays;
+            cfg.EnableGeminiExeSearch = EnableGeminiExeSearch;
+            cfg.GeminiApiKey = GeminiApiKey;
+            cfg.GeminiModel = GeminiModel;
         });
 
         _dialogService.ShowMessage("Lưu Cài Đặt", "Đã lưu toàn bộ cấu hình vào app_config.json thành công!", "Success");
@@ -303,7 +399,9 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             PageSize,
             UseSqlPagination,
             AutoUpdateLudusaviManifest,
-            LudusaviAutoUpdateDays
+            LudusaviAutoUpdateDays,
+            EnableGeminiExeSearch,
+            GeminiModel
         });
 
         await Task.CompletedTask;
