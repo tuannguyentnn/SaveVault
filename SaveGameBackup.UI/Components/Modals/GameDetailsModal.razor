@@ -97,6 +97,20 @@
                 <div
                     class="bg-[#0B132B] border-b border-[#1E293B] px-6 py-2.5 flex items-center justify-between text-[11.5px] flex-shrink-0">
                     <div class="flex items-center space-x-3.5 flex-wrap gap-y-1">
+                        @if (!string.IsNullOrWhiteSpace(ActiveDetail.SteamAppId))
+                        {
+                            <button type="button"
+                                class="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-sky-950/70 hover:bg-sky-900/80 border border-sky-500/40 hover:border-sky-400 text-sky-300 hover:text-sky-200 font-mono font-bold text-[11px] cursor-pointer transition-colors group"
+                                title="Nhấp để mở trang Steam Store của game (@ActiveDetail.SteamUrl)"
+                                @onclick="() => VM.SearchVM.OpenSteamStorePage(ActiveDetail.SteamAppId)">
+                                <span class="text-slate-400 font-medium font-sans group-hover:text-slate-300">🎮 Steam ID:</span>
+                                <span>@ActiveDetail.SteamAppId</span>
+                                <svg class="w-2.5 h-2.5 text-sky-400 group-hover:text-cyan-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" 
+                                     fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                            </button>
+                        }
                         <div class="flex items-center space-x-1.5" title="Phiên bản game tại thời điểm sao lưu">
                             <span class="text-slate-400 font-medium">🏷️ Version:</span>
                             <span

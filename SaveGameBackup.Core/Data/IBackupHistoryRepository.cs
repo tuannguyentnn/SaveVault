@@ -50,6 +50,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         public string? GameVersion { get; set; }
         public string? ExecutablePath { get; set; }
         public string? ExeSource { get; set; }
+        public string? SteamAppId { get; set; }
     }
 
     private class DetailHistoryRow
@@ -78,6 +79,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         public string? GameVersion { get; set; }
         public string? ExecutablePath { get; set; }
         public string? ExeSource { get; set; }
+        public string? SteamAppId { get; set; }
     }
 
     public async Task<long> InsertOrUpdateBackupHistoryAsync(BackupHistoryDetail detail)
@@ -146,7 +148,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                         CoverPath = COALESCE(@CoverPath, CoverPath),
                         GameVersion = COALESCE(@GameVersion, GameVersion),
                         ExecutablePath = COALESCE(@ExecutablePath, ExecutablePath),
-                        ExeSource = COALESCE(@ExeSource, ExeSource)
+                        ExeSource = COALESCE(@ExeSource, ExeSource),
+                        SteamAppId = COALESCE(@SteamAppId, SteamAppId)
                     WHERE Id = @Id;
                 ";
                 await connection.ExecuteAsync(updateMasterSql, new
@@ -165,6 +168,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                     GameVersion = detail.GameVersion,
                     ExecutablePath = detail.ExecutablePath,
                     ExeSource = detail.ExeSource,
+                    SteamAppId = detail.SteamAppId,
                     Id = gameHistoryId
                 }, transaction);
             }
@@ -174,8 +178,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 var latestBackupPathJson = JsonSerializer.Serialize(folderList);
 
                 const string insertMasterSql = @"
-                    INSERT INTO backup_history (GameName, BackupCount, LatestBackupPath, LatestBackupDate, TotalSizeBytes, LatestSizeBytes, LatestFileCount, SavePaths, Status, Note, CoverUrl, CoverPath, GameVersion, ExecutablePath, ExeSource)
-                    VALUES (@GameName, 1, @LatestBackupPath, @LatestBackupDate, @TotalSizeBytes, @LatestSizeBytes, @LatestFileCount, @SavePaths, @Status, @Note, @CoverUrl, @CoverPath, @GameVersion, @ExecutablePath, @ExeSource);
+                    INSERT INTO backup_history (GameName, BackupCount, LatestBackupPath, LatestBackupDate, TotalSizeBytes, LatestSizeBytes, LatestFileCount, SavePaths, Status, Note, CoverUrl, CoverPath, GameVersion, ExecutablePath, ExeSource, SteamAppId)
+                    VALUES (@GameName, 1, @LatestBackupPath, @LatestBackupDate, @TotalSizeBytes, @LatestSizeBytes, @LatestFileCount, @SavePaths, @Status, @Note, @CoverUrl, @CoverPath, @GameVersion, @ExecutablePath, @ExeSource, @SteamAppId);
                     SELECT last_insert_rowid();
                 ";
                 gameHistoryId = await connection.ExecuteScalarAsync<long>(insertMasterSql, new
@@ -193,7 +197,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                     CoverPath = detail.CoverPath,
                     GameVersion = detail.GameVersion,
                     ExecutablePath = detail.ExecutablePath,
-                    ExeSource = detail.ExeSource
+                    ExeSource = detail.ExeSource,
+                    SteamAppId = detail.SteamAppId
                 }, transaction);
             }
 
@@ -206,9 +211,9 @@ public class BackupHistoryRepository : IBackupHistoryRepository
 
             const string insertDetailSql = @"
                 INSERT INTO backup_history_details 
-                (GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson, CoverUrl, CoverPath, GameVersion, ExecutablePath, ExeSource)
+                (GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson, CoverUrl, CoverPath, GameVersion, ExecutablePath, ExeSource, SteamAppId)
                 VALUES 
-                (@GameHistoryId, @GameName, @BackupPath, @SourcePath, @SavePaths, @ManifestJson, @FileCount, @TotalSizeBytes, @BackupDate, @IsCompressed, @Status, @Note, @IsCloudSynced, @CloudProvider, @CloudFileId, @CloudFileName, @CloudSyncDate, @CloudSyncJson, @CoverUrl, @CoverPath, @GameVersion, @ExecutablePath, @ExeSource);
+                (@GameHistoryId, @GameName, @BackupPath, @SourcePath, @SavePaths, @ManifestJson, @FileCount, @TotalSizeBytes, @BackupDate, @IsCompressed, @Status, @Note, @IsCloudSynced, @CloudProvider, @CloudFileId, @CloudFileName, @CloudSyncDate, @CloudSyncJson, @CoverUrl, @CoverPath, @GameVersion, @ExecutablePath, @ExeSource, @SteamAppId);
                 SELECT last_insert_rowid();
             ";
 
@@ -236,7 +241,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 CoverPath = detail.CoverPath,
                 GameVersion = detail.GameVersion,
                 ExecutablePath = detail.ExecutablePath,
-                ExeSource = detail.ExeSource
+                ExeSource = detail.ExeSource,
+                SteamAppId = detail.SteamAppId
             }, transaction);
 
             detail.Id = detailId;
@@ -254,7 +260,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
         const string sql = @"
-            SELECT h.Id, h.GameName, h.BackupCount, h.LatestBackupPath, h.LatestBackupDate, h.TotalSizeBytes, h.LatestSizeBytes, h.LatestFileCount, h.SavePaths, h.Status, h.Note, h.CoverUrl, h.CoverPath, h.GameVersion, h.ExecutablePath, h.ExeSource,
+            SELECT h.Id, h.GameName, h.BackupCount, h.LatestBackupPath, h.LatestBackupDate, h.TotalSizeBytes, h.LatestSizeBytes, h.LatestFileCount, h.SavePaths, h.Status, h.Note, h.CoverUrl, h.CoverPath, h.GameVersion, h.ExecutablePath, h.ExeSource, h.SteamAppId,
                    CASE WHEN EXISTS (
                        SELECT 1 FROM backup_history_details d 
                        WHERE d.GameHistoryId = h.Id 
@@ -296,7 +302,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 CoverPath = coverPath,
                 GameVersion = r.GameVersion,
                 ExecutablePath = r.ExecutablePath,
-                ExeSource = r.ExeSource
+                ExeSource = r.ExeSource,
+                SteamAppId = r.SteamAppId
             };
         }).ToList();
     }
@@ -329,7 +336,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
         };
 
         string dataSql = $@"
-            SELECT h.Id, h.GameName, h.BackupCount, h.LatestBackupPath, h.LatestBackupDate, h.TotalSizeBytes, h.LatestSizeBytes, h.LatestFileCount, h.SavePaths, h.Status, h.Note, h.CoverUrl, h.CoverPath, h.GameVersion, h.ExecutablePath, h.ExeSource,
+            SELECT h.Id, h.GameName, h.BackupCount, h.LatestBackupPath, h.LatestBackupDate, h.TotalSizeBytes, h.LatestSizeBytes, h.LatestFileCount, h.SavePaths, h.Status, h.Note, h.CoverUrl, h.CoverPath, h.GameVersion, h.ExecutablePath, h.ExeSource, h.SteamAppId,
                    CASE WHEN EXISTS (
                        SELECT 1 FROM backup_history_details d 
                        WHERE d.GameHistoryId = h.Id 
@@ -373,7 +380,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 CoverPath = coverPath,
                 GameVersion = r.GameVersion,
                 ExecutablePath = r.ExecutablePath,
-                ExeSource = r.ExeSource
+                ExeSource = r.ExeSource,
+                SteamAppId = r.SteamAppId
             };
         }).ToList();
 
@@ -390,7 +398,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
         const string sql = @"
-            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson, CoverUrl, CoverPath, GameVersion, ExecutablePath, ExeSource
+            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson, CoverUrl, CoverPath, GameVersion, ExecutablePath, ExeSource, SteamAppId
             FROM backup_history_details
             WHERE GameHistoryId = @GameId
             ORDER BY Id DESC;
@@ -467,7 +475,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 CoverPath = coverPath,
                 GameVersion = r.GameVersion,
                 ExecutablePath = r.ExecutablePath,
-                ExeSource = r.ExeSource
+                ExeSource = r.ExeSource,
+                SteamAppId = r.SteamAppId
             });
         }
 
@@ -491,7 +500,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
 
         string orderDir = sortAscending ? "ASC" : "DESC";
         string dataSql = $@"
-            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson, CoverUrl, CoverPath, GameVersion, ExecutablePath, ExeSource
+            SELECT Id, GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, IsCloudSynced, CloudProvider, CloudFileId, CloudFileName, CloudSyncDate, CloudSyncJson, CoverUrl, CoverPath, GameVersion, ExecutablePath, ExeSource, SteamAppId
             FROM backup_history_details
             WHERE GameHistoryId = @GameId
             ORDER BY Id {orderDir}
@@ -569,7 +578,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 CoverPath = coverPath,
                 GameVersion = r.GameVersion,
                 ExecutablePath = r.ExecutablePath,
-                ExeSource = r.ExeSource
+                ExeSource = r.ExeSource,
+                SteamAppId = r.SteamAppId
             });
         }
 
@@ -760,7 +770,7 @@ public class BackupHistoryRepository : IBackupHistoryRepository
     {
         using var connection = await _connectionFactory.CreateOpenConnectionAsync();
         const string sql = @"
-            SELECT Id, GameName, BackupPath, SourcePath, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, SavePaths, GameVersion, ExecutablePath, ExeSource
+            SELECT Id, GameName, BackupPath, SourcePath, FileCount, TotalSizeBytes, BackupDate, IsCompressed, Status, Note, SavePaths, GameVersion, ExecutablePath, ExeSource, SteamAppId
             FROM backup_history_details
             ORDER BY Id DESC;
         ";
@@ -783,7 +793,8 @@ public class BackupHistoryRepository : IBackupHistoryRepository
                 SavePaths = r.SavePaths ?? string.Empty,
                 GameVersion = r.GameVersion,
                 ExecutablePath = r.ExecutablePath,
-                ExeSource = r.ExeSource
+                ExeSource = r.ExeSource,
+                SteamAppId = r.SteamAppId
             }).ToList();
         }
         catch

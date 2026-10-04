@@ -118,7 +118,7 @@ public class PCGamingWikiService
 
             // Extract Steam AppID
             // Extract Steam AppID (hỗ trợ nhiều format template wiki phổ biến)
-            var steamMatch = Regex.Match(wikitext, @"(?:\{\{Steam\||steam(?:\s+app)?\s*id\s*=\s*|\|\s*steam\s*=\s*|store\.steampowered\.com/(?:app|news/app)/)([0-9]+)", RegexOptions.IgnoreCase);
+            var steamMatch = Regex.Match(wikitext, @"(?:\{\{Steam(?:\s+AppID)?\|(?:app\|)?|steam(?:[\s_]+app)?[\s_]*id\s*=\s*|\|\s*steam\s*=\s*|store\.steampowered\.com/(?:app|news/app)/|steamdb\.info/app/)([0-9]+)", RegexOptions.IgnoreCase);
             if (steamMatch.Success)
             {
                 gameInfo.SteamAppId = steamMatch.Groups[1].Value;
@@ -126,6 +126,11 @@ public class PCGamingWikiService
             else
             {
                 gameInfo.SteamAppId = new LudusaviManifestService().FindGame(gameInfo.GameName)?.SteamId;
+            }
+
+            if (string.IsNullOrEmpty(gameInfo.SteamAppId))
+            {
+                gameInfo.SteamAppId = await GameCoverService.FetchSteamAppIdFromStoreSearchAsync(gameInfo.GameName, cancellationToken);
             }
 
             // Extract Cover image URL (ƯU TIÊN PCGAMINGWIKI TRƯỚC -> STEAM)

@@ -752,6 +752,27 @@ public class SearchSubViewModel : INotifyPropertyChanged
         }
     }
 
+    public void OpenSteamStorePage(string? steamAppId = null)
+    {
+        var id = !string.IsNullOrWhiteSpace(steamAppId) ? steamAppId : CurrentGame?.SteamAppId;
+        if (string.IsNullOrWhiteSpace(id)) return;
+
+        var url = $"https://store.steampowered.com/app/{Uri.EscapeDataString(id.Trim())}";
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+            LoggingService.LogAction("Open_Steam_Store_Web", new { Url = url, SteamAppId = id, Game = CurrentGame?.GameName });
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Error(ex, "Không thể mở trang Steam Store: {Url}", url);
+        }
+    }
+
     private void ExecuteRemoveDetectedPath(DetectedPathItem? item)
     {
         if (item == null) return;
@@ -1008,7 +1029,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
             var gameInfo = new GameSaveInfo
             {
                 GameName = gameName,
-                SteamAppId = cachedGame?.SteamAppId,
+                SteamAppId = detail.SteamAppId ?? cachedGame?.SteamAppId,
                 WikiPageTitle = cachedGame?.WikiPageTitle,
                 Source = cachedGame?.Source ?? "Chi tiết lịch sử sao lưu (Snapshot)",
                 RawPatterns = allRawPatterns.ToList(),
@@ -1147,9 +1168,21 @@ public class SearchSubViewModel : INotifyPropertyChanged
                 versionStr,
                 exeSource);
 
+            var effectiveSteamAppId = latestSnapshot?.SteamAppId ?? historyEntry.SteamAppId;
+            if (string.IsNullOrEmpty(effectiveSteamAppId))
+            {
+                try
+                {
+                    var cached = await _databaseService.GetCachedGameAsync(gameName);
+                    effectiveSteamAppId = cached?.SteamAppId;
+                }
+                catch { }
+            }
+
             var gameInfo = new GameSaveInfo
             {
                 GameName = gameName,
+                SteamAppId = effectiveSteamAppId,
                 Source = "Lịch sử sao lưu",
                 RawPatterns = paths,
                 ResolvedPaths = paths,

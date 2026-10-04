@@ -149,6 +149,7 @@ public class BackupService
             GameVersion = gameVersion,
             ExecutablePath = exePath,
             ExeSource = exeSource,
+            SteamAppId = gameInfo.SteamAppId,
             BackupDate = backupDateTime
         };
 
@@ -334,7 +335,8 @@ public class BackupService
             CoverPath = coverPath,
             GameVersion = gameVersion,
             ExecutablePath = exePath,
-            ExeSource = exeSource
+            ExeSource = exeSource,
+            SteamAppId = gameInfo.SteamAppId
         };
 
         var detailId = await _databaseService.InsertOrUpdateBackupHistoryAsync(detail);
@@ -348,6 +350,7 @@ public class BackupService
             GameVersion = gameVersion,
             ExecutablePath = exePath,
             ExeSource = exeSource,
+            SteamAppId = gameInfo.SteamAppId,
             BackupPath = finalBackupPath,
             SourcePath = sourcePathRecord,
             SavePaths = JsonSerializer.Serialize(pathsToBackup),

@@ -12,8 +12,8 @@ public static class AppBuildInfo
 {
     public const string AppName = "Omnisave";
     public const string AppTitle = "Omnisave - Game Save Backup & Cloud Sync";
-    public const string Version = "1.3.5";
-    public const string BuildDate = "2026-10-02";
+    public const string Version = "1.3.6";
+    public const string BuildDate = "2026-10-04";
     public const string Author = "Nguyễn Ngọc Tuấn (tuannguyen01101995)";
     public const string Description = "Ứng dụng chuyên nghiệp tự động nhận diện, sao lưu và đồng bộ save game lên đám mây (Google Drive & OneDrive) dành riêng cho game thủ PC.";
     public const string License = "MIT License - Tự do sử dụng và tùy biến cho mục đích cá nhân phi thương mại.";

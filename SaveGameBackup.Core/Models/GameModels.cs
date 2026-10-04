@@ -88,6 +88,10 @@ public class GameSaveInfo
             return null;
         }
     }
+
+    public string? SteamUrl => !string.IsNullOrWhiteSpace(SteamAppId)
+        ? $"https://store.steampowered.com/app/{Uri.EscapeDataString(SteamAppId.Trim())}"
+        : null;
 }
 
 public class BackupManifestItem
@@ -104,6 +108,7 @@ public class BackupManifest
     public string? GameVersion { get; set; }
     public string? ExecutablePath { get; set; }
     public string? ExeSource { get; set; }
+    public string? SteamAppId { get; set; }
     public DateTime BackupDate { get; set; } = DateTime.Now;
     public List<BackupManifestItem> Items { get; set; } = new();
 }
@@ -115,6 +120,7 @@ public class BackupRecord
     public string? GameVersion { get; set; }
     public string? ExecutablePath { get; set; }
     public string? ExeSource { get; set; }
+    public string? SteamAppId { get; set; }
     private string _backupPath = string.Empty;
     public string BackupPath
     {
@@ -432,6 +438,13 @@ public class GameHistoryEntry : INotifyPropertyChanged
     private string? _gameVersion;
     private string? _executablePath;
     private string? _exeSource;
+    private string? _steamAppId;
+
+    public string? SteamAppId
+    {
+        get => _steamAppId;
+        set => SetField(ref _steamAppId, value);
+    }
 
     public string? GameVersion
     {
@@ -452,7 +465,11 @@ public class GameHistoryEntry : INotifyPropertyChanged
     }
 
     public string ExeFileName => !string.IsNullOrEmpty(ExecutablePath) ? Path.GetFileName(ExecutablePath) : string.Empty;
-    public string ExeTooltip => $"Phiên bản: {(!string.IsNullOrEmpty(GameVersion) ? GameVersion : "Không rõ")}\nFile .exe: {ExecutablePath ?? "Chưa xác định"}\nNguồn .exe: {ExeSource ?? "Chưa xác định"}";
+    public string ExeTooltip => $"Phiên bản: {(!string.IsNullOrEmpty(GameVersion) ? GameVersion : "Không rõ")}\nSteam ID: {(!string.IsNullOrEmpty(SteamAppId) ? SteamAppId : "Không có")}\nFile .exe: {ExecutablePath ?? "Chưa xác định"}\nNguồn .exe: {ExeSource ?? "Chưa xác định"}";
+
+    public string? SteamUrl => !string.IsNullOrWhiteSpace(SteamAppId)
+        ? $"https://store.steampowered.com/app/{Uri.EscapeDataString(SteamAppId.Trim())}"
+        : null;
 
     public long Id
     {
@@ -1028,8 +1045,36 @@ public class BackupHistoryDetail : INotifyPropertyChanged
         set => SetField(ref _exeSource, value);
     }
 
+    private string? _steamAppId;
+    public string? SteamAppId
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(_steamAppId)) return _steamAppId;
+            if (!string.IsNullOrWhiteSpace(_manifestJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(_manifestJson);
+                    if (doc.RootElement.TryGetProperty("SteamAppId", out var sa))
+                    {
+                        var str = sa.GetString();
+                        if (!string.IsNullOrWhiteSpace(str)) return str;
+                    }
+                }
+                catch { }
+            }
+            return null;
+        }
+        set => SetField(ref _steamAppId, value);
+    }
+
     public string ExeFileName => !string.IsNullOrEmpty(ExecutablePath) ? Path.GetFileName(ExecutablePath) : string.Empty;
-    public string ExeTooltip => $"Phiên bản: {GameVersionFormatted}\nFile .exe: {ExecutablePath ?? "Chưa xác định"}\nNguồn .exe: {ExeSource ?? "Chưa xác định"}";
+    public string ExeTooltip => $"Phiên bản: {GameVersionFormatted}\nSteam ID: {(!string.IsNullOrEmpty(SteamAppId) ? SteamAppId : "Không có")}\nFile .exe: {ExecutablePath ?? "Chưa xác định"}\nNguồn .exe: {ExeSource ?? "Chưa xác định"}";
+
+    public string? SteamUrl => !string.IsNullOrWhiteSpace(SteamAppId)
+        ? $"https://store.steampowered.com/app/{Uri.EscapeDataString(SteamAppId.Trim())}"
+        : null;
 
     public string GameVersionFormatted => !string.IsNullOrWhiteSpace(GameVersion) ? GameVersion : "Không rõ version";
 

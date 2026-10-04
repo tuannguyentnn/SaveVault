@@ -125,7 +125,8 @@ public class DatabaseService
                 CoverPath TEXT,
                 GameVersion TEXT,
                 ExecutablePath TEXT,
-                ExeSource TEXT
+                ExeSource TEXT,
+                SteamAppId TEXT
             );
 
             CREATE TABLE IF NOT EXISTS backup_history_details (
@@ -152,7 +153,8 @@ public class DatabaseService
                 CoverPath TEXT,
                 GameVersion TEXT,
                 ExecutablePath TEXT,
-                ExeSource TEXT
+                ExeSource TEXT,
+                SteamAppId TEXT
             );
 
             CREATE TABLE IF NOT EXISTS restore_history (
@@ -188,11 +190,13 @@ public class DatabaseService
         EnsureColumnExists(connection, "backup_history", "GameVersion", "TEXT");
         EnsureColumnExists(connection, "backup_history", "ExecutablePath", "TEXT");
         EnsureColumnExists(connection, "backup_history", "ExeSource", "TEXT");
+        EnsureColumnExists(connection, "backup_history", "SteamAppId", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CoverUrl", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CoverPath", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "GameVersion", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "ExecutablePath", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "ExeSource", "TEXT");
+        EnsureColumnExists(connection, "backup_history_details", "SteamAppId", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "IsCloudSynced", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumnExists(connection, "backup_history_details", "CloudProvider", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CloudFileId", "TEXT");

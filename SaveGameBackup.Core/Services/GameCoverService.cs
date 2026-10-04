@@ -24,9 +24,9 @@ public static class GameCoverService
     public const int DefaultCoverTargetWidth = 200;
 
     /// <summary>
-    /// Cờ bật/tắt tìm ảnh data từ Steam. Mặc định là false (tạm thời ẩn tìm ảnh data từ Steam theo yêu cầu).
+    /// Cờ bật/tắt tìm ảnh data từ Steam (sử dụng làm fallback khi PCGamingWiki không có ảnh). Mặc định là true.
     /// </summary>
-    public static bool EnableSteamCovers { get; set; } = false;
+    public static bool EnableSteamCovers { get; set; } = true;
 
     /// <summary>
     /// Cho phép can thiệp trạng thái mạng phục vụ Unit Test. Mặc định là null (sử dụng mạng thực tế).
@@ -373,8 +373,8 @@ public static class GameCoverService
 
         var effectiveUrl = onlineCoverUrl;
         // Bỏ qua các URI ảo cục bộ (.local) nếu file trên đĩa không tồn tại hoặc ảnh Steam nếu đang tạm ẩn
-        if (!string.IsNullOrEmpty(effectiveUrl) && 
-            (effectiveUrl.Contains(".local", StringComparison.OrdinalIgnoreCase) || 
+        if (!string.IsNullOrEmpty(effectiveUrl) &&
+            (effectiveUrl.Contains(".local", StringComparison.OrdinalIgnoreCase) ||
              (!EnableSteamCovers && effectiveUrl.Contains("steamstatic.com", StringComparison.OrdinalIgnoreCase)) ||
              !effectiveUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)))
         {
@@ -506,9 +506,9 @@ public static class GameCoverService
     /// Trả về đường dẫn file ảnh cục bộ trên máy.
     /// </summary>
     public static async Task<string?> DownloadAndProcessCoverAsync(
-        string gameName, 
-        string? onlineCoverUrl = null, 
-        string? steamAppId = null, 
+        string gameName,
+        string? onlineCoverUrl = null,
+        string? steamAppId = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(gameName)) return null;
@@ -565,7 +565,7 @@ public static class GameCoverService
         }
 
         // 2. Nếu là URL mạng ngoài (http/https thực tế không phải tempcovers.local), tải trực tiếp
-        if (!string.IsNullOrEmpty(onlineCoverUrl) && 
+        if (!string.IsNullOrEmpty(onlineCoverUrl) &&
             !onlineCoverUrl.Contains("tempcovers.local", StringComparison.OrdinalIgnoreCase) &&
             !onlineCoverUrl.Contains("covers.local", StringComparison.OrdinalIgnoreCase) &&
             (onlineCoverUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
@@ -813,7 +813,7 @@ public static class GameCoverService
 
             // Trích xuất Steam AppID từ wikitext nếu có
             string? steamId = null;
-            var steamMatch = Regex.Match(wikitext, @"(?:\{\{Steam\||store\.steampowered\.com/app/|store\.steampowered\.com/news/app/|steam\s+app\s*id\s*=\s*)([0-9]+)", RegexOptions.IgnoreCase);
+            var steamMatch = Regex.Match(wikitext, @"(?:\{\{Steam(?:\s+AppID)?\|(?:app\|)?|steam(?:[\s_]+app)?[\s_]*id\s*=\s*|\|\s*steam\s*=\s*|store\.steampowered\.com/(?:app|news/app)/|steamdb\.info/app/)([0-9]+)", RegexOptions.IgnoreCase);
             if (steamMatch.Success)
             {
                 steamId = steamMatch.Groups[1].Value;
@@ -957,7 +957,7 @@ public static class GameCoverService
         return false;
     }
 
-    private static async Task<string?> FetchSteamAppIdFromStoreSearchAsync(string gameName, CancellationToken cancellationToken = default)
+    internal static async Task<string?> FetchSteamAppIdFromStoreSearchAsync(string gameName, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(gameName)) return null;
 

@@ -1011,7 +1011,6 @@ try
 
     GameCoverService.EnableSteamCovers = true;
     var realCover = await GameCoverService.EnsureCoverForGameAsync("Cyberpunk 2077");
-    GameCoverService.EnableSteamCovers = false;
     if (!string.IsNullOrEmpty(realCover) && File.Exists(realCover))
     {
         Console.WriteLine($"  ✓ Real cover for Cyberpunk 2077: {realCover}");
@@ -1343,6 +1342,7 @@ try
     Console.WriteLine("  ✓ ClearTempCovers() wiped all temporary covers successfully!");
 
     // Verify when EnableSteamCovers is false, Steam cover is ignored
+    GameCoverService.EnableSteamCovers = false;
     var disabledSteamUri = await GameCoverService.DownloadToTempCoverAsync("Final Assault", null, "793690");
     if (!string.IsNullOrEmpty(disabledSteamUri))
     {
@@ -1353,7 +1353,6 @@ try
     // Test real download to Temp/covers/ when EnableSteamCovers is true
     GameCoverService.EnableSteamCovers = true;
     var realTempUri = await GameCoverService.DownloadToTempCoverAsync("Final Assault", null, "793690");
-    GameCoverService.EnableSteamCovers = false; // Restore to default false
     if (!string.IsNullOrEmpty(realTempUri) && realTempUri.StartsWith("https://tempcovers.local/"))
     {
         var downloadedTempPath = GameCoverService.GetTempCoverFilePath("Final Assault");
@@ -2596,6 +2595,7 @@ try
     var test41GameInfo = new GameSaveInfo
     {
         GameName = test41GameName,
+        SteamAppId = "1091500",
         RawPatterns = new List<string> { test41Dir },
         ResolvedPaths = new List<string> { test41Dir },
         DetectedVersion = new GameVersionInfo
@@ -2615,28 +2615,28 @@ try
 
     var test41Record = await backupService.BackupGameAsync(test41GameInfo, test41BackupSettings, new List<string> { test41Dir });
 
-    if (test41Record.GameVersion != "v3.5.1" || test41Record.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || test41Record.ExeSource != "Steam Local ACF / Cloud")
+    if (test41Record.GameVersion != "v3.5.1" || test41Record.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || test41Record.ExeSource != "Steam Local ACF / Cloud" || test41Record.SteamAppId != "1091500")
     {
-        throw new Exception($"FAIL: BackupRecord did not record version/exe metadata correctly! Version: {test41Record.GameVersion}, Exe: {test41Record.ExecutablePath}, Source: {test41Record.ExeSource}");
+        throw new Exception($"FAIL: BackupRecord did not record version/exe/steam metadata correctly! Version: {test41Record.GameVersion}, Exe: {test41Record.ExecutablePath}, Source: {test41Record.ExeSource}, SteamAppId: {test41Record.SteamAppId}");
     }
-    Console.WriteLine("  ✓ BackupRecord recorded GameVersion, ExecutablePath, and ExeSource correctly!");
+    Console.WriteLine("  ✓ BackupRecord recorded GameVersion, ExecutablePath, ExeSource, and SteamAppId correctly!");
 
     // 2. Kiểm tra SQLite backup_history (Master) và backup_history_details (Detail)
     var masterHistories = await db.GetGameHistoriesAsync();
     var test41Master = masterHistories.FirstOrDefault(h => h.GameName == test41GameName);
-    if (test41Master == null || test41Master.GameVersion != "v3.5.1" || test41Master.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || test41Master.ExeSource != "Steam Local ACF / Cloud")
+    if (test41Master == null || test41Master.GameVersion != "v3.5.1" || test41Master.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || test41Master.ExeSource != "Steam Local ACF / Cloud" || test41Master.SteamAppId != "1091500")
     {
-        throw new Exception($"FAIL: Master backup_history row missing version or exe info: Version='{test41Master?.GameVersion}', Exe='{test41Master?.ExecutablePath}', Source='{test41Master?.ExeSource}'");
+        throw new Exception($"FAIL: Master backup_history row missing version, exe, or steam info: Version='{test41Master?.GameVersion}', Exe='{test41Master?.ExecutablePath}', Source='{test41Master?.ExeSource}', SteamAppId='{test41Master?.SteamAppId}'");
     }
-    Console.WriteLine("  ✓ Master backup_history correctly persisted GameVersion, ExecutablePath, and ExeSource!");
+    Console.WriteLine("  ✓ Master backup_history correctly persisted GameVersion, ExecutablePath, ExeSource, and SteamAppId!");
 
     var test41Details = await db.GetHistoryDetailsByGameIdAsync(test41Master.Id);
     var test41Detail = test41Details.FirstOrDefault();
-    if (test41Detail == null || test41Detail.GameVersion != "v3.5.1" || test41Detail.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || test41Detail.ExeSource != "Steam Local ACF / Cloud")
+    if (test41Detail == null || test41Detail.GameVersion != "v3.5.1" || test41Detail.ExecutablePath != @"C:\Games\Test41Game\bin\game.exe" || test41Detail.ExeSource != "Steam Local ACF / Cloud" || test41Detail.SteamAppId != "1091500")
     {
-        throw new Exception($"FAIL: Detail backup_history_details row missing version or exe info: Version='{test41Detail?.GameVersion}', Exe='{test41Detail?.ExecutablePath}', Source='{test41Detail?.ExeSource}'");
+        throw new Exception($"FAIL: Detail backup_history_details row missing version, exe, or steam info: Version='{test41Detail?.GameVersion}', Exe='{test41Detail?.ExecutablePath}', Source='{test41Detail?.ExeSource}', SteamAppId='{test41Detail?.SteamAppId}'");
     }
-    Console.WriteLine("  ✓ Detail backup_history_details correctly persisted GameVersion, ExecutablePath, and ExeSource!");
+    Console.WriteLine("  ✓ Detail backup_history_details correctly persisted GameVersion, ExecutablePath, ExeSource, and SteamAppId!");
 
     // 3. Kiểm tra merge logic từ snapshot vào cached data hiện có
     var existingCache = await db.GetCachedGameAsync(test41GameName);
