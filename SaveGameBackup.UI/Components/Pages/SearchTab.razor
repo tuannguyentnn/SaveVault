@@ -448,7 +448,7 @@
                         </div>
 
                         <!-- Toggle Xem các định dạng đường dẫn tra cứu từ mạng / wiki (Image 2 / 0.JPG) -->
-                        <div class="mt-2.5">
+                        <div class="mt-2.5 relative">
                             <button type="button"
                                     style="background: transparent; border: none; color: #8D9CB0; font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;"
                                     @onclick="() => ShowOnlinePatterns = !ShowOnlinePatterns">
@@ -458,17 +458,27 @@
 
                             @if (ShowOnlinePatterns)
                             {
-                                <div class="sv-scroll-wrapper mt-2" data-scroll-text="Còn định dạng bên dưới (Cuộn)">
-                                    <div class="sv-box-inner font-mono text-[11px] text-slate-300 max-h-[110px] overflow-y-auto space-y-1 sv-scroll-area">
+                                <div class="absolute left-0 top-[26px] w-full rounded-md border border-[#334155] bg-[#0A101E] shadow-2xl z-40 overflow-hidden"
+                                     style="position: absolute !important; top: 26px; left: 0; width: 100%; z-index: 40; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.75), 0 8px 10px -6px rgba(0, 0, 0, 0.75);">
+                                    <div class="px-3 py-2 border-b border-[#1E293B] bg-[#070B14] flex items-center justify-between">
+                                        <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                                            <span>🌐</span> Mẫu đường dẫn tra cứu online (@SearchVM.OnlinePatternsList.Count mẫu)
+                                        </span>
+                                        <button type="button"
+                                                class="text-xs text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
+                                                @onclick="() => ShowOnlinePatterns = false">✕ Đóng</button>
+                                    </div>
+                                    <div class="sv-box-inner font-mono text-[11px] text-slate-300 max-h-[150px] overflow-y-auto space-y-1.5 p-3"
+                                         style="border: none; background: transparent; max-height: 150px; overflow-y: auto;">
                                         @if (SearchVM.OnlinePatternsList.Count == 0)
                                         {
-                                            <div class="text-slate-500 italic">Chưa có mẫu đường dẫn online nào được nạp. Hãy tìm kiếm một game để xem các mẫu từ PCGamingWiki &amp; Steam.</div>
+                                            <div class="text-slate-500 italic p-1">Chưa có mẫu đường dẫn online nào được nạp. Hãy tìm kiếm một game để xem các mẫu từ PCGamingWiki &amp; Steam.</div>
                                         }
                                         else
                                         {
                                             @foreach (var pattern in SearchVM.OnlinePatternsList)
                                             {
-                                                <div class="text-cyan-400 select-text break-all">• @pattern</div>
+                                                <div class="text-cyan-400 select-text break-all py-0.5 px-1.5 rounded hover:bg-[#1E293B]/50 transition-colors">• @pattern</div>
                                             }
                                         }
                                     </div>

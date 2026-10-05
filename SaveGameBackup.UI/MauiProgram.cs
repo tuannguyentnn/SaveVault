@@ -11,8 +11,13 @@ public static class MauiProgram
 {
     public static MauiApp CreateMauiApp()
     {
-        // Fix WebView2 lag/stutter on window restore from minimized state
-        Environment.SetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-features=CalculateNativeWinOcclusion,RendererBackgrounding");
+        // Tối ưu triệt để: Ngăn WebView2 đóng băng tài nguyên GPU & xả VRAM khi minimize,
+        // giúp app mở to lại tức thì (0ms) không bị giật/khựng và không gây giật video nền.
+        Environment.SetEnvironmentVariable("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+            "--disable-backgrounding-occluded-windows " +
+            "--disable-renderer-backgrounding " +
+            "--disable-background-timer-throttling " +
+            "--disable-features=CalculateNativeWinOcclusion,RendererBackgrounding,IntensiveWakeUpThrottling,QuickIntensiveWakeUpThrottlingAfterLoading");
 
         var builder = MauiApp.CreateBuilder();
         builder
