@@ -90,7 +90,8 @@ public class SearchSubViewModel : INotifyPropertyChanged
         _eventBus = eventBus;
         _nativeDialog = nativeDialog;
 
-        SearchCommand = new RelayCommand(async _ => await ExecuteSearchAsync(), _ => (!IsSearching || IsGameDropdownOpen) && !string.IsNullOrWhiteSpace(SearchQuery));
+        SearchCommand = new RelayCommand(async _ => await ExecuteSearchAsync(), _ => !IsSearching && !string.IsNullOrWhiteSpace(SearchQuery));
+        CancelSearchCommand = new RelayCommand(_ => ExecuteCancelSearch(), _ => IsSearching);
         AddCustomPathCommand = new RelayCommand(async _ => await ExecuteAddCustomPathAsync());
         SelectAllPathsCommand = new RelayCommand(_ => ExecuteSelectAllPaths(), _ => DetectedPathItems.Count > 0);
         DeselectAllPathsCommand = new RelayCommand(_ => ExecuteDeselectAllPaths(), _ => DetectedPathItems.Count > 0);
@@ -180,6 +181,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
         _candidateSelectionTcs = new TaskCompletionSource<string?>();
         RunOnMainThread(() =>
         {
+            ClearGameCardInfo();
             GameCandidates.Clear();
             foreach (var c in candidates.Take(5))
             {
@@ -198,8 +200,38 @@ public class SearchSubViewModel : INotifyPropertyChanged
 
     private void ExecuteCancelCandidate()
     {
+        ClearGameCardInfo();
         IsGameDropdownOpen = false;
         _candidateSelectionTcs?.TrySetResult(null);
+    }
+
+    public void ExecuteCancelSearch()
+    {
+        if (!IsSearching) return;
+
+        LoggingService.LogAction("Search_Cancelled_By_User", new { Query = SearchQuery });
+
+        try
+        {
+            _searchCts?.Cancel();
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Lỗi khi hủy CTS tìm kiếm: {Message}", ex.Message);
+        }
+
+        if (_candidateSelectionTcs != null && !_candidateSelectionTcs.Task.IsCompleted)
+        {
+            _candidateSelectionTcs.TrySetResult(null);
+        }
+
+        ClearGameCardInfo();
+        IsGameDropdownOpen = false;
+        IsSearching = false;
+        StatusMessage = "Đã hủy tìm kiếm.";
+
+        (SearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        (CancelSearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
     }
 
     public string SearchQuery
@@ -209,6 +241,11 @@ public class SearchSubViewModel : INotifyPropertyChanged
         {
             if (SetField(ref _searchQuery, value))
             {
+                if (IsGameDropdownOpen)
+                {
+                    IsGameDropdownOpen = false;
+                    _candidateSelectionTcs?.TrySetResult(null);
+                }
                 (SearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 if (string.IsNullOrWhiteSpace(value))
                 {
@@ -226,6 +263,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
             if (SetField(ref _isSearching, value))
             {
                 (SearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (CancelSearchCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         }
     }
@@ -297,6 +335,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
     }
 
     public ICommand SearchCommand { get; }
+    public ICommand CancelSearchCommand { get; }
     public ICommand AddCustomPathCommand { get; }
     public ICommand SelectAllPathsCommand { get; }
     public ICommand DeselectAllPathsCommand { get; }
@@ -331,7 +370,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
 
         try
         {
-            ClearPreviousDetectedPaths();
+            ClearGameCardInfo();
 
             var progressReporter = new Progress<string>(msg =>
             {
@@ -348,7 +387,10 @@ public class SearchSubViewModel : INotifyPropertyChanged
 
             if (gameInfo == null)
             {
-                StatusMessage = $"Không tìm thấy thông tin cấu hình save game cho '{query}' hoặc bạn đã hủy chọn. Bạn có thể thêm đường dẫn thủ công bên dưới.";
+                if (string.IsNullOrWhiteSpace(StatusMessage) || StatusMessage.StartsWith("Đang tìm kiếm"))
+                {
+                    StatusMessage = $"Không tìm thấy thông tin cấu hình save game cho '{query}'. Bạn có thể thêm đường dẫn thủ công bên dưới.";
+                }
                 CurrentGame = null;
                 IsGameFoundOnDisk = false;
                 LoggingService.LogAction("Search_Game_NotFound", new { Query = query });
@@ -472,7 +514,11 @@ public class SearchSubViewModel : INotifyPropertyChanged
         }
         catch (OperationCanceledException)
         {
-            // Bị hủy bởi lượt tìm kiếm mới hơn, bỏ qua an toàn
+            // Bị hủy bởi người dùng hoặc lượt tìm kiếm mới hơn
+            if (epoch == _searchEpoch)
+            {
+                StatusMessage = "Đã hủy tìm kiếm.";
+            }
         }
         catch (Exception ex)
         {
@@ -802,7 +848,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
         HasSelectedPaths = false;
     }
 
-    public void ResetGameInfo()
+    public void ClearGameCardInfo()
     {
         ClearPreviousDetectedPaths();
         CurrentGame = null;
@@ -811,8 +857,13 @@ public class SearchSubViewModel : INotifyPropertyChanged
         DetectedSizeFormatted = "0 B";
         DetectedFileCount = 0;
         IsGameFoundOnDisk = false;
-        StatusMessage = string.Empty;
         _eventBus.Publish(new GameSelectedForBackupEvent(string.Empty));
+    }
+
+    public void ResetGameInfo()
+    {
+        ClearGameCardInfo();
+        StatusMessage = string.Empty;
     }
 
     public void UpdateGameName(string newName)

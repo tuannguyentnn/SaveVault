@@ -14,51 +14,79 @@
                        placeholder="Nhập tên game (ví dụ: Elden Ring, Cyberpunk 2077, Black Myth: Wukong, Baldur's Gate 3...)"
                        @bind="SearchVM.SearchQuery" @bind:event="oninput" @onkeydown="HandleKeyDown" />
 
-                @if (SearchVM.IsGameDropdownOpen && SearchVM.GameCandidates.Count > 0)
+                @if (SearchVM.IsGameDropdownOpen)
                 {
                     <div class="absolute left-0 top-[42px] w-full rounded-md border border-[#334155] bg-[#0F172A] shadow-2xl z-50 overflow-hidden sv-scroll-wrapper"
                          style="position: absolute !important; top: 42px; left: 0; width: 100%; z-index: 50; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.7);"
                          data-scroll-text="Còn gợi ý game bên dưới (Cuộn)">
                         <div class="px-3 py-2 border-b border-[#1E293B] bg-[#0A0F1D] flex items-center justify-between">
                             <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                                <span>🎯</span> Chọn game phù hợp (@SearchVM.GameCandidates.Count kết quả từ PCGamingWiki)
+                                @if (SearchVM.GameCandidates.Count > 0)
+                                {
+                                    <span>🎯</span> <span>Chọn game phù hợp (@SearchVM.GameCandidates.Count kết quả từ PCGamingWiki)</span>
+                                }
+                                else
+                                {
+                                    <span class="text-amber-400">⚠️</span> <span class="text-amber-300">Không tìm thấy dữ liệu game phù hợp</span>
+                                }
                             </span>
                             <button type="button"
                                     class="text-xs text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
                                     @onclick="() => SearchVM.CancelCandidateModalCommand.Execute(null)">✕ Đóng</button>
                         </div>
-                        <div class="max-h-60 overflow-y-auto py-1 sv-scroll-area">
-                            @foreach (var candidate in SearchVM.GameCandidates)
-                            {
-                                <button type="button"
-                                        class="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-[#1E293B] hover:text-emerald-400 flex items-center justify-between transition-colors border-b border-[#1E293B]/40 last:border-b-0 cursor-pointer"
-                                        @onclick="() => SearchVM.SelectCandidateCommand.Execute(candidate)">
-                                    <span class="font-medium truncate pr-2">@candidate</span>
-                                    <span class="text-[11px] text-slate-500 hover:text-emerald-400 flex items-center gap-1 flex-shrink-0">
-                                        <span>Chọn</span>
-                                        <span>➔</span>
-                                    </span>
-                                </button>
-                            }
-                        </div>
+                        @if (SearchVM.GameCandidates.Count > 0)
+                        {
+                            <div class="max-h-60 overflow-y-auto py-1 sv-scroll-area">
+                                @foreach (var candidate in SearchVM.GameCandidates)
+                                {
+                                    <button type="button"
+                                            class="w-full text-left px-3.5 py-2.5 text-xs text-slate-200 hover:bg-[#1E293B] hover:text-emerald-400 flex items-center justify-between transition-colors border-b border-[#1E293B]/40 last:border-b-0 cursor-pointer"
+                                            @onclick="() => SearchVM.SelectCandidateCommand.Execute(candidate)">
+                                        <span class="font-medium truncate pr-2">@candidate</span>
+                                        <span class="text-[11px] text-slate-500 hover:text-emerald-400 flex items-center gap-1 flex-shrink-0">
+                                            <span>Chọn</span>
+                                            <span>➔</span>
+                                        </span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="p-4 text-center">
+                                <div class="text-xs text-slate-300 mb-1">
+                                    Không tìm thấy game nào khớp với từ khóa <span class="font-semibold text-amber-300">"@SearchVM.SearchQuery"</span> trên PCGamingWiki.
+                                </div>
+                                <div class="text-[11px] text-slate-500">
+                                    Vui lòng nhập tên đầy đủ hơn hoặc sử dụng tính năng thêm đường dẫn thủ công.
+                                </div>
+                            </div>
+                        }
                     </div>
                 }
             </div>
 
-            <button type="button" class="sv-btn-dark flex-shrink-0" style="height: 38px; padding: 0 16px;"
-                    disabled="@((SearchVM.IsSearching && !SearchVM.IsGameDropdownOpen) || string.IsNullOrWhiteSpace(SearchVM.SearchQuery))"
-                    @onclick="ExecuteSearch">
-                @if (SearchVM.IsSearching && !SearchVM.IsGameDropdownOpen)
-                {
-                    <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <span>Đang quét...</span>
-                }
-                else
-                {
+            @if (SearchVM.IsSearching)
+            {
+                <button type="button"
+                        class="sv-btn-cancel flex-shrink-0"
+                        style="height: 38px; min-width: 140px;"
+                        title="Dừng và hủy toàn bộ quá trình tìm kiếm"
+                        @onclick="CancelSearch">
+                    <span class="w-2.5 h-2.5 rounded-[2px] bg-white shadow-sm inline-block animate-pulse"></span>
+                    <span>Hủy tìm kiếm</span>
+                </button>
+            }
+            else
+            {
+                <button type="button" class="sv-btn-dark flex-shrink-0" style="height: 38px; padding: 0 16px;"
+                        disabled="@(string.IsNullOrWhiteSpace(SearchVM.SearchQuery))"
+                        title="Tìm kiếm thông tin save game và quét trên các ổ đĩa"
+                        @onclick="ExecuteSearch">
                     <span>🔎</span>
                     <span>Tìm kiếm &amp; Quét máy</span>
-                }
-            </button>
+                </button>
+            }
         </div>
 
         <!-- Gợi ý nhanh (10 game cache gần nhất) -->
@@ -542,7 +570,7 @@
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(SearchVM.SearchQuery))
+        if (e.Key == "Enter" && !SearchVM.IsSearching && !string.IsNullOrWhiteSpace(SearchVM.SearchQuery))
         {
             await ExecuteSearch();
         }
@@ -550,8 +578,13 @@
 
     private async Task ExecuteSearch()
     {
-        if (SearchVM.IsSearching && !SearchVM.IsGameDropdownOpen) return;
+        if (SearchVM.IsSearching) return;
         await SearchVM.ExecuteSearchAsync();
+    }
+
+    private void CancelSearch()
+    {
+        SearchVM.CancelSearchCommand.Execute(null);
     }
 
     private async Task SelectPopularGame(string gameName)

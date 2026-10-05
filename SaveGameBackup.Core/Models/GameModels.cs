@@ -58,6 +58,7 @@ public class GameSaveInfo
     public DateTime? LastScanned { get; set; }
     public string? OnlineCoverUrl { get; set; }
     public GameVersionInfo? DetectedVersion { get; set; }
+    public SaveGameBackup.Core.Services.GameExecutableDefinition? PreResolvedExecutable { get; set; }
     public string CurrentGameVersion => (DetectedVersion != null && DetectedVersion.IsDetected)
         ? DetectedVersion.DisplayVersion
         : "Không tìm ra phiên bản";

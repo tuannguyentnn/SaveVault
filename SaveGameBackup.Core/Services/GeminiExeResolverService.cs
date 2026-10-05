@@ -39,7 +39,7 @@ public class GeminiExeResponse
 public class GeminiExeResolverService
 {
     private readonly HttpClient _httpClient;
-    private const string DefaultModel = "gemini-3.8-flash";
+    private const string DefaultModel = "gemini-3.5-flash";
 
     public GeminiExeResolverService(HttpClient? httpClient = null)
     {

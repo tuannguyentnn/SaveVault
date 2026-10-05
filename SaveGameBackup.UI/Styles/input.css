@@ -789,6 +789,40 @@ input[type="checkbox"]:checked::before {
     cursor: not-allowed;
 }
 
+/* Vibrant Crimson/Rose Cancel Button */
+.sv-btn-cancel {
+    background: linear-gradient(135deg, #E11D48 0%, #BE123C 55%, #9F1239 100%);
+    border: 1px solid #FB7185;
+    color: #FFFFFF;
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 0 16px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(225, 29, 72, 0.4), 0 0 10px rgba(244, 63, 94, 0.25);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    flex-shrink: 0;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.sv-btn-cancel:hover {
+    background: linear-gradient(135deg, #F43F5E 0%, #E11D48 55%, #BE123C 100%);
+    border-color: #FDA4AF;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(225, 29, 72, 0.55), 0 0 14px rgba(251, 113, 133, 0.4);
+    color: #FFFFFF;
+}
+
+.sv-btn-cancel:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(225, 29, 72, 0.35);
+}
+
 .sv-btn-sm {
     padding: 4px 10px;
     font-size: 11.5px;

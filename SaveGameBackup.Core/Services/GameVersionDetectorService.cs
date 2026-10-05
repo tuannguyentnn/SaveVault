@@ -27,6 +27,8 @@ public class GameVersionDetectorService
         _onlineExeResolver = onlineExeResolver ?? new OnlineExeResolverService();
     }
 
+    public OnlineExeResolverService OnlineExeResolver => _onlineExeResolver;
+
     /// <summary>
     /// Dò tìm phiên bản của game theo tên và các tham số nhận dạng tùy chọn.
     /// </summary>

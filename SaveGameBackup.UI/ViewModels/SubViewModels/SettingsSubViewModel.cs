@@ -45,8 +45,9 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     // Gemini AI Resolver fields
     private readonly GeminiExeResolverService _geminiService;
     private bool _enableGeminiExeSearch = true;
+    private bool _useGeminiUnifiedWorkflow = true;
     private string _geminiApiKey = string.Empty;
-    private string _geminiModel = "gemini-3.8-flash";
+    private string _geminiModel = "gemini-3.5-flash";
     private bool _isTestingGemini;
     private string _geminiTestResult = string.Empty;
     private bool? _geminiTestSuccess;
@@ -85,8 +86,9 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _databaseCloudBackupTarget = !string.IsNullOrWhiteSpace(config.DatabaseCloudBackupTarget) ? config.DatabaseCloudBackupTarget : "GoogleDrive";
 
         _enableGeminiExeSearch = config.EnableGeminiExeSearch;
+        _useGeminiUnifiedWorkflow = config.UseGeminiUnifiedWorkflow;
         _geminiApiKey = config.GeminiApiKey ?? string.Empty;
-        _geminiModel = !string.IsNullOrWhiteSpace(config.GeminiModel) && !config.GeminiModel.Contains("2.5") ? config.GeminiModel : "gemini-3.8-flash";
+        _geminiModel = !string.IsNullOrWhiteSpace(config.GeminiModel) && !config.GeminiModel.Contains("2.5") ? config.GeminiModel : "gemini-3.5-flash";
 
         SaveSettingsCommand = new RelayCommand(async _ => await ExecuteSaveSettingsAsync());
         SyncCatalogCommand = new RelayCommand(async _ => await ExecuteSyncCatalogAsync(), _ => !IsSyncingCatalog);
@@ -163,6 +165,12 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     {
         get => _enableGeminiExeSearch;
         set => SetField(ref _enableGeminiExeSearch, value);
+    }
+
+    public bool UseGeminiUnifiedWorkflow
+    {
+        get => _useGeminiUnifiedWorkflow;
+        set => SetField(ref _useGeminiUnifiedWorkflow, value);
     }
 
     public string GeminiApiKey
@@ -386,6 +394,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             cfg.AutoUpdateLudusaviManifest = AutoUpdateLudusaviManifest;
             cfg.LudusaviAutoUpdateDays = LudusaviAutoUpdateDays;
             cfg.EnableGeminiExeSearch = EnableGeminiExeSearch;
+            cfg.UseGeminiUnifiedWorkflow = UseGeminiUnifiedWorkflow;
             cfg.GeminiApiKey = GeminiApiKey;
             cfg.GeminiModel = GeminiModel;
         });
@@ -401,6 +410,7 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             AutoUpdateLudusaviManifest,
             LudusaviAutoUpdateDays,
             EnableGeminiExeSearch,
+            UseGeminiUnifiedWorkflow,
             GeminiModel
         });
 

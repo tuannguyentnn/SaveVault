@@ -146,12 +146,13 @@ public class AppConfigFile
 
     // Cấu hình Gemini AI Resolver (Trợ lý tra cứu file .exe và đường dẫn game)
     public bool EnableGeminiExeSearch { get; set; } = true;
+    public bool UseGeminiUnifiedWorkflow { get; set; } = true; // Mặc định bật Luồng Mới (Gemini Unified 1-Shot)
     public string? GeminiApiKeyProtected { get; set; }
-    private string _geminiModel = "gemini-3.8-flash";
+    private string _geminiModel = "gemini-3.5-flash";
     public string GeminiModel
     {
-        get => string.IsNullOrWhiteSpace(_geminiModel) || _geminiModel.Contains("2.5") ? "gemini-3.8-flash" : _geminiModel;
-        set => _geminiModel = string.IsNullOrWhiteSpace(value) || value.Contains("2.5") ? "gemini-3.8-flash" : value;
+        get => string.IsNullOrWhiteSpace(_geminiModel) || _geminiModel.Contains("2.5") ? "gemini-3.5-flash" : _geminiModel;
+        set => _geminiModel = string.IsNullOrWhiteSpace(value) || value.Contains("2.5") ? "gemini-3.5-flash" : value;
     }
     public string GeminiRateLimitsNotice { get; set; } = "Google AI Studio Free Tier: 1.500 requests/ngay, 15 requests/phut, 1.000.000 tokens/phut (Reset 00:00 UTC / 07:00 sang VN)";
 

@@ -34,8 +34,6 @@ public class OnlineExeResolverService
     private static readonly ConcurrentDictionary<string, GameExecutableDefinition> _catalogByName = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, GameExecutableDefinition> _catalogByNormalized = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, GameExecutableDefinition> _catalogBySteamId = new(StringComparer.OrdinalIgnoreCase);
-    private static bool _isInitialized;
-    private static readonly object _initLock = new();
 
     private readonly HttpClient _httpClient;
     private readonly GeminiExeResolverService _geminiResolver;
@@ -44,7 +42,6 @@ public class OnlineExeResolverService
     {
         _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
         _geminiResolver = geminiResolver ?? new GeminiExeResolverService(_httpClient);
-        EnsureCatalogLoaded();
     }
 
     /// <summary>
@@ -60,7 +57,6 @@ public class OnlineExeResolverService
         string? steamAppId = null,
         CancellationToken cancellationToken = default)
     {
-        EnsureCatalogLoaded();
 
         if (string.IsNullOrWhiteSpace(gameName) && string.IsNullOrWhiteSpace(steamAppId))
         {
@@ -70,9 +66,20 @@ public class OnlineExeResolverService
         var cleanName = (gameName ?? string.Empty).Trim();
 
         // =========================================================================
-        // [TEST MODE] Khi ForceGeminiOnlyForTesting = true (mặc định):
-        // Bỏ qua toàn bộ Catalog và Steam Store, gửi truy vấn THẲNG tới Gemini AI.
+        // [TEST MODE] Khi ForceGeminiOnlyForTesting = true:
+        // Kiểm tra trước trong Catalog bộ nhớ (do Gemini Unified đăng ký trước nếu có)
         // =========================================================================
+        if (_catalogByName.TryGetValue(cleanName, out var cachedDef))
+        {
+            return cachedDef;
+        }
+
+        var normalizedName = DatabaseService.NormalizeGameName(cleanName);
+        if (!string.IsNullOrEmpty(normalizedName) && _catalogByNormalized.TryGetValue(normalizedName, out var cachedNormDef))
+        {
+            return cachedNormDef;
+        }
+
         if (ForceGeminiOnlyForTesting)
         {
             try
@@ -179,87 +186,6 @@ public class OnlineExeResolverService
         {
             _catalogBySteamId[def.SteamAppId] = def;
         }
-    }
-
-    private static void EnsureCatalogLoaded()
-    {
-        if (_isInitialized) return;
-
-        lock (_initLock)
-        {
-            if (_isInitialized) return;
-
-            // 1. Nạp danh mục mặc định cốt lõi (Built-in Fallback) đảm bảo 100% hoạt động tức thì <1ms
-            LoadBuiltInDefinitions();
-
-            // 2. Nạp thêm / ghi đè từ file executables.json (nếu có trên đĩa)
-            try
-            {
-                var localPath = GetCatalogFilePath();
-                if (!string.IsNullOrEmpty(localPath) && File.Exists(localPath))
-                {
-                    var json = File.ReadAllText(localPath);
-                    var list = JsonSerializer.Deserialize<List<GameExecutableDefinition>>(json, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-
-                    if (list != null)
-                    {
-                        foreach (var item in list)
-                        {
-                            RegisterDefinition(item);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggingService.Warn("Không thể nạp catalog executables.json: {Message}", ex.Message);
-            }
-
-            _isInitialized = true;
-        }
-    }
-
-    private static void LoadBuiltInDefinitions()
-    {
-        var builtIn = new List<GameExecutableDefinition>
-        {
-
-        };
-
-        foreach (var def in builtIn)
-        {
-            RegisterDefinition(def);
-        }
-    }
-
-    private static string? GetCatalogFilePath()
-    {
-        try
-        {
-            // 1. Thư mục data/database trong workspace/app
-            var appDir = AppDomain.CurrentDomain.BaseDirectory;
-            var p1 = Path.Combine(appDir, "data", "database", "executables.json");
-            if (File.Exists(p1)) return p1;
-
-            // 2. Duyệt ngược thư mục cha từ AppDomain.CurrentDomain.BaseDirectory (hỗ trợ cấu trúc thư mục MAUI nhiều tầng)
-            var curr = new DirectoryInfo(appDir);
-            for (int i = 0; i < 7 && curr != null; i++)
-            {
-                var candidate = Path.Combine(curr.FullName, "data", "database", "executables.json");
-                if (File.Exists(candidate)) return candidate;
-                curr = curr.Parent;
-            }
-
-            // 3. Thử Environment.CurrentDirectory
-            var cd = Path.Combine(Environment.CurrentDirectory, "data", "database", "executables.json");
-            if (File.Exists(cd)) return cd;
-        }
-        catch { }
-
-        return null;
     }
 
     private async Task<GameExecutableDefinition?> QuerySteamStoreExecutableHintAsync(

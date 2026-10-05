@@ -15,23 +15,27 @@ public class GameSearchCoordinator
     private readonly PathResolverService _pathResolver;
     private readonly LudusaviManifestService _ludusaviService;
     private readonly GameVersionDetectorService _versionDetector;
+    private readonly GeminiUnifiedGameService _geminiUnifiedService;
 
     public GameSearchCoordinator(
         DatabaseService databaseService,
         PCGamingWikiService? wikiService = null,
         PathResolverService? pathResolver = null,
         LudusaviManifestService? ludusaviService = null,
-        GameVersionDetectorService? versionDetector = null)
+        GameVersionDetectorService? versionDetector = null,
+        GeminiUnifiedGameService? geminiUnifiedService = null)
     {
         _databaseService = databaseService;
         _wikiService = wikiService ?? new PCGamingWikiService();
         _pathResolver = pathResolver ?? new PathResolverService();
         _ludusaviService = ludusaviService ?? new LudusaviManifestService();
         _versionDetector = versionDetector ?? new GameVersionDetectorService(_pathResolver);
+        _geminiUnifiedService = geminiUnifiedService ?? new GeminiUnifiedGameService();
     }
 
     public PathResolverService PathResolver => _pathResolver;
     public GameVersionDetectorService VersionDetector => _versionDetector;
+    public GeminiUnifiedGameService GeminiUnifiedService => _geminiUnifiedService;
 
     public async Task<GameSaveInfo?> SearchAndDetectGameAsync(
         string gameName,
@@ -67,29 +71,31 @@ public class GameSearchCoordinator
             gameInfo = cachedGame;
         }
 
-        // Step 2: Nếu chưa có trong SQLite Cache, tìm trên PCGamingWiki (chỉ khi có mạng)
+        // Step 2: Pha chọn game từ PCGamingWiki (Candidate Selection)
+        string targetGameName = cleanQuery;
         if (gameInfo == null)
         {
-            if (!GameCoverService.IsNetworkAvailable())
+            if (GameCoverService.IsNetworkAvailable())
             {
-                LoggingService.LogAction("Search_Offline_Mode", new { Query = cleanQuery, Reason = "No network available" });
-                statusProgress?.Report($"Không có kết nối mạng. Đang tìm kiếm trong cơ sở dữ liệu offline (Ludusavi Manifest)...");
-            }
-            else
-            {
-                statusProgress?.Report($"Đang tìm kiếm thông tin game '{cleanQuery}' trên PCGamingWiki...");
-                LoggingService.LogAction("Search_Check_Source", new { Query = cleanQuery, Source = "PCGamingWiki" });
+                statusProgress?.Report($"Đang tìm kiếm gợi ý các tựa game phù hợp cho '{cleanQuery}' từ PCGamingWiki...");
+                LoggingService.LogAction("Search_Check_Source", new { Query = cleanQuery, Source = "PCGamingWiki Titles" });
 
                 var candidates = await _wikiService.FindPageTitlesAsync(cleanQuery, limit: 5, cancellationToken);
                 string? chosenTitle = null;
 
                 if (candidates.Count == 0)
                 {
-                    LoggingService.LogAction("Search_Source_Missed", new { Query = cleanQuery, Source = "PCGamingWiki", Reason = "No candidates found" });
+                    LoggingService.LogAction("Search_Source_Missed", new { Query = cleanQuery, Source = "PCGamingWiki Titles", Reason = "No candidates found" });
+                    statusProgress?.Report($"Không tìm thấy tựa game nào phù hợp với '{cleanQuery}' trên PCGamingWiki.");
+                    if (candidateChooser != null)
+                    {
+                        _ = candidateChooser(candidates);
+                    }
+                    return null;
                 }
                 else
                 {
-                    // Luôn hiển thị dropdownlist cho chọn game kể cả khi chỉ có 1 game
+                    // Luôn hiển thị dropdownlist cho người dùng chọn game
                     if (candidateChooser != null)
                     {
                         statusProgress?.Report($"Tìm thấy {candidates.Count} tựa game phù hợp trên PCGamingWiki. Đang chờ bạn chọn...");
@@ -109,31 +115,103 @@ public class GameSearchCoordinator
                     }
                 }
 
-                if (!string.IsNullOrEmpty(chosenTitle))
+                if (!string.IsNullOrWhiteSpace(chosenTitle))
                 {
-                    statusProgress?.Report($"Đang tải dữ liệu cấu hình save & ảnh cho '{chosenTitle}' từ PCGamingWiki...");
-                    var onlineInfo = await _wikiService.FetchPageSaveDataAsync(chosenTitle, cleanQuery, cancellationToken);
-                    if (onlineInfo != null && onlineInfo.RawPatterns.Count > 0)
-                    {
-                        LoggingService.LogAction("Search_Source_Found", new
-                        {
-                            Query = cleanQuery,
-                            Source = "PCGamingWiki",
-                            GameName = onlineInfo.GameName,
-                            WikiTitle = onlineInfo.WikiPageTitle,
-                            PatternsCount = onlineInfo.RawPatterns.Count
-                        });
+                    targetGameName = chosenTitle.Trim();
 
-                        gameInfo = onlineInfo;
+                    // Kiểm tra nếu tên game được chọn đã có sẵn trong SQLite Cache
+                    if (!string.Equals(targetGameName, cleanQuery, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var cachedChosen = await _databaseService.GetCachedGameAsync(targetGameName);
+                        if (cachedChosen != null && cachedChosen.RawPatterns.Count > 0)
+                        {
+                            LoggingService.LogAction("Search_Source_Found", new
+                            {
+                                Query = cleanQuery,
+                                TargetGame = targetGameName,
+                                Source = "SQLite Cache (Chosen Candidate)",
+                                GameName = cachedChosen.GameName,
+                                PatternsCount = cachedChosen.RawPatterns.Count
+                            });
+                            gameInfo = cachedChosen;
+                        }
                     }
                 }
             }
+            else
+            {
+                LoggingService.LogAction("Search_Offline_Mode", new { Query = cleanQuery, Reason = "No network available" });
+                statusProgress?.Report($"Không có kết nối mạng. Đang tìm kiếm trong cơ sở dữ liệu offline (Ludusavi Manifest)...");
+            }
         }
 
-        // Step 2.5: Fallback offline khi PCGamingWiki không có hoặc không có mạng (Dùng Ludusavi)
+        // Step 3: Tra cứu Data Save & Exe cho game đã chọn (targetGameName)
+        // 3.1. LUỒNG MỚI (Gemini Unified 1-Shot)
+        var config = AppConfigService.GetConfig();
+        if (gameInfo == null && config.UseGeminiUnifiedWorkflow && config.EnableGeminiExeSearch && !string.IsNullOrWhiteSpace(config.GeminiApiKey) && GameCoverService.IsNetworkAvailable())
+        {
+            statusProgress?.Report($"Đang tra cứu cấu hình Save & File Exe cho '{targetGameName}' qua Gemini AI Unified ({config.GeminiModel})...");
+            LoggingService.LogAction("Search_Check_Source", new { Query = targetGameName, Source = "Gemini AI Unified" });
+
+            try
+            {
+                var (unifiedInfo, exeDef) = await _geminiUnifiedService.ResolveUnifiedGameAsync(targetGameName, cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (unifiedInfo != null && unifiedInfo.RawPatterns.Count > 0)
+                {
+                    LoggingService.LogAction("Search_Source_Found", new
+                    {
+                        Query = cleanQuery,
+                        TargetGame = targetGameName,
+                        Source = "Gemini AI Unified",
+                        GameName = unifiedInfo.GameName,
+                        PatternsCount = unifiedInfo.RawPatterns.Count,
+                        ExeName = exeDef?.PrimaryExeName
+                    });
+
+                    gameInfo = unifiedInfo;
+
+                    if (exeDef != null)
+                    {
+                        OnlineExeResolverService.RegisterDefinition(exeDef);
+                        gameInfo.PreResolvedExecutable = exeDef;
+                    }
+                }
+                else
+                {
+                    LoggingService.LogAction("Search_Source_Missed", new { Query = targetGameName, Source = "Gemini AI Unified", Reason = "Empty patterns or null response" });
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggingService.Warn("Lỗi trong quá trình tra cứu Gemini Unified: {Message}", ex.Message);
+            }
+        }
+
+        // 3.2. LUỒNG CŨ (hoặc Fallback PCGamingWiki)
+        if (gameInfo == null && GameCoverService.IsNetworkAvailable())
+        {
+            statusProgress?.Report($"Đang tải dữ liệu cấu hình save & ảnh cho '{targetGameName}' từ PCGamingWiki...");
+            var onlineInfo = await _wikiService.FetchPageSaveDataAsync(targetGameName, cleanQuery, cancellationToken);
+            if (onlineInfo != null && onlineInfo.RawPatterns.Count > 0)
+            {
+                LoggingService.LogAction("Search_Source_Found", new
+                {
+                    Query = cleanQuery,
+                    TargetGame = targetGameName,
+                    Source = "PCGamingWiki",
+                    GameName = onlineInfo.GameName,
+                    WikiTitle = onlineInfo.WikiPageTitle,
+                    PatternsCount = onlineInfo.RawPatterns.Count
+                });
+
+                gameInfo = onlineInfo;
+            }
+        }
+
+        // 3.3. Fallback offline khi PCGamingWiki/Gemini không có hoặc không có mạng (Dùng Ludusavi)
         if (gameInfo == null)
         {
-            var ludusaviGame = _ludusaviService.CreateGameSaveInfo(cleanQuery);
+            var ludusaviGame = _ludusaviService.CreateGameSaveInfo(targetGameName);
             if (ludusaviGame != null && ludusaviGame.RawPatterns.Count > 0)
             {
                 if (!GameCoverService.IsNetworkAvailable())
@@ -144,15 +222,15 @@ public class GameSearchCoordinator
             }
         }
 
-        // Step 3: Fallback Heuristic nếu vẫn không tìm thấy
+        // 3.4. Fallback Heuristic nếu vẫn không tìm thấy
         if (gameInfo == null)
         {
             gameInfo = new GameSaveInfo
             {
-                GameName = cleanQuery,
+                GameName = targetGameName,
                 Source = "Heuristic Detection"
             };
-            LoggingService.LogAction("Search_Fallback_Source", new { Query = cleanQuery, Source = "Heuristic Detection" });
+            LoggingService.LogAction("Search_Fallback_Source", new { Query = targetGameName, Source = "Heuristic Detection" });
         }
 
         // Step 4: Add smart heuristics, Unreal Engine auto-detection & Xbox packages

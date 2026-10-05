@@ -960,13 +960,40 @@
                                     </div>
                                 </div>
 
+                                <!-- Chế độ Luồng Mới (Gemini Unified 1-Shot) vs Luồng Cũ -->
+                                <div class="p-3 bg-[#0A0F1D] border border-[#232F48] rounded-lg space-y-2">
+                                    <div class="flex items-start justify-between space-x-3">
+                                        <div class="space-y-0.5">
+                                            <div class="text-[12px] font-bold text-white flex items-center space-x-2">
+                                                <span>⚡ Luồng tìm kiếm hợp nhất 1-Shot (Save Game &amp; Exe Version)</span>
+                                                @if (SettingsVM.UseGeminiUnifiedWorkflow)
+                                                {
+                                                    <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-purple-950 text-purple-300 border border-purple-700">Luồng Mới (Khuyên dùng)</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">Luồng Cũ (Truyền thống)</span>
+                                                }
+                                            </div>
+                                            <div class="text-[11px] text-slate-400 leading-relaxed">
+                                                Gộp việc tra cứu vị trí Save Game, định vị file .exe và nhận diện phiên bản Game thành 1 lần gọi Gemini AI duy nhất. Phản hồi &lt;1s, tiết kiệm 50% quota API. Khi tắt, ứng dụng sẽ dùng luồng cũ (PCGamingWiki + Exe Resolver tách biệt).
+                                            </div>
+                                        </div>
+                                        <label class="switch-toggle mt-1">
+                                            <input type="checkbox" @bind="SettingsVM.UseGeminiUnifiedWorkflow" />
+                                            <span class="switch-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+
                                 <!-- Model Selection & Test Button -->
                                 <div class="flex items-center justify-between flex-wrap gap-3 pt-1">
                                     <div class="flex items-center space-x-2">
                                         <span class="text-[11.5px] text-slate-300 font-medium">Model:</span>
                                         <select class="input-dark py-1 px-2.5 text-[11.5px] bg-[#0A0F1D] border-[#334155] text-slate-200 cursor-pointer"
                                                 @bind="SettingsVM.GeminiModel">
-                                            <option value="gemini-3.8-flash">gemini-3.8-flash (Khuyên dùng - Nhanh &amp; Mới nhất)</option>
+                                            <option value="gemini-3.5-flash">gemini-3.5-flash (Mặc định - Nhanh, chuẩn xác &amp; tiết kiệm quota)</option>
+                                            <option value="gemini-3.8-flash">gemini-3.8-flash (Thế hệ mới)</option>
                                             <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Siêu nhẹ)</option>
                                             <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Suy luận sâu)</option>
                                         </select>
