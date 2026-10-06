@@ -45,9 +45,9 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     // Gemini AI Resolver fields
     private readonly GeminiExeResolverService _geminiService;
     private bool _enableGeminiExeSearch = true;
-    private bool _useGeminiUnifiedWorkflow = true;
+    private bool _useGeminiUnifiedWorkflow;
     private string _geminiApiKey = string.Empty;
-    private string _geminiModel = "gemini-3.5-flash";
+    private string _geminiModel = "gemini-3.5-flash-lite";
     private bool _isTestingGemini;
     private string _geminiTestResult = string.Empty;
     private bool? _geminiTestSuccess;
@@ -86,9 +86,21 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         _databaseCloudBackupTarget = !string.IsNullOrWhiteSpace(config.DatabaseCloudBackupTarget) ? config.DatabaseCloudBackupTarget : "GoogleDrive";
 
         _enableGeminiExeSearch = config.EnableGeminiExeSearch;
-        _useGeminiUnifiedWorkflow = config.UseGeminiUnifiedWorkflow;
         _geminiApiKey = config.GeminiApiKey ?? string.Empty;
-        _geminiModel = !string.IsNullOrWhiteSpace(config.GeminiModel) && !config.GeminiModel.Contains("2.5") ? config.GeminiModel : "gemini-3.5-flash";
+        _geminiModel = !string.IsNullOrWhiteSpace(config.GeminiModel) && !config.GeminiModel.Contains("2.5") ? config.GeminiModel : "gemini-3.5-flash-lite";
+
+        // Luồng mới chỉ được bật nếu đã có API Key và đã kiểm tra kết nối thành công
+        if (!string.IsNullOrWhiteSpace(_geminiApiKey) && config.GeminiApiKeyVerified)
+        {
+            _geminiTestSuccess = true;
+            _useGeminiUnifiedWorkflow = config.UseGeminiUnifiedWorkflow;
+            _geminiTestResult = "API Key đã được kiểm tra kết nối thành công trước đó.";
+        }
+        else
+        {
+            _geminiTestSuccess = null;
+            _useGeminiUnifiedWorkflow = false;
+        }
 
         SaveSettingsCommand = new RelayCommand(async _ => await ExecuteSaveSettingsAsync());
         SyncCatalogCommand = new RelayCommand(async _ => await ExecuteSyncCatalogAsync(), _ => !IsSyncingCatalog);
@@ -167,16 +179,62 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         set => SetField(ref _enableGeminiExeSearch, value);
     }
 
+    public bool CanEnableUnifiedWorkflow => !string.IsNullOrWhiteSpace(GeminiApiKey) && GeminiTestSuccess == true;
+
     public bool UseGeminiUnifiedWorkflow
     {
         get => _useGeminiUnifiedWorkflow;
-        set => SetField(ref _useGeminiUnifiedWorkflow, value);
+        set
+        {
+            if (value && !CanEnableUnifiedWorkflow)
+            {
+                if (string.IsNullOrWhiteSpace(GeminiApiKey))
+                {
+                    _dialogService.ShowMessage("Chưa Có API Key",
+                        "Vui lòng nhập Google Gemini API Key trước khi kích hoạt Luồng Tìm Kiếm Mới.",
+                        "Warning");
+                }
+                else
+                {
+                    _dialogService.ShowMessage("Chưa Kiểm Tra Kết Nối",
+                        "Vui lòng nhấn nút 'Kiểm Tra Kết Nối API' và đảm bảo kết nối thành công trước khi kích hoạt Luồng Tìm Kiếm Mới.",
+                        "Warning");
+                }
+                _useGeminiUnifiedWorkflow = false;
+                OnPropertyChanged();
+                return;
+            }
+
+            if (SetField(ref _useGeminiUnifiedWorkflow, value))
+            {
+                AppConfigService.UpdateConfig(cfg => cfg.UseGeminiUnifiedWorkflow = value);
+            }
+        }
     }
 
     public string GeminiApiKey
     {
         get => _geminiApiKey;
-        set => SetField(ref _geminiApiKey, value);
+        set
+        {
+            if (SetField(ref _geminiApiKey, value))
+            {
+                // Khi thay đổi API Key, xóa trạng thái xác thực cũ và tắt luồng mới nếu chưa test lại
+                GeminiTestSuccess = null;
+                GeminiTestResult = string.Empty;
+                if (UseGeminiUnifiedWorkflow)
+                {
+                    UseGeminiUnifiedWorkflow = false;
+                }
+                OnPropertyChanged(nameof(CanEnableUnifiedWorkflow));
+                AppConfigService.UpdateConfig(cfg =>
+                {
+                    cfg.GeminiApiKey = value;
+                    cfg.GeminiApiKeyVerified = false;
+                    cfg.UseGeminiUnifiedWorkflow = false;
+                });
+            }
+        }
     }
 
     public string GeminiModel
@@ -206,7 +264,13 @@ public class SettingsSubViewModel : INotifyPropertyChanged
     public bool? GeminiTestSuccess
     {
         get => _geminiTestSuccess;
-        set => SetField(ref _geminiTestSuccess, value);
+        set
+        {
+            if (SetField(ref _geminiTestSuccess, value))
+            {
+                OnPropertyChanged(nameof(CanEnableUnifiedWorkflow));
+            }
+        }
     }
 
     public async Task ExecuteTestGeminiConnectionAsync()
@@ -216,23 +280,52 @@ public class SettingsSubViewModel : INotifyPropertyChanged
         {
             GeminiTestSuccess = false;
             GeminiTestResult = "Vui lòng nhập Gemini API Key trước khi kiểm tra.";
+            OnPropertyChanged(nameof(CanEnableUnifiedWorkflow));
             return;
         }
 
         IsTestingGemini = true;
         GeminiTestResult = "Đang kết nối tới Google Gemini API...";
         GeminiTestSuccess = null;
+        OnPropertyChanged(nameof(CanEnableUnifiedWorkflow));
 
         try
         {
             var (success, message) = await _geminiService.TestApiKeyAsync(GeminiApiKey, GeminiModel);
             GeminiTestSuccess = success;
             GeminiTestResult = message;
+            OnPropertyChanged(nameof(CanEnableUnifiedWorkflow));
+
+            AppConfigService.UpdateConfig(cfg =>
+            {
+                cfg.GeminiApiKeyVerified = success;
+                if (!success)
+                {
+                    cfg.UseGeminiUnifiedWorkflow = false;
+                }
+            });
+
+            if (!success && UseGeminiUnifiedWorkflow)
+            {
+                UseGeminiUnifiedWorkflow = false;
+            }
         }
         catch (Exception ex)
         {
             GeminiTestSuccess = false;
             GeminiTestResult = $"Lỗi: {ex.Message}";
+            OnPropertyChanged(nameof(CanEnableUnifiedWorkflow));
+
+            AppConfigService.UpdateConfig(cfg =>
+            {
+                cfg.GeminiApiKeyVerified = false;
+                cfg.UseGeminiUnifiedWorkflow = false;
+            });
+
+            if (UseGeminiUnifiedWorkflow)
+            {
+                UseGeminiUnifiedWorkflow = false;
+            }
         }
         finally
         {
@@ -394,7 +487,8 @@ public class SettingsSubViewModel : INotifyPropertyChanged
             cfg.AutoUpdateLudusaviManifest = AutoUpdateLudusaviManifest;
             cfg.LudusaviAutoUpdateDays = LudusaviAutoUpdateDays;
             cfg.EnableGeminiExeSearch = EnableGeminiExeSearch;
-            cfg.UseGeminiUnifiedWorkflow = UseGeminiUnifiedWorkflow;
+            cfg.GeminiApiKeyVerified = GeminiTestSuccess == true;
+            cfg.UseGeminiUnifiedWorkflow = UseGeminiUnifiedWorkflow && (GeminiTestSuccess == true);
             cfg.GeminiApiKey = GeminiApiKey;
             cfg.GeminiModel = GeminiModel;
         });

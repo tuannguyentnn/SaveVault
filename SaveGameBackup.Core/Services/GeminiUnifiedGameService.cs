@@ -52,11 +52,11 @@ public class GeminiUnifiedResponse
 public class GeminiUnifiedGameService
 {
     private readonly HttpClient _httpClient;
-    private const string DefaultModel = "gemini-3.5-flash";
+    private const string DefaultModel = "gemini-3.5-flash-lite";
 
     public GeminiUnifiedGameService(HttpClient? httpClient = null)
     {
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
     }
 
     /// <summary>
@@ -96,7 +96,7 @@ public class GeminiUnifiedGameService
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(12));
+            cts.CancelAfter(TimeSpan.FromSeconds(25));
 
             LoggingService.LogAction("Gemini_Unified_Resolving_Start", new { Game = cleanQuery, Model = model });
 
@@ -155,9 +155,30 @@ Return STRICTLY a JSON object conforming to this schema:
 
             if (!response.IsSuccessStatusCode)
             {
-                var errorText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                LoggingService.Warn("Gemini Unified API tra cứu thất bại (Status {Status}): {Error}", response.StatusCode, errorText);
-                return (null, null);
+                // Nếu model được chọn trả về 503 Service Unavailable (Google quá tải cho model này), thử fallback qua DefaultModel
+                if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable && model != DefaultModel)
+                {
+                    LoggingService.Warn("Gemini Unified API model '{Model}' trả về 503 Service Unavailable. Đang thử fallback tự động sang model '{DefaultModel}'.", model, DefaultModel);
+                    var fallbackUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(DefaultModel)}:generateContent?key={Uri.EscapeDataString(apiKey)}";
+                    using var fallbackContent = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                    var fallbackResponse = await _httpClient.PostAsync(fallbackUrl, fallbackContent, cts.Token).ConfigureAwait(false);
+                    if (fallbackResponse.IsSuccessStatusCode)
+                    {
+                        response = fallbackResponse;
+                    }
+                    else
+                    {
+                        var errorText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        LoggingService.Warn("Gemini Unified API tra cứu thất bại (Status {Status}): {Error}", response.StatusCode, errorText);
+                        return (null, null);
+                    }
+                }
+                else
+                {
+                    var errorText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    LoggingService.Warn("Gemini Unified API tra cứu thất bại (Status {Status}): {Error}", response.StatusCode, errorText);
+                    return (null, null);
+                }
             }
 
             var responseJson = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -189,7 +210,7 @@ Return STRICTLY a JSON object conforming to this schema:
         }
         catch (OperationCanceledException)
         {
-            LoggingService.Warn("Gemini Unified API tra cứu cho game '{Game}' bị timeout (>12s)", cleanQuery);
+            LoggingService.Warn("Gemini Unified API tra cứu cho game '{Game}' bị timeout (>25s)", cleanQuery);
         }
         catch (Exception ex)
         {

@@ -36,7 +36,26 @@ public class OAuthLoopbackReceiver : IDisposable
     {
         if (!_listener.IsListening)
         {
-            _listener.Start();
+            try
+            {
+                _listener.Start();
+            }
+            catch (HttpListenerException hex)
+            {
+                if (hex.ErrorCode == 32 || hex.ErrorCode == 183 || hex.ErrorCode == 5)
+                {
+                    throw new InvalidOperationException(
+                        $"Không thể mở cổng mạng OAuth {_port} (Mã lỗi {hex.ErrorCode}: \"{hex.Message}\").\n\n" +
+                        "Nguyên nhân: Cổng này hiện đang bị chiếm giữ hoặc nằm trong dải cổng loại trừ (Excluded Port Range) của Windows NAT (Hyper-V / WSL2 / Docker).\n\n" +
+                        "Cách xử lý nhanh nhất:\n" +
+                        "1. Mở Command Prompt (CMD) hoặc PowerShell bằng quyền Quản trị viên (Run as Administrator).\n" +
+                        "2. Chạy lệnh:\n" +
+                        "   net stop winnat && net start winnat\n" +
+                        "3. Quay lại ứng dụng và bấm nút kết nối OneDrive.", hex);
+                }
+
+                throw new InvalidOperationException($"Lỗi khởi động dịch vụ nhận mã xác thực OAuth trên cổng {_port}: {hex.Message}", hex);
+            }
         }
     }
 

@@ -39,11 +39,11 @@ public class GeminiExeResponse
 public class GeminiExeResolverService
 {
     private readonly HttpClient _httpClient;
-    private const string DefaultModel = "gemini-3.5-flash";
+    private const string DefaultModel = "gemini-3.5-flash-lite";
 
     public GeminiExeResolverService(HttpClient? httpClient = null)
     {
-        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
     }
 
     /// <summary>
@@ -225,7 +225,7 @@ CRITICAL RULES:
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            cts.CancelAfter(TimeSpan.FromSeconds(15));
 
             var requestBody = new
             {
@@ -252,8 +252,40 @@ CRITICAL RULES:
                 return (true, $"Kết nối Google Gemini thành công! (Model: {selectedModel})");
             }
 
+            // Nếu model được chọn gặp lỗi 503 Service Unavailable (Google quá tải model này), thử fallback qua DefaultModel
+            if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable && selectedModel != DefaultModel)
+            {
+                try
+                {
+                    using var fallbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    fallbackCts.CancelAfter(TimeSpan.FromSeconds(10));
+
+                    using var fallbackContent = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+                    var fallbackUrl = $"https://generativelanguage.googleapis.com/v1beta/models/{Uri.EscapeDataString(DefaultModel)}:generateContent?key={Uri.EscapeDataString(apiKey.Trim())}";
+                    var fallbackResponse = await _httpClient.PostAsync(fallbackUrl, fallbackContent, fallbackCts.Token).ConfigureAwait(false);
+
+                    if (fallbackResponse.IsSuccessStatusCode)
+                    {
+                        return (true, $"API Key hoàn toàn hợp lệ! (Lưu ý: Model '{selectedModel}' đang quá tải trên server Google (503), hệ thống đã xác thực thành công qua '{DefaultModel}')");
+                    }
+                }
+                catch
+                {
+                    // Bỏ qua lỗi fallback để hiển thị thông báo lỗi của model chính
+                }
+            }
+
             var err = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
+            {
+                return (false, $"Máy chủ Google Gemini đang tạm thời quá tải đối với model '{selectedModel}' (Mã 503 Service Unavailable). Hãy đổi sang model '{DefaultModel}' và thử lại.");
+            }
+
             return (false, $"Kết nối thất bại (Mã {response.StatusCode}): {err}");
+        }
+        catch (OperationCanceledException)
+        {
+            return (false, $"Lỗi kết nối: Quá thời gian chờ (Timeout sau 15 giây). Vui lòng thử lại hoặc đổi sang model '{DefaultModel}'.");
         }
         catch (Exception ex)
         {

@@ -85,8 +85,17 @@ public class GameSearchCoordinator
 
                 if (candidates.Count == 0)
                 {
+                    var offlineCandidate = _ludusaviService.FindGame(cleanQuery);
+                    if (offlineCandidate != null)
+                    {
+                        candidates.Add(offlineCandidate.Name);
+                    }
+                }
+
+                if (candidates.Count == 0)
+                {
                     LoggingService.LogAction("Search_Source_Missed", new { Query = cleanQuery, Source = "PCGamingWiki Titles", Reason = "No candidates found" });
-                    statusProgress?.Report($"Không tìm thấy tựa game nào phù hợp với '{cleanQuery}' trên PCGamingWiki.");
+                    statusProgress?.Report($"Không tìm thấy tựa game nào phù hợp với '{cleanQuery}' trên PCGamingWiki hoặc cơ sở dữ liệu offline.");
                     if (candidateChooser != null)
                     {
                         _ = candidateChooser(candidates);

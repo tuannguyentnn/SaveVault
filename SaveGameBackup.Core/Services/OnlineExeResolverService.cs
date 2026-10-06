@@ -45,9 +45,9 @@ public class OnlineExeResolverService
     }
 
     /// <summary>
-    /// Cờ kiểm thử: Khi bật true (mặc định hiện tại để người dùng test), hệ thống sẽ tắt toàn bộ Catalog và Steam để chạy DUY NHẤT Gemini AI.
+    /// Cờ kiểm thử: Mặc định tắt (false) để luồng cũ chạy thuần Catalog và Steam.
     /// </summary>
-    public static bool ForceGeminiOnlyForTesting { get; set; } = true;
+    public static bool ForceGeminiOnlyForTesting { get; set; } = false;
 
     /// <summary>
     /// Tra cứu định nghĩa executable của game từ bộ nhớ/catalog hoặc nguồn mạng.
@@ -65,10 +65,7 @@ public class OnlineExeResolverService
 
         var cleanName = (gameName ?? string.Empty).Trim();
 
-        // =========================================================================
-        // [TEST MODE] Khi ForceGeminiOnlyForTesting = true:
-        // Kiểm tra trước trong Catalog bộ nhớ (do Gemini Unified đăng ký trước nếu có)
-        // =========================================================================
+        // Kiểm tra trước trong Catalog bộ nhớ
         if (_catalogByName.TryGetValue(cleanName, out var cachedDef))
         {
             return cachedDef;
@@ -80,6 +77,8 @@ public class OnlineExeResolverService
             return cachedNormDef;
         }
 
+        // [Luồng cũ - Đã ẩn code Force Gemini]
+        /*
         if (ForceGeminiOnlyForTesting)
         {
             try
@@ -98,6 +97,7 @@ public class OnlineExeResolverService
 
             return null;
         }
+        */
 
         // 1. Tra cứu theo SteamAppId trong Catalog
         if (!string.IsNullOrWhiteSpace(steamAppId) && _catalogBySteamId.TryGetValue(steamAppId.Trim(), out var steamMatch))
@@ -148,7 +148,8 @@ public class OnlineExeResolverService
             catch { }
         }
 
-        // 6. Nếu vẫn chưa có và có mạng -> Tra cứu thông minh bằng Gemini AI
+        // 6. [Luồng cũ - Đã ẩn code liên quan tới Gemini AI để luồng cũ thuần Catalog & Steam]
+        /*
         if (GameCoverService.IsNetworkAvailable())
         {
             try
@@ -162,6 +163,7 @@ public class OnlineExeResolverService
             }
             catch { }
         }
+        */
 
         return null;
     }

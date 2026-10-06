@@ -313,7 +313,10 @@ public class PCGamingWikiService
                     if (!string.Equals(parentPattern, cleaned, StringComparison.OrdinalIgnoreCase))
                     {
                         var parentCleaned = CleanPattern(parentPattern);
-                        if (!string.IsNullOrWhiteSpace(parentCleaned))
+                        if (!string.IsNullOrWhiteSpace(parentCleaned) &&
+                            !parentCleaned.EndsWith(@"\userdata", StringComparison.OrdinalIgnoreCase) &&
+                            !parentCleaned.EndsWith("/userdata", StringComparison.OrdinalIgnoreCase) &&
+                            !parentCleaned.Equals("{{p|steam}}", StringComparison.OrdinalIgnoreCase))
                         {
                             patterns.Add(parentCleaned);
                         }
@@ -342,7 +345,10 @@ public class PCGamingWikiService
                     if (!string.Equals(parentPattern, p, StringComparison.OrdinalIgnoreCase))
                     {
                         var parentCleaned = CleanPattern(parentPattern);
-                        if (!string.IsNullOrWhiteSpace(parentCleaned))
+                        if (!string.IsNullOrWhiteSpace(parentCleaned) &&
+                            !parentCleaned.EndsWith(@"\userdata", StringComparison.OrdinalIgnoreCase) &&
+                            !parentCleaned.EndsWith("/userdata", StringComparison.OrdinalIgnoreCase) &&
+                            !parentCleaned.Equals("{{p|steam}}", StringComparison.OrdinalIgnoreCase))
                         {
                             patterns.Add(parentCleaned);
                         }

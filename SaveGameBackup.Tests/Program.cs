@@ -2390,6 +2390,26 @@ try
         Console.WriteLine("  (Sandfall directory not present on this machine, skipping physical file count check)");
     }
 
+    // 36.4: Test Steam User ID resolution and Lego LOTR pattern
+    var steamUserIds = resolver36.GetSteamUserIds();
+    Console.WriteLine($"  ✓ Detected {steamUserIds.Count} Steam user ID(s): {string.Join(", ", steamUserIds)}");
+    var activeSteamId = resolver36.GetActiveSteamUserId();
+    Console.WriteLine($"  ✓ Active Steam user ID: {activeSteamId ?? "(none)"}");
+
+    var legoPattern = @"{{p|steam}}\userdata\{{p|uid}}\214510\remote";
+    var legoResolved = resolver36.ResolveRawPattern(legoPattern);
+    Console.WriteLine($"  ✓ LEGO LOTR pattern resolved: {string.Join(" | ", legoResolved)}");
+    var legoDetected = resolver36.InspectDetectedPathItems(legoResolved);
+    foreach (var item in legoDetected)
+    {
+        Console.WriteLine($"  ✓ LEGO LOTR Save Detected: {item.Path} ({item.FileCount} files, {item.TotalSizeBytes} bytes)");
+    }
+    // Verify D:\steam\userdata is NEVER detected as a save directory itself
+    if (legoDetected.Any(d => d.Path.EndsWith(@"\userdata", StringComparison.OrdinalIgnoreCase)))
+    {
+        throw new Exception("FAIL: Container folder \\userdata was incorrectly detected as a save game path!");
+    }
+
     Console.WriteLine("\n=================================================");
     Console.WriteLine("  ALL 36 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
@@ -2559,6 +2579,20 @@ try
         throw new Exception($"FAIL: Expected validation failure for empty key, got '{testMsg}'");
     }
     Console.WriteLine("  ✓ Gemini API Key validation check passed");
+
+    var userConfig = AppConfigService.GetConfig();
+    Console.WriteLine($"[DEBUG] User API Key Length: {userConfig.GeminiApiKey?.Length}, Model: '{userConfig.GeminiModel}'");
+    if (!string.IsNullOrEmpty(userConfig.GeminiApiKey))
+    {
+        var (userSuccess, userMsg) = await geminiResolver.TestApiKeyAsync(userConfig.GeminiApiKey, userConfig.GeminiModel);
+        Console.WriteLine($"[DEBUG] Test with model '{userConfig.GeminiModel}': Success={userSuccess}, Msg='{userMsg}'");
+
+        var (f15Success, f15Msg) = await geminiResolver.TestApiKeyAsync(userConfig.GeminiApiKey, "gemini-1.5-flash");
+        Console.WriteLine($"[DEBUG] Test with model 'gemini-1.5-flash': Success={f15Success}, Msg='{f15Msg}'");
+
+        var (f20Success, f20Msg) = await geminiResolver.TestApiKeyAsync(userConfig.GeminiApiKey, "gemini-2.0-flash");
+        Console.WriteLine($"[DEBUG] Test with model 'gemini-2.0-flash': Success={f20Success}, Msg='{f20Msg}'");
+    }
 
     // 3. Kiểm tra tính năng mã hóa và giải mã an toàn của GeminiApiKey trong AppConfigFile
     var testConfig = new AppConfigFile();

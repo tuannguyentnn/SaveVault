@@ -45,51 +45,79 @@
         </div>
     </div>
 
-    <!-- Segmented Sub-Navigation Pills -->
-    <div class="flex items-center space-x-2 p-1.5 bg-[#131C2E] border border-[#1E293B] rounded-xl flex-shrink-0">
-        <button type="button"
-                class="subtab-pill @(ActiveSubTab == 0 ? "active" : "")"
-                @onclick="() => ActiveSubTab = 0">
-            <span>📁</span>
-            <span>Lưu Trữ &amp; Sao Lưu</span>
-        </button>
+    <!-- 2-Column Container: Left Vertical Sub-Navigation & Right Main Viewport -->
+    <div class="flex-1 flex gap-4 min-h-0 overflow-hidden">
+        <!-- Left Vertical Sub-Navigation Sidebar -->
+        <aside class="w-[230px] flex-shrink-0 bg-[#131C2E] border border-[#1E293B] rounded-xl p-2.5 flex flex-col justify-between shadow-lg select-none">
+            <div class="space-y-1.5 flex-1">
+                <div class="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Danh Mục Cài Đặt
+                </div>
 
-        <button type="button"
-                class="subtab-pill @(ActiveSubTab == 1 ? "active" : "")"
-                @onclick="SelectCloudSubTab">
-            <span>☁️</span>
-            <span>Đồng Bộ Đám Mây</span>
-            @if (CloudVM.IsGoogleDriveLoggedIn || CloudVM.IsOneDriveLoggedIn)
-            {
-                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5"></span>
-            }
-        </button>
+                <button type="button"
+                        class="cfg-nav-item @(ActiveSubTab == 0 ? "active" : "")"
+                        @onclick="() => ActiveSubTab = 0">
+                    <span class="text-base">📁</span>
+                    <span class="truncate">Lưu Trữ &amp; Sao Lưu</span>
+                </button>
 
-        <button type="button"
-                class="subtab-pill @(ActiveSubTab == 2 ? "active" : "")"
-                @onclick="() => ActiveSubTab = 2">
-            <span>⚡</span>
-            <span>Cơ Sở Dữ Liệu &amp; Game</span>
-            <span class="px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700">@SettingsVM.CatalogGamesCount</span>
-        </button>
+                <button type="button"
+                        class="cfg-nav-item @(ActiveSubTab == 1 ? "active" : "")"
+                        @onclick="SelectCloudSubTab">
+                    <span class="text-base">☁️</span>
+                    <span class="truncate flex-1">Đồng Bộ Cloud</span>
+                    @if (CloudVM.IsGoogleDriveLoggedIn || CloudVM.IsOneDriveLoggedIn)
+                    {
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    }
+                </button>
 
-        <button type="button"
-                class="subtab-pill @(ActiveSubTab == 3 ? "active" : "")"
-                @onclick="() => ActiveSubTab = 3">
-            <span>🚀</span>
-            <span>Cập Nhật &amp; Logs</span>
-            @if (ErrCount > 0)
-            {
-                <span class="px-1.5 py-0.2 rounded text-[10px] bg-red-950 text-red-400 border border-red-700">@ErrCount lỗi</span>
-            }
-        </button>
-    </div>
+                <button type="button"
+                        class="cfg-nav-item cfg-nav-gemini @(ActiveSubTab == 2 ? "active" : "")"
+                        @onclick="() => ActiveSubTab = 2">
+                    <span class="text-base">✨</span>
+                    <span class="truncate flex-1">Gemini AI</span>
+                    <span class="px-1.5 py-0.2 rounded text-[9.5px] font-bold bg-purple-950/80 text-purple-300 border border-purple-500/30">AI</span>
+                </button>
 
-    <!-- Main Viewport Area -->
-    <div class="sv-scroll-wrapper flex-1 min-h-0 flex flex-col" data-scroll-text="Còn cài đặt bên dưới (Cuộn)">
-        <div class="flex-1 overflow-y-auto space-y-4 pr-1 sv-scroll-area">
+                <button type="button"
+                        class="cfg-nav-item @(ActiveSubTab == 3 ? "active" : "")"
+                        @onclick="() => ActiveSubTab = 3">
+                    <span class="text-base">⚡</span>
+                    <span class="truncate flex-1">CSDL &amp; Cache</span>
+                    <span class="px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-400 border border-slate-700">@SettingsVM.CatalogGamesCount</span>
+                </button>
+
+                <button type="button"
+                        class="cfg-nav-item @(ActiveSubTab == 4 ? "active" : "")"
+                        @onclick="() => ActiveSubTab = 4">
+                    <span class="text-base">🚀</span>
+                    <span class="truncate flex-1">Cập Nhật &amp; Logs</span>
+                    @if (ErrCount > 0)
+                    {
+                        <span class="px-1.5 py-0.2 rounded text-[10px] bg-red-950 text-red-400 border border-red-700">@ErrCount</span>
+                    }
+                </button>
+            </div>
+
+            <!-- Bottom Info in Sidebar -->
+            <div class="pt-3 border-t border-[#1E293B] px-2 text-[10.5px] text-slate-400 space-y-1">
+                <div class="flex items-center justify-between">
+                    <span>Phiên bản:</span>
+                    <span class="font-mono text-cyan-400 font-semibold">v@(UpdateVM.CurrentVersion)</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span>Trạng thái:</span>
+                    <span class="text-emerald-400 font-medium">Sẵn sàng</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Right Main Viewport Area -->
+        <div class="sv-scroll-wrapper flex-1 min-h-0 flex flex-col" data-scroll-text="Còn cài đặt bên dưới (Cuộn)">
+            <div class="flex-1 overflow-y-auto space-y-4 pr-1 sv-scroll-area">
         <!-- ==================== SUB-TAB 0: LƯU TRỮ & SAO LƯU ==================== -->
-        @if (ActiveSubTab == 0 || ActiveSubTab == 4)
+        @if (ActiveSubTab == 0)
         {
             <div class="space-y-4">
                 <!-- Thư mục gốc lưu trữ -->
@@ -219,7 +247,7 @@
                             </div>
                             <button type="button"
                                     class="btn-secondary py-1 px-3 text-[11px] text-amber-300 hover:text-white border-amber-500/40 flex-shrink-0"
-                                    @onclick="() => ActiveSubTab = 1">
+                                    @onclick="SelectCloudSubTab">
                                 Kết Nối Ngay ➔
                             </button>
                         </div>
@@ -383,7 +411,7 @@
         }
 
         <!-- ==================== SUB-TAB 1: ĐỒNG BỘ ĐÁM MÂY ==================== -->
-        @if (ActiveSubTab == 1 || ActiveSubTab == 4)
+        @if (ActiveSubTab == 1)
         {
             <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
                 <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
@@ -714,8 +742,8 @@
             </div>
         }
 
-        <!-- ==================== SUB-TAB 2: DATABASE & GAME MANIFEST ==================== -->
-        @if (ActiveSubTab == 2 || ActiveSubTab == 4)
+        <!-- ==================== SUB-TAB 3: CƠ SỞ DỮ LIỆU & CACHE ==================== -->
+        @if (ActiveSubTab == 3)
         {
             <div class="space-y-4">
 
@@ -884,7 +912,13 @@
                         }
                     </div>
                 </div>
+            </div>
+        }
 
+        <!-- ==================== SUB-TAB 2: TRỢ LÝ GEMINI AI ==================== -->
+        @if (ActiveSubTab == 2)
+        {
+            <div class="space-y-4">
                 <!-- Card Trợ Lý AI Google Gemini (Resolver Executable & Path) -->
                 <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-4">
                     <div class="flex items-center justify-between pb-3 border-b border-[#1E293B]">
@@ -893,7 +927,7 @@
                                 ✨
                             </div>
                             <div>
-                                <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">TRỢ LÝ AI GOOGLE GEMINI (EXE &amp; PATH RESOLVER)</h3>
+                                <h3 class="text-[13.5px] font-bold text-white uppercase tracking-wide">AI GOOGLE GEMINI (EXE &amp; PATH RESOLVER)</h3>
                                 <div class="text-[11px] text-slate-400">Tự động nhận diện file thực thi .exe và đường dẫn cài đặt cho game lạ, indie, repack mà không cần đăng nhập</div>
                             </div>
                         </div>
@@ -907,7 +941,7 @@
                         <div class="flex items-start justify-between space-x-3">
                             <div class="space-y-1">
                                 <div class="text-[13px] font-bold text-white flex items-center space-x-2">
-                                    <span>Tự động tra cứu bằng Gemini AI khi catalog không có dữ liệu</span>
+                                    <span>Tự động tra cứu bằng Gemini AI</span>
                                     @if (SettingsVM.EnableGeminiExeSearch)
                                     {
                                         <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-emerald-950 text-emerald-400 border border-emerald-700">Đang bật</span>
@@ -918,7 +952,7 @@
                                     }
                                 </div>
                                 <div class="text-[11px] text-slate-400 leading-relaxed">
-                                    Khi phát hiện game mà Steam Store và danh bạ built-in không có, ứng dụng sẽ gửi truy vấn REST ngầm đến Gemini AI để suy luận file gameplay chính và thư mục con chuẩn (&lt;4s timeout).
+                                    Ứng dụng sẽ gửi truy vấn REST ngầm đến Gemini AI tìm thông tin game (&lt;4s timeout).
                                 </div>
                             </div>
                             <label class="switch-toggle mt-1">
@@ -965,25 +999,53 @@
                                     <div class="flex items-start justify-between space-x-3">
                                         <div class="space-y-0.5">
                                             <div class="text-[12px] font-bold text-white flex items-center space-x-2">
-                                                <span>⚡ Luồng tìm kiếm hợp nhất 1-Shot (Save Game &amp; Exe Version)</span>
+                                                <span>⚡ Luồng tìm kiếm (Save Game &amp; Exe Version)</span>
                                                 @if (SettingsVM.UseGeminiUnifiedWorkflow)
                                                 {
-                                                    <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-purple-950 text-purple-300 border border-purple-700">Luồng Mới (Khuyên dùng)</span>
+                                                    <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-purple-950 text-purple-300 border border-purple-700">Luồng Mới</span>
                                                 }
                                                 else
                                                 {
-                                                    <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">Luồng Cũ (Truyền thống)</span>
+                                                    <span class="px-2 py-0.2 rounded text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">Luồng Cũ (Mặc định)</span>
                                                 }
                                             </div>
                                             <div class="text-[11px] text-slate-400 leading-relaxed">
                                                 Gộp việc tra cứu vị trí Save Game, định vị file .exe và nhận diện phiên bản Game thành 1 lần gọi Gemini AI duy nhất. Phản hồi &lt;1s, tiết kiệm 50% quota API. Khi tắt, ứng dụng sẽ dùng luồng cũ (PCGamingWiki + Exe Resolver tách biệt).
                                             </div>
                                         </div>
-                                        <label class="switch-toggle mt-1">
-                                            <input type="checkbox" @bind="SettingsVM.UseGeminiUnifiedWorkflow" />
+                                        <label class="switch-toggle mt-1 @(!SettingsVM.CanEnableUnifiedWorkflow ? "opacity-50 cursor-not-allowed" : "")"
+                                               title="@(!SettingsVM.CanEnableUnifiedWorkflow ? "Cần có API Key và kiểm tra kết nối thành công để kích hoạt" : "Bật/Tắt Luồng Mới")">
+                                            <input type="checkbox"
+                                                   checked="@SettingsVM.UseGeminiUnifiedWorkflow"
+                                                   disabled="@(!SettingsVM.CanEnableUnifiedWorkflow)"
+                                                   @onchange="OnToggleUnifiedWorkflow" />
                                             <span class="switch-slider"></span>
                                         </label>
                                     </div>
+
+                                    @if (!SettingsVM.CanEnableUnifiedWorkflow)
+                                    {
+                                        <div class="pt-2 border-t border-[#1E293B] text-[10.5px] flex items-center space-x-1.5 text-amber-400">
+                                            <span>🔒</span>
+                                            <span>
+                                                @if (string.IsNullOrWhiteSpace(SettingsVM.GeminiApiKey))
+                                                {
+                                                    <span>Yêu cầu nhập Google Gemini API Key và kiểm tra kết nối thành công để mở khóa Luồng Mới.</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>Chưa kiểm tra kết nối API. Vui lòng bấm <strong>'Kiểm Tra Kết Nối API'</strong> bên dưới và đảm bảo kết nối thành công.</span>
+                                                }
+                                            </span>
+                                        </div>
+                                    }
+                                    else if (!SettingsVM.UseGeminiUnifiedWorkflow)
+                                    {
+                                        <div class="pt-2 border-t border-[#1E293B] text-[10.5px] flex items-center space-x-1.5 text-emerald-400">
+                                            <span>✓</span>
+                                            <span>API Key đã xác thực kết nối thành công. Bạn có thể bật công tắc để kích hoạt Luồng Mới.</span>
+                                        </div>
+                                    }
                                 </div>
 
                                 <!-- Model Selection & Test Button -->
@@ -992,9 +1054,9 @@
                                         <span class="text-[11.5px] text-slate-300 font-medium">Model:</span>
                                         <select class="input-dark py-1 px-2.5 text-[11.5px] bg-[#0A0F1D] border-[#334155] text-slate-200 cursor-pointer"
                                                 @bind="SettingsVM.GeminiModel">
-                                            <option value="gemini-3.5-flash">gemini-3.5-flash (Mặc định - Nhanh, chuẩn xác &amp; tiết kiệm quota)</option>
+                                            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Khuyên dùng - Siêu tốc &amp; ổn định nhất)</option>
+                                            <option value="gemini-3.5-flash">gemini-3.5-flash (Chuẩn xác &amp; thông minh)</option>
                                             <option value="gemini-3.8-flash">gemini-3.8-flash (Thế hệ mới)</option>
-                                            <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (Siêu nhẹ)</option>
                                             <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Suy luận sâu)</option>
                                         </select>
                                     </div>
@@ -1059,8 +1121,8 @@
             </div>
         }
 
-        <!-- ==================== SUB-TAB 3: CẬP NHẬT & LOGS ==================== -->
-        @if (ActiveSubTab == 3 || ActiveSubTab == 4)
+        <!-- ==================== SUB-TAB 4: CẬP NHẬT & LOGS ==================== -->
+        @if (ActiveSubTab == 4)
         {
             <!-- Card Phiên Bản & Cập Nhật Hệ Thống (Đưa lên trên Card Log) -->
             <div class="bg-[#131C2E] border border-[#1E293B] rounded-xl p-5 shadow-lg space-y-3.5">
@@ -1202,6 +1264,7 @@
         }
         </div>
     </div>
+    </div>
 </div>
 
 @code {
@@ -1264,6 +1327,12 @@
         {
             _ = CloudVM.RefreshCloudQuotaAsync("OneDrive");
         }
+    }
+
+    private void OnToggleUnifiedWorkflow(ChangeEventArgs e)
+    {
+        bool val = (bool)(e.Value ?? false);
+        SettingsVM.UseGeminiUnifiedWorkflow = val;
     }
 
     private void OnStateChanged(object? sender, PropertyChangedEventArgs e)

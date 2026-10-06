@@ -152,6 +152,8 @@ public class LudusaviManifestService
         converted = Regex.Replace(converted, @"<winProgramData>", "{{p|programdata}}", RegexOptions.IgnoreCase);
         converted = Regex.Replace(converted, @"<home>", "{{p|userprofile}}", RegexOptions.IgnoreCase);
         converted = Regex.Replace(converted, @"<winPackage>", @"{{p|localappdata}}\Packages", RegexOptions.IgnoreCase);
+        converted = Regex.Replace(converted, @"<root>", "{{p|steam}}", RegexOptions.IgnoreCase);
+        converted = Regex.Replace(converted, @"<storeUserId>", "{{p|uid}}", RegexOptions.IgnoreCase);
 
         // Chuẩn hóa dấu gạch chéo
         converted = converted.Replace('/', '\\');
@@ -386,9 +388,9 @@ public class LudusaviManifestService
             }
 
             // Kiểm tra đường dẫn file save
-            if (line.Contains("<win") || line.Contains("<home>"))
+            if (line.Contains("<win") || line.Contains("<home>") || line.Contains("<root>"))
             {
-                var pathMatch = Regex.Match(line, @"(<win[a-zA-Z]+>[^:\""'\r\n]+|<home>[^:\""'\r\n]+)");
+                var pathMatch = Regex.Match(line, @"(<win[a-zA-Z]+>[^:\""'\r\n]+|<home>[^:\""'\r\n]+|<root>[^:\""'\r\n]+)");
                 if (pathMatch.Success)
                 {
                     var raw = pathMatch.Groups[1].Value;

@@ -62,6 +62,121 @@ public class PathResolverService
         return @"C:\Program Files (x86)\Steam";
     }
 
+    public List<string> GetSteamUserIds()
+    {
+        var userIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                // 1. Lấy từ Registry ActiveUser (User đang chạy hoặc đăng nhập gần nhất)
+                using var activeKey = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam\ActiveProcess");
+                var activeUser = activeKey?.GetValue("ActiveUser");
+                if (activeUser is int activeInt && activeInt > 0)
+                {
+                    userIds.Add(activeInt.ToString());
+                }
+                else if (activeUser != null && long.TryParse(activeUser.ToString(), out var activeLong) && activeLong > 0)
+                {
+                    userIds.Add(activeLong.ToString());
+                }
+
+                // 2. Lấy từ danh sách Users trong Registry
+                using var usersKey = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam\Users");
+                if (usersKey != null)
+                {
+                    foreach (var subKey in usersKey.GetSubKeyNames())
+                    {
+                        if (long.TryParse(subKey, out var uid) && uid > 0)
+                        {
+                            userIds.Add(subKey);
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // 3. Quét các thư mục con trong <SteamPath>\userdata
+        try
+        {
+            var steamPath = GetSteamPath();
+            var userDataPath = Path.Combine(steamPath, "userdata");
+            if (Directory.Exists(userDataPath))
+            {
+                foreach (var dir in Directory.GetDirectories(userDataPath))
+                {
+                    var dirName = Path.GetFileName(dir);
+                    if (long.TryParse(dirName, out var uid) && uid > 0)
+                    {
+                        userIds.Add(dirName);
+                    }
+                }
+            }
+        }
+        catch { }
+
+        return userIds.ToList();
+    }
+
+    public string? GetActiveSteamUserId()
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                using var activeKey = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam\ActiveProcess");
+                var activeUser = activeKey?.GetValue("ActiveUser");
+                if (activeUser is int activeInt && activeInt > 0)
+                {
+                    return activeInt.ToString();
+                }
+                if (activeUser != null && long.TryParse(activeUser.ToString(), out var activeLong) && activeLong > 0)
+                {
+                    return activeLong.ToString();
+                }
+            }
+        }
+        catch { }
+
+        return GetSteamUserIds().FirstOrDefault();
+    }
+
+    public bool IsSystemOrContainerDirectory(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return true;
+        var clean = path.Trim().TrimEnd('\\', '/');
+
+        // Ổ đĩa gốc (C:, D:, C:\, D:\)
+        if (clean.Length <= 3 && clean.Contains(':')) return true;
+
+        var steamPath = GetSteamPath().TrimEnd('\\', '/');
+        var steamUserData = Path.Combine(steamPath, "userdata").TrimEnd('\\', '/');
+
+        if (string.Equals(clean, steamPath, StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(clean, steamUserData, StringComparison.OrdinalIgnoreCase)) return true;
+
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('\\', '/');
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData).TrimEnd('\\', '/');
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData).TrimEnd('\\', '/');
+        var localLow = Path.Combine(userProfile, "AppData", "LocalLow").TrimEnd('\\', '/');
+        var myDocuments = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments).TrimEnd('\\', '/');
+        var savedGames = Path.Combine(userProfile, "Saved Games").TrimEnd('\\', '/');
+        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData).TrimEnd('\\', '/');
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles).TrimEnd('\\', '/');
+        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86).TrimEnd('\\', '/');
+        var windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows).TrimEnd('\\', '/');
+
+        var systemDirs = new[]
+        {
+            userProfile, appData, localAppData, localLow, myDocuments, savedGames,
+            programData, programFiles, programFilesX86, windowsDir
+        };
+
+        return systemDirs.Any(s => !string.IsNullOrEmpty(s) && string.Equals(clean, s, StringComparison.OrdinalIgnoreCase));
+    }
+
     public List<string> ResolveRawPattern(string pattern)
     {
         var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -121,6 +236,7 @@ public class PathResolverService
         cleaned = ReplaceTag(cleaned, "windir", windowsDir);
         cleaned = ReplaceTag(cleaned, "systemroot", windowsDir);
         cleaned = ReplaceTag(cleaned, "steam", steamPath);
+        cleaned = ReplaceTag(cleaned, "root", steamPath);
 
         // Windows Environment Variables (%APPDATA%, %LOCALAPPDATA%, etc.)
         cleaned = Environment.ExpandEnvironmentVariables(cleaned);
@@ -129,32 +245,30 @@ public class PathResolverService
         cleaned = cleaned.Replace('/', '\\');
 
         // Check if there are user ID placeholders or wildcards
-        var uidPattern = @"\{\{p\|(?:uid|steamid|uplayid|originid|gogid|accountid)\}\}|<user-id>|<steam-id>|<account-id>|%USERID%";
+        var uidPattern = @"\{\{p\|(?:uid|steamid|storeuserid|uplayid|originid|gogid|accountid)\}\}|<(?:user-id|steam-id|storeUserId|account-id)>|%USERID%";
         var hasUidPlaceholder = Regex.IsMatch(cleaned, uidPattern, RegexOptions.IgnoreCase);
         if (hasUidPlaceholder)
         {
-            // 1. Luôn mở rộng bằng wildcard '*' để tìm bất kỳ thư mục account/user ID thực tế nào trên ổ đĩa
+            // 1. Quét tìm tất cả Steam User ID trên máy tính để thế trực tiếp
+            var knownUserIds = GetSteamUserIds();
+            foreach (var uid in knownUserIds)
+            {
+                var specificReplaced = Regex.Replace(cleaned, uidPattern, uid, RegexOptions.IgnoreCase);
+                ExpandWildcards(specificReplaced, results);
+            }
+
+            // 2. Luôn mở rộng bằng wildcard '*' để tìm bất kỳ thư mục account/user ID thực tế nào khác trên ổ đĩa
             var wildcardReplaced = Regex.Replace(cleaned, uidPattern, "*", RegexOptions.IgnoreCase);
             ExpandWildcards(wildcardReplaced, results);
 
-            // 2. Nếu thẻ placeholder nằm ở thư mục cuối cùng (ví dụ: ...\SaveGames\{{p|uid}}),
-            // cũng thêm cả thư mục cha (...\SaveGames) vì nhiều game hoặc phiên bản lưu trực tiếp tại đây
+            // 3. Nếu thẻ placeholder nằm ở thư mục cuối cùng (ví dụ: ...\SaveGames\{{p|uid}}),
+            // cũng thêm cả thư mục cha (...\SaveGames) nếu nó KHÔNG PHẢI thư mục container hệ thống (như userdata)
             var parentPath = Regex.Replace(cleaned, @"[\\/](?:" + uidPattern + @")[\\/]?$", "", RegexOptions.IgnoreCase);
             if (!string.Equals(parentPath, cleaned, StringComparison.OrdinalIgnoreCase))
             {
-                ExpandWildcards(parentPath, results);
-            }
-
-            // 3. Nếu đường dẫn nằm trong Steam userdata, thử thế thêm các subfolder ID cụ thể trong Steam userdata
-            var steamUserData = Path.Combine(steamPath, "userdata");
-            if (Directory.Exists(steamUserData) && cleaned.Contains(@"\userdata\", StringComparison.OrdinalIgnoreCase))
-            {
-                var userDirs = Directory.GetDirectories(steamUserData);
-                foreach (var uDir in userDirs)
+                if (!IsSystemOrContainerDirectory(parentPath))
                 {
-                    var userId = Path.GetFileName(uDir);
-                    var replaced = Regex.Replace(cleaned, uidPattern, userId, RegexOptions.IgnoreCase);
-                    ExpandWildcards(replaced, results);
+                    ExpandWildcards(parentPath, results);
                 }
             }
         }
@@ -277,6 +391,9 @@ public class PathResolverService
             if (string.IsNullOrWhiteSpace(p)) continue;
             var normalized = p.Trim().TrimEnd('\\', '/');
             if (seen.Contains(normalized)) continue;
+
+            // Bỏ qua các thư mục hệ thống hoặc container chung như D:\steam\userdata hoặc %APPDATA%
+            if (IsSystemOrContainerDirectory(normalized)) continue;
 
             if (Directory.Exists(p))
             {
