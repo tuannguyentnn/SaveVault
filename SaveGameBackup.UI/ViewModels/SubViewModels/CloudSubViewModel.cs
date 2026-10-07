@@ -126,6 +126,7 @@ public class CloudSubViewModel : INotifyPropertyChanged
 
         OpenSyncCloudSelectModalCommand = new RelayCommand(param => OpenSyncCloudSelectModal(param as BackupHistoryDetail), _ => !IsCloudSyncing);
         ConfirmSyncToProviderCommand = new RelayCommand(async param => await ConfirmSyncToProviderAsync(param?.ToString() ?? "GoogleDrive"), _ => !IsCloudSyncing);
+        SyncToLocalCommand = new RelayCommand(async param => await ConfirmSyncToLocalAsync(param as BackupHistoryDetail), _ => !IsCloudSyncing);
         CloseSyncCloudSelectModalCommand = new RelayCommand(_ => ExecuteCloseSyncCloudSelectModal());
         CancelSyncCommand = new RelayCommand(_ => ExecuteCancelSync(), _ => IsCloudSyncing);
 
@@ -267,6 +268,7 @@ public class CloudSubViewModel : INotifyPropertyChanged
     public ICommand SaveCloudApiSettingsCommand { get; }
     public ICommand OpenSyncCloudSelectModalCommand { get; }
     public ICommand ConfirmSyncToProviderCommand { get; }
+    public ICommand SyncToLocalCommand { get; }
     public ICommand CloseSyncCloudSelectModalCommand { get; }
     public ICommand CancelSyncCommand { get; }
     public ICommand RefreshCloudQuotaCommand { get; }
@@ -521,8 +523,8 @@ public class CloudSubViewModel : INotifyPropertyChanged
 
     public async Task ConfirmSyncToProviderAsync(string providerName)
     {
-        if (TargetSyncDetail == null) return;
         var detail = TargetSyncDetail;
+        if (detail == null) return;
         ExecuteCloseSyncCloudSelectModal();
 
         var provider = _cloudManager.GetProvider(providerName);
@@ -533,20 +535,36 @@ public class CloudSubViewModel : INotifyPropertyChanged
         }
 
         var localPath = detail.LocalBackupPath;
-        if (!File.Exists(localPath) && !Directory.Exists(localPath))
+        bool hasLocal = !string.IsNullOrEmpty(localPath) && (File.Exists(localPath) || Directory.Exists(localPath));
+
+        // Kiểm tra xem có nguồn từ Cloud khác không
+        bool hasOtherCloud = detail.CloudSyncList.Any(c => !string.IsNullOrEmpty(c.FileId) && !c.Provider.Equals(providerName, StringComparison.OrdinalIgnoreCase))
+            || (!string.IsNullOrEmpty(detail.CloudFileId) && !string.Equals(detail.CloudProvider, providerName, StringComparison.OrdinalIgnoreCase));
+
+        if (!hasLocal && !hasOtherCloud)
         {
-            _dialogService.ShowMessage("Không Tìm Thấy File", $"File sao lưu cục bộ không còn tồn tại tại:\n{localPath}", "Error");
+            _dialogService.ShowMessage("Không Tìm Thấy File", $"Bản sao lưu này không còn tồn tại trên máy tính hoặc trên bất kỳ dịch vụ Cloud nào khác để đồng bộ!", "Error");
             return;
         }
 
         IsCloudSyncing = true;
         CloudSyncProgressPercent = 0;
-        CloudSyncProgressText = $"Đang tải lên {provider.DisplayName}...";
+        bool isCrossSync = !hasLocal && hasOtherCloud;
+        var sourceCloudName = detail.CloudSyncList.FirstOrDefault(c => !string.IsNullOrEmpty(c.FileId) && !c.Provider.Equals(providerName, StringComparison.OrdinalIgnoreCase))?.Provider ?? "Cloud";
+
+        CloudSyncProgressText = isCrossSync
+            ? $"Đang chuẩn bị lấy file từ {sourceCloudName}..."
+            : $"Đang tải lên {provider.DisplayName}...";
         _syncCts = new CancellationTokenSource();
 
         var dateFormatted = detail.BackupDate.ToString("dd/MM/yyyy HH:mm");
-        _dialogService.ShowProgress("Đồng Bộ Cloud", $"Đang đồng bộ snapshot ngày {dateFormatted} lên {provider.DisplayName}...", 0, onCancel: () => ExecuteCancelSync());
-        LoggingService.LogAction("Cloud_Upload_Start", new { Game = detail.GameName, Provider = providerName, File = localPath });
+        var dialogTitle = isCrossSync ? "Đồng Bộ Chéo Cloud" : "Đồng Bộ Cloud";
+        var dialogMessage = isCrossSync
+            ? $"Đang đồng bộ chéo snapshot ngày {dateFormatted} từ {sourceCloudName} sang {provider.DisplayName}..."
+            : $"Đang đồng bộ snapshot ngày {dateFormatted} lên {provider.DisplayName}...";
+
+        _dialogService.ShowProgress(dialogTitle, dialogMessage, 0, onCancel: () => ExecuteCancelSync());
+        LoggingService.LogAction("Cloud_Upload_Start", new { Game = detail.GameName, Provider = providerName, IsCrossSync = isCrossSync });
 
         var progress = new Progress<BackupProgress>(p =>
         {
@@ -557,7 +575,7 @@ public class CloudSubViewModel : INotifyPropertyChanged
 
         try
         {
-            var result = await _backupService.SyncSnapshotToCloudAsync(detail, provider, progress, _syncCts.Token);
+            var result = await _backupService.SyncSnapshotToCloudAsync(detail, provider, progress, _syncCts.Token, pName => _cloudManager.GetProvider(pName));
 
             _dialogService.CloseProgress();
             if (result.Success)
@@ -572,13 +590,15 @@ public class CloudSubViewModel : INotifyPropertyChanged
 
                 _dialogService.ShowMessage(
                     "Đồng Bộ Thành Công",
-                    $"Đã tải snapshot của game '{detail.GameName}' lên {provider.DisplayName} thành công!",
+                    isCrossSync
+                        ? $"Đã đồng bộ chéo snapshot của game '{detail.GameName}' từ {sourceCloudName} sang {provider.DisplayName} thành công!"
+                        : $"Đã tải snapshot của game '{detail.GameName}' lên {provider.DisplayName} thành công!",
                     "Success",
                     null,
                     fileUrl,
                     $"Mở Xem Trên {provider.DisplayName} ↗");
 
-                LoggingService.LogAction("Cloud_Upload_Success", new { Game = detail.GameName, Provider = providerName, Url = fileUrl });
+                LoggingService.LogAction("Cloud_Upload_Success", new { Game = detail.GameName, Provider = providerName, Url = fileUrl, IsCrossSync = isCrossSync });
                 _eventBus.Publish(new HistoryChangedEvent());
             }
             else
@@ -598,6 +618,79 @@ public class CloudSubViewModel : INotifyPropertyChanged
             _dialogService.CloseProgress();
             _dialogService.ShowMessage("Lỗi Đồng Bộ", ex.Message, "Error", ex.StackTrace);
             LoggingService.Error(ex, "Lỗi đồng bộ snapshot {Game} lên {Provider}: {Message}", detail.GameName, providerName, ex.Message);
+        }
+        finally
+        {
+            IsCloudSyncing = false;
+            _syncCts?.Dispose();
+            _syncCts = null;
+        }
+    }
+
+    public async Task ConfirmSyncToLocalAsync(BackupHistoryDetail? targetDetail = null)
+    {
+        var detail = targetDetail ?? TargetSyncDetail;
+        if (detail == null) return;
+        ExecuteCloseSyncCloudSelectModal();
+
+        // Kiểm tra xem snapshot có ở Cloud nào không
+        var cloudTargets = detail.CloudSyncList.Where(c => !string.IsNullOrEmpty(c.FileId)).ToList();
+        if (cloudTargets.Count == 0 && string.IsNullOrEmpty(detail.CloudFileId))
+        {
+            _dialogService.ShowMessage("Không Thể Khôi Phục", "Bản sao lưu này chưa được lưu trữ trên bất kỳ dịch vụ Cloud nào!", "Warning");
+            return;
+        }
+
+        IsCloudSyncing = true;
+        CloudSyncProgressPercent = 0;
+        CloudSyncProgressText = "Đang chuẩn bị tải về máy tính...";
+        _syncCts = new CancellationTokenSource();
+
+        var dateFormatted = detail.BackupDate.ToString("dd/MM/yyyy HH:mm");
+        _dialogService.ShowProgress(
+            "Khôi Phục Về Máy Tính",
+            $"Đang tải bản sao lưu ngày {dateFormatted} của game '{detail.GameName}' từ Cloud về bộ nhớ máy...",
+            0,
+            onCancel: () => ExecuteCancelSync());
+
+        LoggingService.LogAction("Sync_To_Local_Start", new { Game = detail.GameName, SnapshotId = detail.Id });
+
+        var progress = new Progress<BackupProgress>(p =>
+        {
+            CloudSyncProgressPercent = p.Percent;
+            CloudSyncProgressText = p.Message;
+            _dialogService.UpdateProgress(p.Percent, p.Message);
+        });
+
+        try
+        {
+            var savedPath = await _backupService.SyncSnapshotToLocalAsync(
+                detail,
+                preferredCloudService: null,
+                progress: progress,
+                cancellationToken: _syncCts.Token,
+                cloudServiceResolver: pName => _cloudManager.GetProvider(pName));
+
+            _dialogService.CloseProgress();
+            _dialogService.ShowMessage(
+                "Khôi Phục Thành Công",
+                $"Đã tải bản sao lưu về bộ nhớ máy tính thành công!\nĐường dẫn: {savedPath}",
+                "Success");
+
+            LoggingService.LogAction("Sync_To_Local_Success", new { Game = detail.GameName, Path = savedPath });
+            _eventBus.Publish(new HistoryChangedEvent());
+        }
+        catch (OperationCanceledException)
+        {
+            _dialogService.CloseProgress();
+            _dialogService.ShowMessage("Đã Hủy", "Tác vụ tải bản sao lưu về máy đã bị hủy.", "Info");
+            LoggingService.LogAction("Sync_To_Local_Cancelled", new { Game = detail.GameName });
+        }
+        catch (Exception ex)
+        {
+            _dialogService.CloseProgress();
+            _dialogService.ShowMessage("Lỗi Khôi Phục", ex.Message, "Error", ex.StackTrace);
+            LoggingService.Error(ex, "Lỗi khi tải snapshot {Game} về máy: {Message}", detail.GameName, ex.Message);
         }
         finally
         {

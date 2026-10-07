@@ -368,7 +368,7 @@ public class RestoreSubViewModel : INotifyPropertyChanged
     {
         foreach (var itm in ActiveRestoreItems)
         {
-            itm.RestoreDestinationPath = itm.OriginalSourcePath;
+            itm.RestoreDestinationPath = PathResolverService.RemapPathToCurrentMachine(itm.OriginalSourcePath);
         }
         UpdateModalRestoreStats();
     }

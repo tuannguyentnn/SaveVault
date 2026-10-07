@@ -587,7 +587,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
                     Path = folder,
                     FileCount = fileCount,
                     TotalSizeBytes = sizeBytes,
-                    IsSelected = true
+                    IsSelected = sizeBytes > 0 && fileCount > 0
                 };
                 item.PropertyChanged += DetectedPathItem_PropertyChanged;
                 DetectedPathItems.Add(item);
@@ -614,7 +614,10 @@ public class SearchSubViewModel : INotifyPropertyChanged
     {
         foreach (var item in DetectedPathItems)
         {
-            item.IsSelected = true;
+            if (!item.IsDisabled)
+            {
+                item.IsSelected = true;
+            }
         }
         UpdateSelectedPathsStats();
         LoggingService.LogAction("Select_All_Paths", new { Count = DetectedPathItems.Count });
@@ -990,7 +993,8 @@ public class SearchSubViewModel : INotifyPropertyChanged
                 }
                 else
                 {
-                    candidateConcretePaths.Add(p);
+                    var remapped = PathResolverService.RemapPathToCurrentMachine(p);
+                    candidateConcretePaths.Add(remapped);
                 }
             }
 
@@ -1004,7 +1008,8 @@ public class SearchSubViewModel : INotifyPropertyChanged
                 }
                 else
                 {
-                    candidateConcretePaths.Add(pat);
+                    var remapped = PathResolverService.RemapPathToCurrentMachine(pat);
+                    candidateConcretePaths.Add(remapped);
                 }
             }
 
@@ -1012,14 +1017,15 @@ public class SearchSubViewModel : INotifyPropertyChanged
             var detectedItems = pathResolver.InspectDetectedPathItems(candidateConcretePaths);
 
             // Nếu InspectDetectedPathItems không tìm thấy gì nhưng snapshot có đường dẫn cụ thể trên đĩa,
-            // kiểm tra thêm các đường dẫn cụ thể (không chứa {{p|...}}) từ snapshot
+            // kiểm tra thêm các đường dẫn cụ thể từ snapshot
             if (detectedItems.Count == 0 && snapshotPaths.Count > 0)
             {
                 foreach (var sp in snapshotPaths)
                 {
                     if (!sp.Contains("{{p|", StringComparison.OrdinalIgnoreCase))
                     {
-                        var item = InspectPath(sp);
+                        var remapped = PathResolverService.RemapPathToCurrentMachine(sp);
+                        var item = InspectPath(remapped);
                         if (item.FileCount > 0 || Directory.Exists(item.Path) || File.Exists(item.Path))
                         {
                             detectedItems.Add(item);
@@ -1175,12 +1181,13 @@ public class SearchSubViewModel : INotifyPropertyChanged
             var detectedItems = new List<DetectedPathItem>();
             foreach (var p in paths)
             {
-                var item = InspectPath(p);
+                var remapped = PathResolverService.RemapPathToCurrentMachine(p);
+                var item = InspectPath(remapped);
                 item.PropertyChanged += DetectedPathItem_PropertyChanged;
                 detectedItems.Add(item);
                 DetectedPathItems.Add(item);
                 DetectedPathsList.Add(item.Path);
-                OnlinePatternsList.Add(p);
+                OnlinePatternsList.Add(remapped);
             }
 
             // 3. Nạp ảnh bìa cục bộ (ưu tiên Covers/ -> Temp/covers/)
@@ -1236,11 +1243,11 @@ public class SearchSubViewModel : INotifyPropertyChanged
                 SteamAppId = effectiveSteamAppId,
                 Source = "Lịch sử sao lưu",
                 RawPatterns = paths,
-                ResolvedPaths = paths,
+                ResolvedPaths = paths.Select(p => PathResolverService.RemapPathToCurrentMachine(p)).ToList(),
                 DetectedPathItems = detectedItems,
-                DetectedPathsOnDisk = detectedItems.Select(i => i.Path).ToList(),
-                TotalSizeBytes = detectedItems.Sum(i => i.TotalSizeBytes),
-                FileCount = detectedItems.Sum(i => i.FileCount),
+                DetectedPathsOnDisk = detectedItems.Where(i => i.FileCount > 0 || Directory.Exists(i.Path) || File.Exists(i.Path)).Select(i => i.Path).ToList(),
+                TotalSizeBytes = detectedItems.Where(i => i.IsSelected).Sum(i => i.TotalSizeBytes),
+                FileCount = detectedItems.Where(i => i.IsSelected).Sum(i => i.FileCount),
                 OnlineCoverUrl = coverUri,
                 DetectedVersion = versionInfo,
                 LastScanned = DateTime.Now
@@ -1249,7 +1256,7 @@ public class SearchSubViewModel : INotifyPropertyChanged
             CurrentGame = gameInfo;
             DetectedSizeFormatted = FormatBytes(gameInfo.TotalSizeBytes);
             DetectedFileCount = gameInfo.FileCount;
-            IsGameFoundOnDisk = DetectedPathItems.Count > 0;
+            IsGameFoundOnDisk = DetectedPathItems.Any(i => i.FileCount > 0 || Directory.Exists(i.Path) || File.Exists(i.Path));
 
             UpdateSelectedPathsStats();
 
@@ -1342,34 +1349,35 @@ public class SearchSubViewModel : INotifyPropertyChanged
 
     private static DetectedPathItem InspectPath(string path)
     {
+        var resolvedPath = PathResolverService.RemapPathToCurrentMachine(path);
         int fileCount = 0;
         long sizeBytes = 0;
-        if (Directory.Exists(path))
+        if (Directory.Exists(resolvedPath))
         {
             try
             {
-                var files = Directory.GetFiles(path, "*", SearchOption.AllDirectories);
+                var files = Directory.GetFiles(resolvedPath, "*", SearchOption.AllDirectories);
                 fileCount = files.Length;
                 sizeBytes = files.Sum(f => new FileInfo(f).Length);
             }
             catch { }
         }
-        else if (File.Exists(path))
+        else if (File.Exists(resolvedPath))
         {
             try
             {
                 fileCount = 1;
-                sizeBytes = new FileInfo(path).Length;
+                sizeBytes = new FileInfo(resolvedPath).Length;
             }
             catch { }
         }
 
         return new DetectedPathItem
         {
-            Path = path,
+            Path = resolvedPath,
             FileCount = fileCount,
             TotalSizeBytes = sizeBytes,
-            IsSelected = true
+            IsSelected = sizeBytes > 0 && fileCount > 0
         };
     }
 

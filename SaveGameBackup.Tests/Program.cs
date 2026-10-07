@@ -186,7 +186,8 @@ try
     Console.WriteLine($"  ✓ Multi-path backup created at: {multiBackupRecord.BackupPath}");
     Console.WriteLine($"    Source paths recorded: {multiBackupRecord.SourcePath}");
 
-    if (!multiBackupRecord.SourcePath.Contains(multiSource1) || !multiBackupRecord.SourcePath.Contains(multiSource2))
+    var resolvedRecordedSource = PathResolverService.RemapPathToCurrentMachine(multiBackupRecord.SourcePath);
+    if (!resolvedRecordedSource.Contains(multiSource1) || !resolvedRecordedSource.Contains(multiSource2))
         throw new Exception("Multi-path backup record does not record both paths!");
 
     // Delete original files to test restore
@@ -430,7 +431,8 @@ try
         throw new Exception("FAIL: ManifestJson column in backup_history_details is empty!");
 
     var restoreTargets = backupSvc.GetRestoreItemsFromBackup(latestDetail);
-    if (restoreTargets.Count != 1 || !restoreTargets[0].OriginalSourcePath.Equals(testSaveDir, StringComparison.OrdinalIgnoreCase))
+    var resolvedRestoredPath = PathResolverService.RemapPathToCurrentMachine(restoreTargets[0].OriginalSourcePath);
+    if (restoreTargets.Count != 1 || !resolvedRestoredPath.Equals(testSaveDir, StringComparison.OrdinalIgnoreCase))
     {
         throw new Exception($"FAIL: Restore items from SQLite ManifestJson mismatch! Got {restoreTargets.Count} items.");
     }
@@ -612,6 +614,56 @@ try
         throw new Exception($"FAIL: Multi-cloud restore passed wrong FileId! Expected 'onedrive-file-id-correct', got '{mockOneDrive.LastDownloadedFileId}'");
     }
     Console.WriteLine("  ✓ Multi-cloud restore resolved correct provider-specific FileId ('onedrive-file-id-correct')!");
+
+    // 15.2c: Test Cross-Cloud Resync (Cloud A -> Cloud B when Local is missing)
+    var cloudOnlyDetail = new BackupHistoryDetail
+    {
+        Id = sekiroDetail.Id,
+        GameHistoryId = sekiroDetail.GameHistoryId,
+        GameName = sekiroDetail.GameName,
+        BackupPath = Path.Combine(tempTestDir, "NonExistentLocal", "sekiro_missing.zip"),
+        IsCompressed = true,
+        IsCloudSynced = true,
+        CloudProvider = "OneDrive",
+        CloudFileId = "onedrive-source-id-123",
+        CloudSyncList = new List<CloudSyncInfo>
+        {
+            new CloudSyncInfo { Provider = "OneDrive", FileId = "onedrive-source-id-123", FileName = "sekiro.zip" }
+        }
+    };
+    var mockSourceCloud = new MockCloudService { ProviderName = "OneDrive" };
+    var mockDestCloud = new MockCloudService { ProviderName = "GoogleDrive" };
+
+    var crossSyncResult = await backupService.SyncSnapshotToCloudAsync(
+        cloudOnlyDetail,
+        mockDestCloud,
+        cloudServiceResolver: p => p.Contains("OneDrive", StringComparison.OrdinalIgnoreCase) ? mockSourceCloud : null);
+
+    if (!crossSyncResult.Success || !mockSourceCloud.DownloadCalled || !mockDestCloud.UploadCalled)
+    {
+        throw new Exception("FAIL: Cross-Cloud Resync failed to download from source cloud or upload to destination cloud!");
+    }
+    if (!cloudOnlyDetail.CloudSyncList.Any(c => c.Provider.Equals("GoogleDrive", StringComparison.OrdinalIgnoreCase)))
+    {
+        throw new Exception("FAIL: Cross-Cloud Resync did not record new destination cloud in CloudSyncList!");
+    }
+    Console.WriteLine("  ✓ Cross-Cloud Resync (OneDrive -> GoogleDrive) without local file OK!");
+
+    // 15.2d: Test SyncSnapshotToLocalAsync (Restore lost local file from Cloud)
+    var localRestoreTarget = Path.Combine(tempTestDir, "Phase2_Backups", "Sekiro_Restored_Local.zip");
+    if (File.Exists(localRestoreTarget)) File.Delete(localRestoreTarget);
+    cloudOnlyDetail.SetLocalPath(localRestoreTarget);
+
+    var restoredLocalPath = await backupService.SyncSnapshotToLocalAsync(
+        cloudOnlyDetail,
+        preferredCloudService: mockDestCloud,
+        cloudServiceResolver: p => mockDestCloud);
+
+    if (!File.Exists(restoredLocalPath) || !File.Exists(localRestoreTarget))
+    {
+        throw new Exception($"FAIL: SyncSnapshotToLocalAsync did not produce local file at {restoredLocalPath}!");
+    }
+    Console.WriteLine("  ✓ SyncSnapshotToLocalAsync restored snapshot from cloud to local disk OK!");
 
     // 15.3: Test DeleteSnapshotWithProgressAsync (Disk + Cloud + DB)
     var localZipPath = !string.IsNullOrEmpty(sekiroDetail.LocalBackupPath) ? sekiroDetail.LocalBackupPath : sekiroDetail.BackupPath;
@@ -2703,7 +2755,11 @@ try
     await db.SaveGameCacheAsync(mergedGame);
 
     var updatedCache = await db.GetCachedGameAsync(test41GameName);
-    if (updatedCache == null || !updatedCache.RawPatterns.Contains(test41Dir) || !updatedCache.RawPatterns.Contains(test41CachePath))
+    var resolvedUpdatedPatterns = updatedCache?.RawPatterns.Select(p => PathResolverService.RemapPathToCurrentMachine(p)).ToList() ?? new List<string>();
+    var resolvedTest41Dir = PathResolverService.RemapPathToCurrentMachine(test41Dir);
+    var resolvedTest41CachePath = PathResolverService.RemapPathToCurrentMachine(test41CachePath);
+
+    if (updatedCache == null || !resolvedUpdatedPatterns.Contains(resolvedTest41Dir) || !resolvedUpdatedPatterns.Contains(resolvedTest41CachePath))
     {
         throw new Exception($"FAIL: SQLite cache was not updated with merged snapshot data! Patterns: {string.Join(", ", updatedCache?.RawPatterns ?? new List<string>())}");
     }
@@ -2713,8 +2769,148 @@ try
     }
     Console.WriteLine("  ✓ Snapshot paths and version/exe metadata parsed and merged with existing cached data successfully!");
 
+    // Test 42: MigrateExistingPathsToRelativeVariables across all SQLite tables
+    Console.WriteLine("\n[42] Testing MigrateExistingPathsToRelativeVariables (Relative Environment Variables Migration)");
+    var test42DbPath = Path.Combine(tempTestDir, "test_migration.db");
+    var test42Db = new DatabaseService(test42DbPath);
+    using (var testConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={test42DbPath}"))
+    {
+        testConn.Open();
+
+        // Chèn dữ liệu cũ mô phỏng user/máy tính khác (C:\User\TuanNguyen, C:\Users\OldUser, D:\Users\AnotherUser)
+        Dapper.SqlMapper.Execute(testConn, @"
+            INSERT INTO backup_history (GameName, LatestBackupPath, LatestBackupDate, SavePaths, ExecutablePath)
+            VALUES ('Legacy Game 1', 'C:\Users\OldUser\Backups\save.zip', '2026-10-01', '[""C:\\User\\TuanNguyen\\AppData\\Roaming\\LegacyGame1""]', 'C:\User\TuanNguyen\AppData\Local\Programs\game.exe');
+
+            INSERT INTO backup_history_details (GameHistoryId, GameName, BackupPath, SourcePath, SavePaths, ManifestJson, FileCount, TotalSizeBytes, BackupDate, ExecutablePath)
+            VALUES (1, 'Legacy Game 1', 
+                    '{""LocalPath"":""C:\\Users\\OldUser\\Backups\\save.zip"",""CloudUrls"":{}}', 
+                    'C:\Users\OldUser\AppData\Local\LegacyGame1', 
+                    'C:\Users\OldUser\AppData\Local\LegacyGame1 | C:\Users\OldUser\Saved Games\LegacyGame1', 
+                    '{""Items"":[{""SourcePath"":""C:\\Users\\OldUser\\AppData\\Local\\LegacyGame1"",""SubFolder"":""1_save"",""FileCount"":1,""TotalSizeBytes"":100}]}', 
+                    1, 100, '2026-10-01', 'C:\Users\OldUser\AppData\Local\Programs\game.exe');
+
+            INSERT INTO games_cache (GameName, NormalizedName, RawPatternsJson, LastUpdated)
+            VALUES ('Legacy Game 1', 'legacygame1', '[""D:\\Users\\AnotherUser\\AppData\\Local\\LegacyGame1"",""C:\\Users\\OldUser\\Saved Games\\LegacyGame1""]', '2026-10-01');
+
+            INSERT INTO restore_history (GameName, SourcePath, RestoreDate, RestoredPathsJson, RevertZipPath)
+            VALUES ('Legacy Game 1', 
+                    'C:\Users\OldUser\Documents\My Games\LegacyGame1', 
+                    '2026-10-01', 
+                    '[""C:\\Users\\OldUser\\Documents\\My Games\\LegacyGame1\\save.dat""]',
+                    'C:\Users\OldUser\AppData\Local\Temp\revert.zip');
+        ");
+
+        // Gọi migration
+        DatabaseService.MigrateExistingPathsToRelativeVariables(testConn);
+
+        // Kiểm tra backup_history
+        var bh = Dapper.SqlMapper.QueryFirstOrDefault<dynamic>(testConn, "SELECT SavePaths, LatestBackupPath, ExecutablePath FROM backup_history WHERE GameName = 'Legacy Game 1';");
+        string bhSavePaths = (string)bh.SavePaths;
+        string bhLatestBackup = (string)bh.LatestBackupPath;
+        string bhExe = (string)bh.ExecutablePath;
+
+        if (!bhSavePaths.Contains("%APPDATA%"))
+            throw new Exception($"FAIL: backup_history.SavePaths was not migrated to %APPDATA%! Value: {bhSavePaths}");
+        if (!bhLatestBackup.Contains("%USERPROFILE%"))
+            throw new Exception($"FAIL: backup_history.LatestBackupPath was not migrated to %USERPROFILE%! Value: {bhLatestBackup}");
+        if (!bhExe.Contains("%LOCALAPPDATA%"))
+            throw new Exception($"FAIL: backup_history.ExecutablePath was not migrated to %LOCALAPPDATA%! Value: {bhExe}");
+
+        // Kiểm tra backup_history_details
+        var bhd = Dapper.SqlMapper.QueryFirstOrDefault<dynamic>(testConn, "SELECT SourcePath, SavePaths, BackupPath, ManifestJson, ExecutablePath FROM backup_history_details WHERE GameName = 'Legacy Game 1';");
+        string bhdSource = (string)bhd.SourcePath;
+        string bhdSavePaths = (string)bhd.SavePaths;
+        string bhdBackupPath = (string)bhd.BackupPath;
+        string bhdManifest = (string)bhd.ManifestJson;
+        string bhdExe = (string)bhd.ExecutablePath;
+
+        if (!bhdSource.Contains("%LOCALAPPDATA%"))
+            throw new Exception($"FAIL: backup_history_details.SourcePath was not migrated to %LOCALAPPDATA%! Value: {bhdSource}");
+        if (!bhdSavePaths.Contains("%LOCALAPPDATA%") || !bhdSavePaths.Contains("%USERPROFILE%\\Saved Games"))
+            throw new Exception($"FAIL: backup_history_details.SavePaths was not migrated correctly! Value: {bhdSavePaths}");
+        if (!bhdBackupPath.Contains("%USERPROFILE%"))
+            throw new Exception($"FAIL: backup_history_details.BackupPath was not migrated to %USERPROFILE%! Value: {bhdBackupPath}");
+        if (!bhdManifest.Contains("%LOCALAPPDATA%"))
+            throw new Exception($"FAIL: backup_history_details.ManifestJson was not migrated to %LOCALAPPDATA%! Value: {bhdManifest}");
+        if (!bhdExe.Contains("%LOCALAPPDATA%"))
+            throw new Exception($"FAIL: backup_history_details.ExecutablePath was not migrated to %LOCALAPPDATA%! Value: {bhdExe}");
+
+        // Kiểm tra games_cache
+        var gc = Dapper.SqlMapper.QueryFirstOrDefault<dynamic>(testConn, "SELECT RawPatternsJson FROM games_cache WHERE GameName = 'Legacy Game 1';");
+        string gcPatterns = (string)gc.RawPatternsJson;
+        if (!gcPatterns.Contains("%LOCALAPPDATA%") || !gcPatterns.Contains("%USERPROFILE%") || !gcPatterns.Contains("Saved Games"))
+            throw new Exception($"FAIL: games_cache.RawPatternsJson was not migrated correctly! Value: {gcPatterns}");
+
+        // Kiểm tra restore_history
+        var rh = Dapper.SqlMapper.QueryFirstOrDefault<dynamic>(testConn, "SELECT SourcePath, RestoredPathsJson, RevertZipPath FROM restore_history WHERE GameName = 'Legacy Game 1';");
+        string rhSource = (string)rh.SourcePath;
+        string rhRestored = (string)rh.RestoredPathsJson;
+        string rhRevert = (string)rh.RevertZipPath;
+
+        if (!rhSource.Contains("%USERPROFILE%") || !rhSource.Contains("Documents"))
+            throw new Exception($"FAIL: restore_history.SourcePath was not migrated to %USERPROFILE%\\Documents! Value: {rhSource}");
+        if (!rhRestored.Contains("%USERPROFILE%") || !rhRestored.Contains("Documents"))
+            throw new Exception($"FAIL: restore_history.RestoredPathsJson was not migrated to %USERPROFILE%\\Documents! Value: {rhRestored}");
+        if (!rhRevert.Contains("%LOCALAPPDATA%"))
+            throw new Exception($"FAIL: restore_history.RevertZipPath was not migrated to %LOCALAPPDATA%! Value: {rhRevert}");
+
+        // Kiểm tra tính tương thích khi Remap sang máy hiện tại
+        var remappedSource = PathResolverService.RemapPathToCurrentMachine(bhdSource);
+        var expectedLocalApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!remappedSource.StartsWith(expectedLocalApp, StringComparison.OrdinalIgnoreCase))
+            throw new Exception($"FAIL: RemapPathToCurrentMachine did not expand %LOCALAPPDATA% to {expectedLocalApp}! Result: {remappedSource}");
+
+        Console.WriteLine("  ✓ All SQLite legacy paths across backup_history, details, games_cache, and restore_history migrated to %Variables% & remapped successfully!");
+    }
+
+    // Test 43: Backup directly from existing relative path variables (%LOCALAPPDATA%, %APPDATA%)
+    Console.WriteLine("\n[43] Testing Backup from existing Relative Variable Paths (%LOCALAPPDATA%, %APPDATA%)");
+    var test43RelSubDir = "SaveVault_Test43_" + Guid.NewGuid().ToString("N");
+    var test43PhysicalDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), test43RelSubDir);
+    Directory.CreateDirectory(test43PhysicalDir);
+    File.WriteAllText(Path.Combine(test43PhysicalDir, "save1.sav"), "test43 save data 12345");
+    File.WriteAllText(Path.Combine(test43PhysicalDir, "save2.sav"), "test43 save data 67890");
+
+    try
+    {
+        var test43RelativePath = $@"%LOCALAPPDATA%\{test43RelSubDir}";
+        var test43Game = new GameSaveInfo
+        {
+            GameName = "Test 43 Relative Save Game",
+            Source = "Lịch sử sao lưu",
+            RawPatterns = new List<string> { test43RelativePath },
+            DetectedPathItems = new List<DetectedPathItem>
+            {
+                new DetectedPathItem { Path = test43RelativePath, IsSelected = true }
+            }
+        };
+
+        var test43BackupSvc = new BackupService(db);
+        var testSettings = new AppSettings
+        {
+            BackupRootDirectory = Path.Combine(tempTestDir, "Test43Backups"),
+            AutoCompressZip = true
+        };
+
+        var test43BackupResult = await test43BackupSvc.BackupGameAsync(test43Game, testSettings);
+
+        if (test43BackupResult.FileCount != 2)
+            throw new Exception($"FAIL: Expected 2 files backed up from relative path, but got {test43BackupResult.FileCount}!");
+        if (test43BackupResult.TotalSizeBytes <= 0)
+            throw new Exception("FAIL: Expected TotalSizeBytes > 0!");
+        if (!File.Exists(test43BackupResult.BackupPath))
+            throw new Exception($"FAIL: Backup zip file does not exist at {test43BackupResult.BackupPath}!");
+
+        Console.WriteLine("  ✓ BackupGameAsync successfully remapped relative %LOCALAPPDATA% path, detected all files on disk, and created ZIP archive!");
+    }
+    finally
+    {
+        try { Directory.Delete(test43PhysicalDir, true); } catch { }
+    }
+
     Console.WriteLine("\n=================================================");
-    Console.WriteLine("  ALL 41 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
+    Console.WriteLine("  ALL 43 INTEGRATION TESTS PASSED SUCCESSFULLY! ✓");
     Console.WriteLine("=================================================");
 }
 finally

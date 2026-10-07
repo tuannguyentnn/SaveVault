@@ -203,6 +203,277 @@ public class DatabaseService
         EnsureColumnExists(connection, "backup_history_details", "CloudFileName", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CloudSyncDate", "TEXT");
         EnsureColumnExists(connection, "backup_history_details", "CloudSyncJson", "TEXT");
+
+        MigrateExistingPathsToRelativeVariables(connection);
+    }
+
+    /// <summary>
+    /// Đọc và tự động chuyển đổi toàn bộ đường dẫn tuyệt đối cũ đang lưu trong SQLite
+    /// (backup_history, backup_history_details, games_cache, restore_history) thành dạng biến môi trường Windows tương đối (%APPDATA%, %LOCALAPPDATA%, %USERPROFILE%...).
+    /// </summary>
+    public static void MigrateExistingPathsToRelativeVariables(System.Data.IDbConnection connection)
+    {
+        try
+        {
+            // 1. Chuẩn hóa bảng backup_history (Master)
+            var masterRows = connection.Query<dynamic>("SELECT Id, SavePaths, LatestBackupPath, ExecutablePath FROM backup_history;").ToList();
+            foreach (var row in masterRows)
+            {
+                long id = row.Id;
+                string? rawSavePaths = row.SavePaths;
+                string? rawLatestBackup = row.LatestBackupPath;
+                string? rawExe = row.ExecutablePath;
+
+                string? updatedSavePaths = !string.IsNullOrWhiteSpace(rawSavePaths) ? NormalizeSavePathsField(rawSavePaths) : rawSavePaths;
+                string? updatedLatestBackup = !string.IsNullOrWhiteSpace(rawLatestBackup) ? NormalizeBackupPathField(rawLatestBackup) : rawLatestBackup;
+                string? updatedExe = !string.IsNullOrWhiteSpace(rawExe) ? PathResolverService.NormalizePathToPlaceholder(rawExe) : rawExe;
+
+                if (!string.Equals(updatedSavePaths, rawSavePaths, StringComparison.Ordinal) ||
+                    !string.Equals(updatedLatestBackup, rawLatestBackup, StringComparison.Ordinal) ||
+                    !string.Equals(updatedExe, rawExe, StringComparison.Ordinal))
+                {
+                    connection.Execute(@"
+                        UPDATE backup_history 
+                        SET SavePaths = @SavePaths, LatestBackupPath = @LatestBackupPath, ExecutablePath = @ExecutablePath 
+                        WHERE Id = @Id;", 
+                        new { SavePaths = updatedSavePaths, LatestBackupPath = updatedLatestBackup, ExecutablePath = updatedExe, Id = id });
+                }
+            }
+
+            // 2. Chuẩn hóa bảng backup_history_details (Detail)
+            var detailRows = connection.Query<dynamic>("SELECT Id, SourcePath, SavePaths, BackupPath, ManifestJson, ExecutablePath FROM backup_history_details;").ToList();
+            foreach (var row in detailRows)
+            {
+                long id = row.Id;
+                string? rawSourcePath = row.SourcePath;
+                string? rawSavePaths = row.SavePaths;
+                string? rawBackupPath = row.BackupPath;
+                string? rawManifestJson = row.ManifestJson;
+                string? rawExe = row.ExecutablePath;
+
+                string? updatedSourcePath = !string.IsNullOrWhiteSpace(rawSourcePath)
+                    ? PathResolverService.NormalizePathToPlaceholder(rawSourcePath)
+                    : rawSourcePath;
+
+                string? updatedSavePaths = !string.IsNullOrWhiteSpace(rawSavePaths)
+                    ? NormalizeSavePathsField(rawSavePaths)
+                    : rawSavePaths;
+
+                string? updatedBackupPath = !string.IsNullOrWhiteSpace(rawBackupPath)
+                    ? NormalizeBackupPathField(rawBackupPath)
+                    : rawBackupPath;
+
+                string? updatedExe = !string.IsNullOrWhiteSpace(rawExe)
+                    ? PathResolverService.NormalizePathToPlaceholder(rawExe)
+                    : rawExe;
+
+                string? updatedManifestJson = rawManifestJson;
+                if (!string.IsNullOrWhiteSpace(rawManifestJson))
+                {
+                    try
+                    {
+                        var manifest = JsonSerializer.Deserialize<BackupManifest>(rawManifestJson);
+                        if (manifest?.Items != null && manifest.Items.Count > 0)
+                        {
+                            bool manifestChanged = false;
+                            foreach (var item in manifest.Items)
+                            {
+                                if (!string.IsNullOrWhiteSpace(item.SourcePath))
+                                {
+                                    var norm = PathResolverService.NormalizePathToPlaceholder(item.SourcePath);
+                                    if (!string.Equals(norm, item.SourcePath, StringComparison.Ordinal))
+                                    {
+                                        item.SourcePath = norm;
+                                        manifestChanged = true;
+                                    }
+                                }
+                            }
+                            if (manifestChanged)
+                            {
+                                updatedManifestJson = JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true });
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                bool hasDetailChange = !string.Equals(updatedSourcePath, rawSourcePath, StringComparison.Ordinal) ||
+                                       !string.Equals(updatedSavePaths, rawSavePaths, StringComparison.Ordinal) ||
+                                       !string.Equals(updatedBackupPath, rawBackupPath, StringComparison.Ordinal) ||
+                                       !string.Equals(updatedExe, rawExe, StringComparison.Ordinal) ||
+                                       !string.Equals(updatedManifestJson, rawManifestJson, StringComparison.Ordinal);
+
+                if (hasDetailChange)
+                {
+                    connection.Execute(@"
+                        UPDATE backup_history_details 
+                        SET SourcePath = @SourcePath, SavePaths = @SavePaths, BackupPath = @BackupPath, 
+                            ExecutablePath = @ExecutablePath, ManifestJson = @ManifestJson 
+                        WHERE Id = @Id;", 
+                        new { 
+                            SourcePath = updatedSourcePath, 
+                            SavePaths = updatedSavePaths, 
+                            BackupPath = updatedBackupPath, 
+                            ExecutablePath = updatedExe, 
+                            ManifestJson = updatedManifestJson, 
+                            Id = id 
+                        });
+                }
+            }
+
+            // 3. Chuẩn hóa bảng games_cache
+            var cacheRows = connection.Query<dynamic>("SELECT Id, RawPatternsJson FROM games_cache;").ToList();
+            foreach (var row in cacheRows)
+            {
+                long id = row.Id;
+                string? rawJson = row.RawPatternsJson;
+                if (!string.IsNullOrWhiteSpace(rawJson))
+                {
+                    try
+                    {
+                        var patterns = JsonSerializer.Deserialize<List<string>>(rawJson);
+                        if (patterns != null && patterns.Count > 0)
+                        {
+                            bool cacheChanged = false;
+                            var normalizedList = new List<string>();
+                            foreach (var p in patterns)
+                            {
+                                var norm = PathResolverService.NormalizePathToPlaceholder(p);
+                                if (!string.Equals(norm, p, StringComparison.Ordinal))
+                                {
+                                    cacheChanged = true;
+                                }
+                                normalizedList.Add(norm);
+                            }
+
+                            if (cacheChanged)
+                            {
+                                var updatedJson = JsonSerializer.Serialize(normalizedList);
+                                connection.Execute("UPDATE games_cache SET RawPatternsJson = @Json WHERE Id = @Id;", new { Json = updatedJson, Id = id });
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // 4. Chuẩn hóa bảng restore_history
+            var restoreRows = connection.Query<dynamic>("SELECT Id, SourcePath, RestoredPathsJson, RevertZipPath FROM restore_history;").ToList();
+            foreach (var row in restoreRows)
+            {
+                long id = row.Id;
+                string? rawSource = row.SourcePath;
+                string? rawRestored = row.RestoredPathsJson;
+                string? rawRevert = row.RevertZipPath;
+
+                string? updatedSource = !string.IsNullOrWhiteSpace(rawSource)
+                    ? PathResolverService.NormalizePathToPlaceholder(rawSource)
+                    : rawSource;
+
+                string? updatedRevert = !string.IsNullOrWhiteSpace(rawRevert)
+                    ? PathResolverService.NormalizePathToPlaceholder(rawRevert)
+                    : rawRevert;
+
+                string? updatedRestored = rawRestored;
+                if (!string.IsNullOrWhiteSpace(rawRestored))
+                {
+                    try
+                    {
+                        var list = JsonSerializer.Deserialize<List<string>>(rawRestored);
+                        if (list != null && list.Count > 0)
+                        {
+                            bool changed = false;
+                            var normList = new List<string>();
+                            foreach (var p in list)
+                            {
+                                var norm = PathResolverService.NormalizePathToPlaceholder(p);
+                                if (!string.Equals(norm, p, StringComparison.Ordinal))
+                                {
+                                    changed = true;
+                                }
+                                normList.Add(norm);
+                            }
+                            if (changed)
+                            {
+                                updatedRestored = JsonSerializer.Serialize(normList);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (!string.Equals(updatedSource, rawSource, StringComparison.Ordinal) ||
+                    !string.Equals(updatedRevert, rawRevert, StringComparison.Ordinal) ||
+                    !string.Equals(updatedRestored, rawRestored, StringComparison.Ordinal))
+                {
+                    connection.Execute(@"
+                        UPDATE restore_history 
+                        SET SourcePath = @SourcePath, RestoredPathsJson = @RestoredPathsJson, RevertZipPath = @RevertZipPath 
+                        WHERE Id = @Id;", 
+                        new { SourcePath = updatedSource, RestoredPathsJson = updatedRestored, RevertZipPath = updatedRevert, Id = id });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggingService.Warn("Lỗi trong quá trình di trú đường dẫn sang biến môi trường: {Message}", ex.Message);
+        }
+    }
+
+    private static string NormalizeBackupPathField(string rawBackupPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawBackupPath)) return rawBackupPath;
+
+        var trimmed = rawBackupPath.Trim();
+        if (trimmed.StartsWith("{"))
+        {
+            try
+            {
+                var loc = BackupPathLocations.FromJson(trimmed);
+                if (!string.IsNullOrWhiteSpace(loc.LocalPath))
+                {
+                    var norm = PathResolverService.NormalizePathToPlaceholder(loc.LocalPath);
+                    if (!string.Equals(norm, loc.LocalPath, StringComparison.Ordinal))
+                    {
+                        loc.LocalPath = norm;
+                        return loc.ToJson();
+                    }
+                }
+                return rawBackupPath;
+            }
+            catch { }
+        }
+
+        return NormalizeSavePathsField(rawBackupPath);
+    }
+
+    private static string NormalizeSavePathsField(string rawSavePaths)
+    {
+        if (string.IsNullOrWhiteSpace(rawSavePaths)) return rawSavePaths;
+
+        var trimmed = rawSavePaths.Trim();
+        if (trimmed.StartsWith("["))
+        {
+            try
+            {
+                var list = JsonSerializer.Deserialize<List<string>>(trimmed);
+                if (list != null && list.Count > 0)
+                {
+                    var updatedList = list.Select(p => PathResolverService.NormalizePathToPlaceholder(p)).ToList();
+                    return JsonSerializer.Serialize(updatedList);
+                }
+            }
+            catch { }
+        }
+
+        if (trimmed.Contains('|'))
+        {
+            var parts = trimmed.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var updatedParts = parts.Select(p => PathResolverService.NormalizePathToPlaceholder(p));
+            return string.Join(" | ", updatedParts);
+        }
+
+        return PathResolverService.NormalizePathToPlaceholder(trimmed);
     }
 
     private static void EnsureColumnExists(System.Data.IDbConnection connection, string table, string column, string columnDef)

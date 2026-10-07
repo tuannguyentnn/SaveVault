@@ -6,120 +6,356 @@
 @if (CloudVM.IsSyncCloudSelectModalOpen || DialogService.IsSyncCloudSelectModalOpen)
 {
     var targetDetail = CloudVM.TargetSyncDetail ?? DialogService.TargetSyncDetail;
+    bool hasLocal = targetDetail != null && !string.IsNullOrEmpty(targetDetail.LocalBackupPath) && (File.Exists(targetDetail.LocalBackupPath) || Directory.Exists(targetDetail.LocalBackupPath));
+    bool isGDriveSynced = targetDetail != null && (targetDetail.CloudSyncList.Any(c => c.Provider.Equals("GoogleDrive", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(c.FileId)) || (targetDetail.CloudProvider.Contains("GoogleDrive", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(targetDetail.CloudFileId)));
+    bool isOneDriveSynced = targetDetail != null && (targetDetail.CloudSyncList.Any(c => c.Provider.Equals("OneDrive", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(c.FileId)) || (targetDetail.CloudProvider.Contains("OneDrive", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(targetDetail.CloudFileId)));
+    bool anyCloudHasIt = isGDriveSynced || isOneDriveSynced;
 
-    <div class="modal-backdrop">
-        <div class="modal-content w-full max-w-xl border-2 border-[#0284C7] flex flex-col">
-            <!-- Header (Image 5.JPG) -->
-            <div class="bg-[#1E293B] border-b border-[#334155] px-6 py-4 flex items-center justify-between">
-                <div class="flex items-center space-x-3">
-                    <div class="w-9 h-9 rounded-lg bg-cyan-600/30 border border-cyan-500/50 flex items-center justify-center">
-                        <span class="text-cyan-400 font-bold text-lg">☁️</span>
+    <div class="modal-backdrop z-50">
+        <div class="modal-content w-full max-w-4xl border-2 border-[#0284C7] shadow-2xl shadow-cyan-950/60 rounded-2xl overflow-hidden flex flex-col animate-fadeIn bg-[#0F172A]">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-[#1E293B] to-[#0F172A] border-b border-[#334155] px-6 py-4 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center space-x-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-600/30 border border-cyan-500/40 flex items-center justify-center text-xl shadow-inner">
+                        🔄
                     </div>
                     <div>
-                        <h3 class="text-[17px] font-bold text-white tracking-wide">CHỌN DỊCH VỤ CLOUD ĐỂ ĐỒNG BỘ</h3>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-[17px] font-bold text-white tracking-wide">QUẢN LÝ ĐỒNG BỘ ĐA NỀN TẢNG</h3>
+                            @if (targetDetail != null)
+                            {
+                                <span class="badge-count text-[11px] bg-cyan-600/30 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded-full">
+                                    @targetDetail.GameName
+                                </span>
+                            }
+                        </div>
                         @if (targetDetail != null)
                         {
-                            <div class="text-[11px] text-slate-400">
-                                @targetDetail.GameName - @targetDetail.BackupDate.ToString("dd/MM/yyyy HH:mm") (@targetDetail.FormattedSize)
+                            <div class="text-[12px] text-slate-400 mt-0.5 flex items-center space-x-2">
+                                <span>Bản sao lưu ngày @targetDetail.BackupDate.ToString("dd/MM/yyyy HH:mm")</span>
+                                <span>•</span>
+                                <span class="font-mono text-slate-300">@targetDetail.FormattedSize</span>
                             </div>
                         }
                     </div>
                 </div>
 
-                <button class="text-slate-400 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-700/50 transition-colors"
+                <button class="text-slate-400 hover:text-white text-lg font-bold p-1.5 rounded-lg hover:bg-slate-700/50 transition-colors"
                         disabled="@CloudVM.IsCloudSyncing"
                         @onclick="CloseModal">
                     ✕
                 </button>
             </div>
 
-            <!-- Body Options (Image 5.JPG) -->
-            <div class="p-6 space-y-4 bg-[#131C2E]">
-                <!-- Option 1: Google Drive -->
-                <div class="bg-[#0F172A] border border-[#2D3748] hover:border-cyan-500/60 rounded-xl p-5 transition-all flex items-center justify-between">
-                    <div class="flex items-center space-x-4">
-                        <div class="w-12 h-12 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-2xl">
-                            📁
-                        </div>
-                        <div>
-                            <div class="font-bold text-white text-[14px]">Google Drive REST API</div>
-                            <div class="text-[11px] text-slate-400 mt-0.5">
-                                Lưu trữ bản sao lưu vào thư mục đám mây Google Drive an toàn.
+            <!-- Hint Banner -->
+            <div class="bg-[#0B132B]/90 px-6 py-2.5 border-b border-slate-800 text-[12px] text-slate-400 flex items-center space-x-2">
+                <span class="text-cyan-400 text-sm">💡</span>
+                <span>Bản sao lưu có thể được đồng bộ chéo giữa các nền tảng hoặc khôi phục về máy tính nếu bị mất file cục bộ.</span>
+            </div>
+
+            <!-- Body: Horizontal 3-Column Layout -->
+            <div class="p-6 bg-[#131C2E]">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4.5">
+                    <!-- Platform 1: Local Storage -->
+                    <div class="bg-[#0F172A] border @(hasLocal ? "border-emerald-500/40 hover:border-emerald-400 shadow-emerald-950/20" : "border-rose-500/40 hover:border-rose-400 shadow-rose-950/20 bg-rose-950/10") rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5">
+                        <div class="space-y-3.5">
+                            <!-- Top Icon & Badge -->
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl @(hasLocal ? "bg-emerald-500/20 border border-emerald-500/40 text-emerald-400" : "bg-rose-500/20 border border-rose-500/40 text-rose-400") flex items-center justify-center text-2xl shadow-inner">
+                                    💻
+                                </div>
+                                @if (hasLocal)
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                                        <span>✓</span>
+                                        <span>Có sẵn</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center space-x-1">
+                                        <span>⚠</span>
+                                        <span>Mất file</span>
+                                    </span>
+                                }
                             </div>
-                            <div class="flex items-center space-x-2 mt-1">
+
+                            <!-- Title & Subtitle -->
+                            <div>
+                                <h4 class="font-bold text-white text-[15px]">Bộ Nhớ Máy Tính</h4>
+                                <div class="text-[11px] @(hasLocal ? "text-emerald-400/90" : "text-rose-400/90") font-medium mt-0.5">Ổ đĩa cục bộ (Local Storage)</div>
+                            </div>
+
+                            <!-- Description & Details -->
+                            <p class="text-[12px] text-slate-300 leading-relaxed">
+                                @if (hasLocal)
+                                {
+                                    <span>File sao lưu đang tồn tại an toàn trên ổ đĩa máy tính của bạn.</span>
+                                }
+                                else
+                                {
+                                    <span>File sao lưu không còn trên ổ đĩa. Bạn có thể khôi phục lại từ Cloud về máy.</span>
+                                }
+                            </p>
+
+                            <div class="space-y-1.5 pt-1 border-t border-slate-800/80 text-[11px] text-slate-400">
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="@(hasLocal ? "text-emerald-400" : "text-rose-400") font-bold">@(hasLocal ? "✓" : "✗")</span>
+                                    <span>@(hasLocal ? "Đã lưu trữ cục bộ" : "Thiếu file vật lý trên đĩa")</span>
+                                </div>
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-cyan-400 font-bold">ℹ</span>
+                                    <span>Nguồn đồng bộ chính</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CTA Button -->
+                        <div class="pt-5 mt-auto">
+                            @if (hasLocal)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-medium text-[12px] bg-slate-800/80 text-slate-400 border border-slate-700 cursor-not-allowed opacity-75 flex items-center justify-center space-x-1"
+                                        disabled>
+                                    <span>✓ Đã Có Trên Máy</span>
+                                </button>
+                            }
+                            else if (anyCloudHasIt)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-bold text-[13px] text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-400/50 shadow-lg shadow-emerald-950/40 flex items-center justify-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                        disabled="@CloudVM.IsCloudSyncing"
+                                        @onclick="() => SyncToLocal(targetDetail)">
+                                    <span>Khôi Phục Về Máy</span>
+                                    <span>⬇</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-medium text-[12px] bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                                        disabled>
+                                    <span>Không Có Trên Cloud</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Platform 2: Google Drive -->
+                    <div class="bg-[#0F172A] border @(isGDriveSynced ? "border-emerald-500/40 hover:border-emerald-400 shadow-emerald-950/20" : "border-blue-500/40 hover:border-blue-400 shadow-blue-950/20") rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5">
+                        <div class="space-y-3.5">
+                            <!-- Top Icon & Badge -->
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center text-2xl shadow-inner">
+                                    📁
+                                </div>
+                                @if (isGDriveSynced)
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                                        <span>✓</span>
+                                        <span>Đã đồng bộ</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-400 bg-slate-800 border border-slate-700">
+                                        Chưa đồng bộ
+                                    </span>
+                                }
+                            </div>
+
+                            <!-- Title & Subtitle -->
+                            <div>
+                                <h4 class="font-bold text-white text-[15px]">Google Drive</h4>
+                                <div class="text-[11px] text-blue-400/90 font-medium mt-0.5">REST API Cloud Storage</div>
+                            </div>
+
+                            <!-- Connection Status -->
+                            <div class="flex items-center space-x-2">
                                 @if (CloudVM.IsGoogleDriveLoggedIn)
                                 {
                                     <span class="inline-flex items-center space-x-1.5 text-[11px] text-emerald-400 font-medium">
                                         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                        <span>Đã kết nối@(string.IsNullOrEmpty(CloudVM.GoogleDriveAccountEmail) ? "" : $": {CloudVM.GoogleDriveAccountEmail}")</span>
+                                        <span class="truncate max-w-[180px]">Đã kết nối@(string.IsNullOrEmpty(CloudVM.GoogleDriveAccountEmail) ? "" : $": {CloudVM.GoogleDriveAccountEmail}")</span>
                                     </span>
                                 }
                                 else
                                 {
-                                    <span class="inline-flex items-center space-x-1.5 text-[11px] text-amber-400/80">
+                                    <span class="inline-flex items-center space-x-1.5 text-[11px] text-amber-400/90">
                                         <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                                        <span>Chưa đăng nhập (vào Cấu hình để kết nối)</span>
+                                        <span>Chưa đăng nhập</span>
                                     </span>
                                 }
                             </div>
+
+                            <!-- Description -->
+                            <p class="text-[12px] text-slate-300 leading-relaxed">
+                                Lưu trữ bản sao lưu vào thư mục đám mây Google Drive an toàn.
+                            </p>
+
+                            <div class="space-y-1.5 pt-1 border-t border-slate-800/80 text-[11px] text-slate-400">
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-blue-400 font-bold">✓</span>
+                                    <span>Tự động tối ưu chunk 256KB</span>
+                                </div>
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-blue-400 font-bold">✓</span>
+                                    <span>Hỗ trợ đồng bộ chéo</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CTA Button -->
+                        <div class="pt-5 mt-auto">
+                            @if (isGDriveSynced)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-medium text-[12px] bg-slate-800/80 text-slate-400 border border-slate-700 cursor-not-allowed opacity-75 flex items-center justify-center space-x-1"
+                                        disabled>
+                                    <span>✓ Đã Đồng Bộ</span>
+                                </button>
+                            }
+                            else if (hasLocal)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-bold text-[13px] text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border border-blue-400/50 shadow-lg shadow-blue-950/40 flex items-center justify-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                        disabled="@(CloudVM.IsCloudSyncing || !CloudVM.IsGoogleDriveLoggedIn)"
+                                        @onclick='() => SyncToProvider("GoogleDrive")'>
+                                    <span>Đồng Bộ</span>
+                                    <span>➔</span>
+                                </button>
+                            }
+                            else if (isOneDriveSynced)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-bold text-[13px] text-white bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 border border-indigo-400/60 shadow-lg shadow-indigo-950/40 flex items-center justify-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                        disabled="@(CloudVM.IsCloudSyncing || !CloudVM.IsGoogleDriveLoggedIn)"
+                                        title="Lấy file từ OneDrive và đồng bộ sang Google Drive"
+                                        @onclick='() => SyncToProvider("GoogleDrive")'>
+                                    <span>Lấy & Đồng Bộ</span>
+                                    <span>⚡</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-medium text-[12px] bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                                        disabled>
+                                    <span>Không Có Nguồn</span>
+                                </button>
+                            }
                         </div>
                     </div>
 
-                    <button class="btn-blue text-[12px] py-2 px-4 bg-[#0284C7] border-[#06B6D4] hover:bg-[#0369A1] flex items-center space-x-1"
-                            disabled="@CloudVM.IsCloudSyncing"
-                            @onclick='() => SyncToProvider("GoogleDrive")'>
-                        <span>Đồng Bộ</span>
-                        <span>➔</span>
-                    </button>
-                </div>
-
-                <!-- Option 2: Microsoft OneDrive -->
-                <div class="bg-[#0F172A] border border-[#2D3748] hover:border-cyan-500/60 rounded-xl p-5 transition-all flex items-center justify-between">
-                    <div class="flex items-center space-x-4">
-                        <div class="w-12 h-12 rounded-xl bg-cyan-600/20 border border-cyan-500/40 flex items-center justify-center text-2xl">
-                            ☁️
-                        </div>
-                        <div>
-                            <div class="font-bold text-white text-[14px]">Microsoft OneDrive (Graph API)</div>
-                            <div class="text-[11px] text-slate-400 mt-0.5">
-                                Lưu trữ trực tiếp vào kho lưu trữ đám mây Microsoft OneDrive.
+                    <!-- Platform 3: Microsoft OneDrive -->
+                    <div class="bg-[#0F172A] border @(isOneDriveSynced ? "border-emerald-500/40 hover:border-emerald-400 shadow-emerald-950/20" : "border-cyan-500/40 hover:border-cyan-400 shadow-cyan-950/20") rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5">
+                        <div class="space-y-3.5">
+                            <!-- Top Icon & Badge -->
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl bg-cyan-600/20 border border-cyan-500/40 text-cyan-400 flex items-center justify-center text-2xl shadow-inner">
+                                    ☁️
+                                </div>
+                                @if (isOneDriveSynced)
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                                        <span>✓</span>
+                                        <span>Đã đồng bộ</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-400 bg-slate-800 border border-slate-700">
+                                        Chưa đồng bộ
+                                    </span>
+                                }
                             </div>
-                            <div class="flex items-center space-x-2 mt-1">
+
+                            <!-- Title & Subtitle -->
+                            <div>
+                                <h4 class="font-bold text-white text-[15px]">Microsoft OneDrive</h4>
+                                <div class="text-[11px] text-cyan-400/90 font-medium mt-0.5">Graph API Cloud Storage</div>
+                            </div>
+
+                            <!-- Connection Status -->
+                            <div class="flex items-center space-x-2">
                                 @if (CloudVM.IsOneDriveLoggedIn)
                                 {
                                     <span class="inline-flex items-center space-x-1.5 text-[11px] text-emerald-400 font-medium">
                                         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                                        <span>Đã kết nối@(string.IsNullOrEmpty(CloudVM.OneDriveAccountEmail) ? "" : $": {CloudVM.OneDriveAccountEmail}")</span>
+                                        <span class="truncate max-w-[180px]">Đã kết nối@(string.IsNullOrEmpty(CloudVM.OneDriveAccountEmail) ? "" : $": {CloudVM.OneDriveAccountEmail}")</span>
                                     </span>
                                 }
                                 else
                                 {
-                                    <span class="inline-flex items-center space-x-1.5 text-[11px] text-amber-400/80">
+                                    <span class="inline-flex items-center space-x-1.5 text-[11px] text-amber-400/90">
                                         <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                                        <span>Chưa đăng nhập (vào Cấu hình để kết nối)</span>
+                                        <span>Chưa đăng nhập</span>
                                     </span>
                                 }
                             </div>
+
+                            <!-- Description -->
+                            <p class="text-[12px] text-slate-300 leading-relaxed">
+                                Lưu trữ trực tiếp vào kho lưu trữ đám mây Microsoft OneDrive.
+                            </p>
+
+                            <div class="space-y-1.5 pt-1 border-t border-slate-800/80 text-[11px] text-slate-400">
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-cyan-400 font-bold">✓</span>
+                                    <span>Tối ưu upload qua Graph API</span>
+                                </div>
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-cyan-400 font-bold">✓</span>
+                                    <span>Hỗ trợ đồng bộ chéo</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CTA Button -->
+                        <div class="pt-5 mt-auto">
+                            @if (isOneDriveSynced)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-medium text-[12px] bg-slate-800/80 text-slate-400 border border-slate-700 cursor-not-allowed opacity-75 flex items-center justify-center space-x-1"
+                                        disabled>
+                                    <span>✓ Đã Đồng Bộ</span>
+                                </button>
+                            }
+                            else if (hasLocal)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-bold text-[13px] text-white bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500 border border-cyan-400/50 shadow-lg shadow-cyan-950/40 flex items-center justify-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                        disabled="@(CloudVM.IsCloudSyncing || !CloudVM.IsOneDriveLoggedIn)"
+                                        @onclick='() => SyncToProvider("OneDrive")'>
+                                    <span>Đồng Bộ</span>
+                                    <span>➔</span>
+                                </button>
+                            }
+                            else if (isGDriveSynced)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-bold text-[13px] text-white bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 border border-indigo-400/60 shadow-lg shadow-indigo-950/40 flex items-center justify-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                        disabled="@(CloudVM.IsCloudSyncing || !CloudVM.IsOneDriveLoggedIn)"
+                                        title="Lấy file từ Google Drive và đồng bộ sang OneDrive"
+                                        @onclick='() => SyncToProvider("OneDrive")'>
+                                    <span>Lấy & Đồng Bộ</span>
+                                    <span>⚡</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-medium text-[12px] bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                                        disabled>
+                                    <span>Không Có Nguồn</span>
+                                </button>
+                            }
                         </div>
                     </div>
-
-                    <button class="btn-blue text-[12px] py-2 px-4 bg-[#0284C7] border-[#06B6D4] hover:bg-[#0369A1] flex items-center space-x-1"
-                            disabled="@CloudVM.IsCloudSyncing"
-                            @onclick='() => SyncToProvider("OneDrive")'>
-                        <span>Đồng Bộ</span>
-                        <span>➔</span>
-                    </button>
                 </div>
 
+                <!-- Syncing Progress Bar -->
                 @if (CloudVM.IsCloudSyncing)
                 {
-                    <div class="bg-[#0F172A] border border-cyan-500/40 rounded-lg p-3 mt-4">
-                        <div class="flex items-center justify-between text-[12px] mb-1.5">
-                            <span class="font-medium text-cyan-400">@CloudVM.CloudSyncProgressText</span>
-                            <span class="font-bold text-white font-mono">@CloudVM.CloudSyncProgressPercent%</span>
+                    <div class="bg-[#0F172A] border border-cyan-500/40 rounded-xl p-4 mt-4 shadow-lg shadow-cyan-950/30">
+                        <div class="flex items-center justify-between text-[12px] mb-2">
+                            <span class="font-medium text-cyan-400 flex items-center space-x-2">
+                                <span class="inline-block animate-spin">🌀</span>
+                                <span>@CloudVM.CloudSyncProgressText</span>
+                            </span>
+                            <span class="font-bold text-white font-mono text-[13px]">@CloudVM.CloudSyncProgressPercent%</span>
                         </div>
-                        <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                            <div class="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 transition-all duration-200"
+                        <div class="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden p-0.5 border border-slate-700">
+                            <div class="bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 h-full rounded-full transition-all duration-200"
                                  style="width: @(CloudVM.CloudSyncProgressPercent.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%"></div>
                         </div>
                     </div>
@@ -146,6 +382,11 @@
     private async Task SyncToProvider(string providerName)
     {
         await CloudVM.ConfirmSyncToProviderAsync(providerName);
+    }
+
+    private async Task SyncToLocal(BackupHistoryDetail? detail)
+    {
+        await CloudVM.ConfirmSyncToLocalAsync(detail);
     }
 
     private void CloseModal()

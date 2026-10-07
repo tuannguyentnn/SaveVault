@@ -5,60 +5,246 @@
 
 @if (RestoreVM.IsRestoreSourceModalOpen || DialogService.IsRestoreSourceModalOpen)
 {
-    <div class="modal-backdrop">
-        <div class="modal-content w-full max-w-md border-2 border-emerald-500 flex flex-col shadow-2xl">
+    var detail = RestoreVM.PendingRestoreDetail ?? DialogService.PendingRestoreSourceDetail;
+    bool isLocalAvailable = detail?.HasLocalBackup ?? true;
+    bool hasGdrive = (detail?.IsSyncedTo("GoogleDrive") ?? RestoreVM.IsPendingDetailSyncedToGoogleDrive);
+    bool hasOnedrive = (detail?.IsSyncedTo("OneDrive") ?? RestoreVM.IsPendingDetailSyncedToOneDrive);
+
+    <div class="modal-backdrop z-50">
+        <div class="modal-content w-full max-w-4xl border-2 border-emerald-500 shadow-2xl shadow-emerald-950/60 rounded-2xl overflow-hidden flex flex-col animate-fadeIn bg-[#0F172A]">
             <!-- Header -->
-            <div class="bg-[#1E293B] border-b border-[#334155] px-6 py-4 flex items-center justify-between">
-                <div class="flex items-center space-x-3">
-                    <div class="w-9 h-9 rounded-lg bg-emerald-600/30 border border-emerald-500/50 flex items-center justify-center">
-                        <span class="text-emerald-400 font-bold text-lg">⚡</span>
+            <div class="bg-gradient-to-r from-[#1E293B] to-[#0F172A] border-b border-[#334155] px-6 py-4 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center space-x-3.5">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-600/30 border border-emerald-500/50 flex items-center justify-center text-xl shadow-inner">
+                        ⚡
                     </div>
-                    <h3 class="text-[16px] font-bold text-white tracking-wide">
-                        CHỌN NGUỒN KHÔI PHỤC
-                    </h3>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h3 class="text-[17px] font-bold text-white tracking-wide">
+                                CHỌN NGUỒN KHÔI PHỤC SAVE GAME
+                            </h3>
+                            @if (detail != null)
+                            {
+                                <span class="badge-count text-[11px] bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                                    @detail.GameName
+                                </span>
+                            }
+                        </div>
+                        @if (detail != null)
+                        {
+                            <div class="text-[12px] text-slate-400 mt-0.5 flex items-center space-x-2">
+                                <span>Bản sao lưu ngày @detail.BackupDate.ToString("dd/MM/yyyy HH:mm")</span>
+                                <span>•</span>
+                                <span class="font-mono text-slate-300">@detail.FormattedSize</span>
+                            </div>
+                        }
+                    </div>
                 </div>
 
-                <button class="text-slate-400 hover:text-white text-lg font-bold p-1 rounded hover:bg-slate-700/50"
+                <button class="text-slate-400 hover:text-white text-lg font-bold p-1.5 rounded-lg hover:bg-slate-700/50 transition-colors"
                         @onclick="Cancel">
                     ✕
                 </button>
             </div>
 
-            <!-- Body -->
-            <div class="p-6 space-y-3 bg-[#131C2E]">
-                <p class="text-[12px] text-slate-300 mb-2">
-                    Bạn muốn khôi phục save game từ nguồn nào?
-                </p>
+            <!-- Hint Banner -->
+            <div class="bg-[#0B132B]/90 px-6 py-2.5 border-b border-slate-800 text-[12px] text-slate-400 flex items-center space-x-2">
+                <span class="text-emerald-400 text-sm">💡</span>
+                <span>Bản sao lưu này có sẵn ở nhiều nơi. Hãy chọn nguồn lưu trữ bạn muốn dùng để khôi phục dữ liệu game.</span>
+            </div>
 
-                <!-- Local source button -->
-                <button class="w-full bg-[#0F172A] hover:bg-slate-800 border border-[#2D3748] hover:border-emerald-500 rounded-xl p-4 flex items-center space-x-3 transition-all text-left"
-                        @onclick="RestoreLocal">
-                    <span class="text-2xl">💻</span>
-                    <div>
-                        <div class="font-bold text-white text-[13px]">Khôi phục từ Ổ cứng máy tính</div>
-                        <div class="text-[11px] text-slate-400">Sử dụng trực tiếp file backup có sẵn trong thư mục Backups.</div>
-                    </div>
-                </button>
+            <!-- Body: Horizontal 3-Column Layout -->
+            <div class="p-6 bg-[#131C2E]">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4.5">
+                    <!-- Option 1: Local Storage -->
+                    <div class="bg-[#0F172A] border @(isLocalAvailable ? "border-emerald-500/40 hover:border-emerald-400 shadow-emerald-950/20" : "border-slate-800 opacity-60") rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5">
+                        <div class="space-y-3.5">
+                            <!-- Top Icon & Badge -->
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center text-2xl shadow-inner">
+                                    💻
+                                </div>
+                                <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center space-x-1">
+                                    <span>⚡</span>
+                                    <span>Tức thì</span>
+                                </span>
+                            </div>
 
-                <!-- Cloud source button: Google Drive -->
-                <button class="w-full bg-[#0F172A] hover:bg-slate-800 border border-[#2D3748] hover:border-blue-500 rounded-xl p-4 flex items-center space-x-3 transition-all text-left"
-                        @onclick="RestoreGDrive">
-                    <span class="text-2xl">📁</span>
-                    <div>
-                        <div class="font-bold text-white text-[13px]">Tải từ Google Drive & Khôi phục</div>
-                        <div class="text-[11px] text-slate-400">Tải bản sao lưu từ Google Drive về máy rồi tiến hành khôi phục.</div>
-                    </div>
-                </button>
+                            <!-- Title & Subtitle -->
+                            <div>
+                                <h4 class="font-bold text-white text-[15px]">Ổ Cứng Máy Tính</h4>
+                                <div class="text-[11px] text-emerald-400/90 font-medium mt-0.5">Bộ nhớ cục bộ (Local)</div>
+                            </div>
 
-                <!-- Cloud source button: OneDrive -->
-                <button class="w-full bg-[#0F172A] hover:bg-slate-800 border border-[#2D3748] hover:border-cyan-500 rounded-xl p-4 flex items-center space-x-3 transition-all text-left"
-                        @onclick="RestoreOneDrive">
-                    <span class="text-2xl">☁️</span>
-                    <div>
-                        <div class="font-bold text-white text-[13px]">Tải từ Microsoft OneDrive & Khôi phục</div>
-                        <div class="text-[11px] text-slate-400">Tải bản sao lưu từ OneDrive về máy rồi tiến hành khôi phục.</div>
+                            <!-- Description & Features -->
+                            <p class="text-[12px] text-slate-300 leading-relaxed">
+                                Khôi phục trực tiếp từ file sao lưu có sẵn trong thư mục Backups trên máy tính của bạn.
+                            </p>
+
+                            <div class="space-y-1.5 pt-1 border-t border-slate-800/80 text-[11px] text-slate-400">
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-emerald-400 font-bold">✓</span>
+                                    <span>Không cần kết nối mạng</span>
+                                </div>
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-emerald-400 font-bold">✓</span>
+                                    <span>Tốc độ khôi phục nhanh nhất</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CTA Button -->
+                        <div class="pt-5 mt-auto">
+                            @if (isLocalAvailable)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-bold text-[13px] text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border border-emerald-400/50 shadow-lg shadow-emerald-950/40 flex items-center justify-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                        @onclick="RestoreLocal">
+                                    <span>Khôi Phục Từ Máy</span>
+                                    <span>➔</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-medium text-[12px] bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                                        disabled>
+                                    <span>Mất File Cục Bộ</span>
+                                </button>
+                            }
+                        </div>
                     </div>
-                </button>
+
+                    <!-- Option 2: Google Drive -->
+                    <div class="bg-[#0F172A] border @(hasGdrive ? "border-blue-500/40 hover:border-blue-400 shadow-blue-950/20" : "border-slate-800 opacity-60") rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5">
+                        <div class="space-y-3.5">
+                            <!-- Top Icon & Badge -->
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center text-2xl shadow-inner">
+                                    📁
+                                </div>
+                                @if (hasGdrive)
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30 flex items-center space-x-1">
+                                        <span>☁️</span>
+                                        <span>Có sẵn</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-500 bg-slate-800 border border-slate-700">
+                                        Chưa có
+                                    </span>
+                                }
+                            </div>
+
+                            <!-- Title & Subtitle -->
+                            <div>
+                                <h4 class="font-bold text-white text-[15px]">Google Drive</h4>
+                                <div class="text-[11px] text-blue-400/90 font-medium mt-0.5">REST API Cloud Storage</div>
+                            </div>
+
+                            <!-- Description & Features -->
+                            <p class="text-[12px] text-slate-300 leading-relaxed">
+                                Tải bản sao lưu an toàn từ tài khoản Google Drive về máy rồi tiến hành giải nén khôi phục.
+                            </p>
+
+                            <div class="space-y-1.5 pt-1 border-t border-slate-800/80 text-[11px] text-slate-400">
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-blue-400 font-bold">✓</span>
+                                    <span>Lưu trữ đám mây Google</span>
+                                </div>
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-blue-400 font-bold">✓</span>
+                                    <span>Tải qua API được mã hóa</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CTA Button -->
+                        <div class="pt-5 mt-auto">
+                            @if (hasGdrive)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-bold text-[13px] text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 border border-blue-400/50 shadow-lg shadow-blue-950/40 flex items-center justify-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                        @onclick="RestoreGDrive">
+                                    <span>Tải & Khôi Phục</span>
+                                    <span>➔</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-medium text-[12px] bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                                        disabled>
+                                    <span>Không Có Trên Cloud</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Option 3: Microsoft OneDrive -->
+                    <div class="bg-[#0F172A] border @(hasOnedrive ? "border-cyan-500/40 hover:border-cyan-400 shadow-cyan-950/20" : "border-slate-800 opacity-60") rounded-2xl p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-xl hover:-translate-y-0.5">
+                        <div class="space-y-3.5">
+                            <!-- Top Icon & Badge -->
+                            <div class="flex items-center justify-between">
+                                <div class="w-12 h-12 rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 flex items-center justify-center text-2xl shadow-inner">
+                                    ☁️
+                                </div>
+                                @if (hasOnedrive)
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 flex items-center space-x-1">
+                                        <span>☁️</span>
+                                        <span>Có sẵn</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] text-slate-500 bg-slate-800 border border-slate-700">
+                                        Chưa có
+                                    </span>
+                                }
+                            </div>
+
+                            <!-- Title & Subtitle -->
+                            <div>
+                                <h4 class="font-bold text-white text-[15px]">Microsoft OneDrive</h4>
+                                <div class="text-[11px] text-cyan-400/90 font-medium mt-0.5">Graph API Cloud Storage</div>
+                            </div>
+
+                            <!-- Description & Features -->
+                            <p class="text-[12px] text-slate-300 leading-relaxed">
+                                Tải bản sao lưu từ kho đám mây Microsoft OneDrive về máy rồi tiến hành giải nén khôi phục.
+                            </p>
+
+                            <div class="space-y-1.5 pt-1 border-t border-slate-800/80 text-[11px] text-slate-400">
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-cyan-400 font-bold">✓</span>
+                                    <span>Kho lưu trữ Microsoft cá nhân</span>
+                                </div>
+                                <div class="flex items-center space-x-1.5">
+                                    <span class="text-cyan-400 font-bold">✓</span>
+                                    <span>Tải qua Graph API tốc độ cao</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CTA Button -->
+                        <div class="pt-5 mt-auto">
+                            @if (hasOnedrive)
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-bold text-[13px] text-white bg-gradient-to-r from-cyan-600 to-sky-600 hover:from-cyan-500 hover:to-sky-500 border border-cyan-400/50 shadow-lg shadow-cyan-950/40 flex items-center justify-center space-x-2 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                        @onclick="RestoreOneDrive">
+                                    <span>Tải & Khôi Phục</span>
+                                    <span>➔</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="w-full py-2.5 px-4 rounded-xl font-medium text-[12px] bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-60"
+                                        disabled>
+                                    <span>Không Có Trên Cloud</span>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

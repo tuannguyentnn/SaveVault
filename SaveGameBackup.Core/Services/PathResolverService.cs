@@ -298,6 +298,173 @@ public class PathResolverService
         return text;
     }
 
+    /// <summary>
+    /// Chuyển đổi đường dẫn tuyệt đối (trên máy hiện tại) thành đường dẫn động có chứa Windows Environment Variable
+    /// (%LOCALAPPDATA%, %APPDATA%, %USERPROFILE%, %PROGRAMDATA%, %PUBLIC%).
+    /// Giúp lưu trữ vào DB hoặc file manifest chuẩn Windows, an toàn khi mang sang máy khác.
+    /// </summary>
+    public static string NormalizePathToPlaceholder(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return path;
+
+        var normalized = path.Trim().Replace('/', '\\');
+
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var localLow = Path.Combine(userProfile, "AppData", "LocalLow");
+        var myDocuments = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var savedGames = Path.Combine(userProfile, "Saved Games");
+        var publicFolder = Environment.GetEnvironmentVariable("PUBLIC") ?? @"C:\Users\Public";
+        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+
+        // Danh sách ánh xạ thư mục sang biến môi trường Windows (%...%)
+        // Sắp xếp thư mục con/chuyên sâu lên trước để ưu tiên match (LocalLow, LocalAppData, AppData trước UserProfile)
+        var mappings = new List<(string FolderPath, string EnvVar)>
+        {
+            (localLow, @"%USERPROFILE%\AppData\LocalLow"),
+            (localAppData, "%LOCALAPPDATA%"),
+            (appData, "%APPDATA%"),
+            (savedGames, @"%USERPROFILE%\Saved Games"),
+            (myDocuments, @"%USERPROFILE%\Documents"),
+            (publicFolder, "%PUBLIC%"),
+            (programData, "%PROGRAMDATA%"),
+            (userProfile, "%USERPROFILE%")
+        };
+
+        foreach (var (folderPath, envVar) in mappings)
+        {
+            if (string.IsNullOrEmpty(folderPath)) continue;
+
+            var cleanFolder = folderPath.TrimEnd('\\');
+            if (normalized.Equals(cleanFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                return envVar;
+            }
+
+            if (normalized.StartsWith(cleanFolder + "\\", StringComparison.OrdinalIgnoreCase))
+            {
+                var relative = normalized.Substring(cleanFolder.Length);
+                return envVar + relative;
+            }
+        }
+
+        // Fallback: Tự động chuyển đổi nếu đường dẫn thuộc về User/Máy tính khác
+        // (ví dụ: C:\Users\TuanNguyen\... hoặc C:\User\AnotherUser\... hoặc trên ổ đĩa khác)
+        var regexMappings = new (string Pattern, string Replacement)[]
+        {
+            (@"^[a-zA-Z]:\\Users?\\[^\\]+\\AppData\\LocalLow(?=\\|$)", @"%USERPROFILE%\AppData\LocalLow"),
+            (@"^[a-zA-Z]:\\Users?\\[^\\]+\\AppData\\Local(?=\\|$)", "%LOCALAPPDATA%"),
+            (@"^[a-zA-Z]:\\Users?\\[^\\]+\\AppData\\Roaming(?=\\|$)", "%APPDATA%"),
+            (@"^[a-zA-Z]:\\Users?\\[^\\]+\\Saved Games(?=\\|$)", @"%USERPROFILE%\Saved Games"),
+            (@"^[a-zA-Z]:\\Users?\\[^\\]+\\(?:Documents|My Documents)(?=\\|$)", @"%USERPROFILE%\Documents"),
+            (@"^[a-zA-Z]:\\Users?\\[^\\]+\\Desktop(?=\\|$)", @"%USERPROFILE%\Desktop"),
+            (@"^[a-zA-Z]:\\Users?\\Public(?=\\|$)", "%PUBLIC%"),
+            (@"^[a-zA-Z]:\\ProgramData(?=\\|$)", "%PROGRAMDATA%"),
+            (@"^[a-zA-Z]:\\Program Files \(x86\)(?=\\|$)", "%ProgramFiles(x86)%"),
+            (@"^[a-zA-Z]:\\Program Files(?=\\|$)", "%ProgramFiles%"),
+            (@"^[a-zA-Z]:\\Users?\\[^\\]+(?=\\|$)", "%USERPROFILE%")
+        };
+
+        foreach (var (pattern, replacement) in regexMappings)
+        {
+            if (Regex.IsMatch(normalized, pattern, RegexOptions.IgnoreCase))
+            {
+                return Regex.Replace(normalized, pattern, replacement, RegexOptions.IgnoreCase);
+            }
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
+    /// Giải mã đường dẫn dạng biến môi trường (%APPDATA%, %LOCALAPPDATA%, %USERPROFILE%,...) 
+    /// thành đường dẫn tuyệt đối trên máy hiện tại.
+    /// </summary>
+    public static string RemapPathToCurrentMachine(string path, string? steamPath = null)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return path;
+
+        var cleaned = path.Trim().Replace('/', '\\');
+
+        // Mở rộng các biến môi trường chuẩn Windows (%APPDATA%, %LOCALAPPDATA%, %USERPROFILE%, v.v.)
+        if (cleaned.Contains('%'))
+        {
+            cleaned = Environment.ExpandEnvironmentVariables(cleaned);
+        }
+        else
+        {
+            // Tự động chuẩn hóa nếu là đường dẫn tuyệt đối của user/máy khác chưa migrate
+            var normalized = NormalizePathToPlaceholder(cleaned);
+            if (!string.Equals(normalized, cleaned, StringComparison.OrdinalIgnoreCase) && normalized.Contains('%'))
+            {
+                cleaned = Environment.ExpandEnvironmentVariables(normalized);
+            }
+        }
+
+        // Hỗ trợ thêm các thẻ nội bộ {{p|...}} nếu có
+        if (cleaned.Contains("{{p|", StringComparison.OrdinalIgnoreCase) || cleaned.Contains('<'))
+        {
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var localLow = Path.Combine(userProfile, "AppData", "LocalLow");
+            var myDocuments = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            var savedGames = Path.Combine(userProfile, "Saved Games");
+            var publicFolder = Environment.GetEnvironmentVariable("PUBLIC") ?? @"C:\Users\Public";
+            var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            var windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            var steam = !string.IsNullOrEmpty(steamPath) ? steamPath : @"C:\Program Files (x86)\Steam";
+
+            cleaned = ReplaceTag(cleaned, "appdata", appData);
+            cleaned = ReplaceTag(cleaned, "localappdata", localAppData);
+            cleaned = ReplaceTag(cleaned, "locallow", localLow);
+            cleaned = ReplaceTag(cleaned, "userprofile", userProfile);
+            cleaned = ReplaceTag(cleaned, "user", userProfile);
+            cleaned = ReplaceTag(cleaned, "username", Environment.UserName);
+            cleaned = ReplaceTag(cleaned, "documents", myDocuments);
+            cleaned = ReplaceTag(cleaned, "savedgames", savedGames);
+            cleaned = ReplaceTag(cleaned, "public", publicFolder);
+            cleaned = ReplaceTag(cleaned, "programdata", programData);
+            cleaned = ReplaceTag(cleaned, "programfiles", programFiles);
+            cleaned = ReplaceTag(cleaned, "programfiles(x86)", programFilesX86);
+            cleaned = ReplaceTag(cleaned, "windir", windowsDir);
+            cleaned = ReplaceTag(cleaned, "systemroot", windowsDir);
+            cleaned = ReplaceTag(cleaned, "steam", steam);
+            cleaned = ReplaceTag(cleaned, "root", steam);
+
+            cleaned = Environment.ExpandEnvironmentVariables(cleaned);
+        }
+
+        cleaned = cleaned.Replace('/', '\\');
+
+        // Nếu ổ đĩa chỉ định không tồn tại trên máy (vd: D:\ không có), tự động chuyển về ổ đĩa hệ thống
+        if (cleaned.Length >= 3 && cleaned[1] == ':' && cleaned[2] == '\\')
+        {
+            var driveLetter = cleaned.Substring(0, 3);
+            try
+            {
+                var driveInfo = new DriveInfo(driveLetter);
+                if (!driveInfo.IsReady)
+                {
+                    var systemDrive = Path.GetPathRoot(Environment.SystemDirectory) ?? @"C:\";
+                    var pathWithoutDrive = cleaned.Substring(3);
+                    cleaned = Path.Combine(systemDrive, pathWithoutDrive);
+                }
+            }
+            catch
+            {
+                var systemDrive = Path.GetPathRoot(Environment.SystemDirectory) ?? @"C:\";
+                var pathWithoutDrive = cleaned.Substring(3);
+                cleaned = Path.Combine(systemDrive, pathWithoutDrive);
+            }
+        }
+
+        return cleaned;
+    }
+
     private void ExpandWildcards(string path, HashSet<string> results)
     {
         // Clean trailing backslashes if not root
@@ -389,18 +556,19 @@ public class PathResolverService
         foreach (var p in candidatePaths)
         {
             if (string.IsNullOrWhiteSpace(p)) continue;
-            var normalized = p.Trim().TrimEnd('\\', '/');
+            var concrete = RemapPathToCurrentMachine(p);
+            var normalized = concrete.Trim().TrimEnd('\\', '/');
             if (seen.Contains(normalized)) continue;
 
             // Bỏ qua các thư mục hệ thống hoặc container chung như D:\steam\userdata hoặc %APPDATA%
             if (IsSystemOrContainerDirectory(normalized)) continue;
 
-            if (Directory.Exists(p))
+            if (Directory.Exists(concrete))
             {
                 seen.Add(normalized);
                 existingDirectories.Add(normalized);
             }
-            else if (File.Exists(p))
+            else if (File.Exists(concrete))
             {
                 seen.Add(normalized);
                 existingFiles.Add(normalized);
@@ -444,7 +612,7 @@ public class PathResolverService
                 Path = p,
                 FileCount = fileCount,
                 TotalSizeBytes = totalBytes,
-                IsSelected = true
+                IsSelected = totalBytes > 0 && fileCount > 0
             });
         }
 
@@ -471,7 +639,7 @@ public class PathResolverService
                     Path = p,
                     FileCount = 1,
                     TotalSizeBytes = totalBytes,
-                    IsSelected = true
+                    IsSelected = totalBytes > 0
                 });
             }
         }

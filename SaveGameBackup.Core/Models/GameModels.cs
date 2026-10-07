@@ -12,11 +12,26 @@ public class DetectedPathItem : INotifyPropertyChanged
     public long TotalSizeBytes { get; set; }
     public int FileCount { get; set; }
 
+    /// <summary>
+    /// Vị trí save 0 byte hoặc không có file nào sẽ bị vô hiệu hóa khi chuẩn bị backup
+    /// </summary>
+    public bool IsDisabled => TotalSizeBytes <= 0 || FileCount <= 0;
+
     public bool IsSelected
     {
-        get => _isSelected;
+        get => _isSelected && !IsDisabled;
         set
         {
+            if (IsDisabled)
+            {
+                if (_isSelected)
+                {
+                    _isSelected = false;
+                    OnPropertyChanged();
+                }
+                return;
+            }
+
             if (_isSelected != value)
             {
                 _isSelected = value;
@@ -388,12 +403,13 @@ public class GameBackupSummary : INotifyPropertyChanged
                     if (LatestBackupPath.TrimStart().StartsWith("["))
                     {
                         var list = JsonSerializer.Deserialize<List<string>>(LatestBackupPath);
-                        if (list != null && list.Count > 0) return list;
+                        if (list != null && list.Count > 0) 
+                            return list.Select(p => SaveGameBackup.Core.Services.PathResolverService.RemapPathToCurrentMachine(p)).ToList();
                     }
                 }
                 catch { }
 
-                return new List<string> { LatestBackupPath.Trim() };
+                return new List<string> { SaveGameBackup.Core.Services.PathResolverService.RemapPathToCurrentMachine(LatestBackupPath.Trim()) };
             }
             return new List<string>();
         }
@@ -642,12 +658,13 @@ public class GameHistoryEntry : INotifyPropertyChanged
                     if (LatestBackupPath.TrimStart().StartsWith("["))
                     {
                         var list = JsonSerializer.Deserialize<List<string>>(LatestBackupPath);
-                        if (list != null && list.Count > 0) return list;
+                        if (list != null && list.Count > 0) 
+                            return list.Select(p => SaveGameBackup.Core.Services.PathResolverService.RemapPathToCurrentMachine(p)).ToList();
                     }
                 }
                 catch { }
 
-                return new List<string> { LatestBackupPath.Trim() };
+                return new List<string> { SaveGameBackup.Core.Services.PathResolverService.RemapPathToCurrentMachine(LatestBackupPath.Trim()) };
             }
             return new List<string>();
         }
@@ -816,7 +833,9 @@ public class BackupHistoryDetail : INotifyPropertyChanged
         OnPropertyChanged(nameof(CloudUrls));
     }
 
-    public string LocalBackupPath => Locations.LocalPath ?? string.Empty;
+    public string LocalBackupPath => !string.IsNullOrEmpty(Locations.LocalPath)
+        ? SaveGameBackup.Core.Services.PathResolverService.RemapPathToCurrentMachine(Locations.LocalPath)
+        : string.Empty;
 
     public bool HasLocalBackup => !string.IsNullOrEmpty(LocalBackupPath) && (File.Exists(LocalBackupPath) || Directory.Exists(LocalBackupPath));
 

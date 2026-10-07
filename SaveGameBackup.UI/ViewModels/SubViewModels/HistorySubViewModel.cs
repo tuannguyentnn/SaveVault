@@ -76,6 +76,7 @@ public class HistorySubViewModel : INotifyPropertyChanged
 
     // Main History page tracking
     public int CurrentGamePage { get; set; } = 1;
+    public int CurrentGamePageSize { get; set; } = 10;
     public string GameFilterText { get; set; } = string.Empty;
     public string GameSortColumn { get; set; } = "Date";
     public bool GameSortAscending { get; set; } = false;
@@ -299,7 +300,7 @@ public class HistorySubViewModel : INotifyPropertyChanged
 
             if (UseSqlPagination)
             {
-                var pageSize = Math.Max(1, AppConfigService.GetConfig().PageSize);
+                var pageSize = CurrentGamePageSize > 0 ? CurrentGamePageSize : Math.Max(1, AppConfigService.GetConfig().PageSize);
                 var pagedResult = await _databaseService.GetGameHistoriesPagedAsync(
                     CurrentGamePage, 
                     pageSize, 
@@ -436,6 +437,7 @@ public class HistorySubViewModel : INotifyPropertyChanged
         try
         {
             CurrentGamePage = pageNumber;
+            CurrentGamePageSize = pageSize;
             GameFilterText = filter ?? string.Empty;
             GameSortColumn = sortColumn;
             GameSortAscending = sortAscending;

@@ -331,6 +331,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand OpenSyncCloudSelectModalCommand => CloudVM.OpenSyncCloudSelectModalCommand;
     public ICommand SyncSelectedDetailToCloudCommand => CloudVM.OpenSyncCloudSelectModalCommand;
     public ICommand ConfirmSyncToProviderCommand => CloudVM.ConfirmSyncToProviderCommand;
+    public ICommand SyncToLocalCommand => CloudVM.SyncToLocalCommand;
     public ICommand CloseSyncCloudSelectModalCommand => CloudVM.CloseSyncCloudSelectModalCommand;
     public ICommand CancelSyncCommand => CloudVM.CancelSyncCommand;
     public ICommand OpenCloudWebViewCommand => CloudVM.OpenCloudWebViewCommand;

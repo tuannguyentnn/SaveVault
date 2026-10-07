@@ -396,24 +396,32 @@
                                     <div class="space-y-1.5 w-full">
                                         @foreach (var item in SearchVM.DetectedPathItems)
                                         {
-                                            <div class="flex items-center justify-between p-2 rounded"
-                                                 style="background-color: #0F172A; border: 1px solid @(item.IsSelected ? "#059669" : "#1E293B");">
-                                                <label class="flex items-center space-x-2.5 min-w-0 flex-1 mr-3 cursor-pointer select-none"
+                                            var isDisabled = item.IsDisabled;
+                                            <div class="flex items-center justify-between p-2 rounded transition-all @(isDisabled ? "opacity-60 bg-[#0B101E]" : "")"
+                                                 style="background-color: @(isDisabled ? "#090D18" : "#0F172A"); border: 1px solid @(item.IsSelected ? "#059669" : (isDisabled ? "#1E293B/50" : "#1E293B"));">
+                                                <label class="flex items-center space-x-2.5 min-w-0 flex-1 mr-3 @(isDisabled ? "cursor-not-allowed opacity-75" : "cursor-pointer") select-none"
+                                                       title="@(isDisabled ? "Thư mục/vị trí rỗng (0 Byte hoặc 0 tệp tin), đã tự động vô hiệu hóa để tránh sao lưu rác" : "Nhấp để chọn hoặc bỏ chọn vị trí này")"
                                                        @onclick="() => TogglePathItem(item)" @onclick:preventDefault="true">
-                                                    <input type="checkbox" checked="@item.IsSelected" style="cursor: pointer;" />
-                                                    <span style="font-size: 13px; color: #94A3B8;">📁</span>
+                                                    <input type="checkbox" checked="@item.IsSelected" disabled="@isDisabled" style="cursor: @(isDisabled ? "not-allowed" : "pointer");" />
+                                                    <span style="font-size: 13px; color: @(isDisabled ? "#64748B" : "#94A3B8");">📁</span>
                                                     <div class="min-w-0 flex-1">
-                                                        <div style="font-family: var(--font-mono); font-size: 12px; color: #E2E8F0; word-break: break-all;">
+                                                        <div style="font-family: var(--font-mono); font-size: 12px; color: @(isDisabled ? "#94A3B8" : "#E2E8F0"); word-break: break-all;">
                                                             @item.Path
                                                         </div>
                                                     </div>
                                                 </label>
 
                                                 <div class="flex items-center space-x-3 flex-shrink-0">
+                                                    @if (isDisabled)
+                                                    {
+                                                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-amber-400 border border-amber-500/30 font-medium">
+                                                            ⚠️ Thư mục trống (0 Byte)
+                                                        </span>
+                                                    }
                                                     <span style="font-size: 11px; color: #8D9CB0; font-family: var(--font-mono);">
                                                         @item.FileCount tệp
                                                     </span>
-                                                    <span style="font-size: 11px; color: #34D399; font-family: var(--font-mono); font-weight: 600;">
+                                                    <span style="font-size: 11px; color: @(isDisabled ? "#64748B" : "#34D399"); font-family: var(--font-mono); font-weight: 600;">
                                                         @item.FormattedSize
                                                     </span>
                                                     <button type="button" class="sv-btn-dark sv-btn-sm"
@@ -611,6 +619,7 @@
 
     private void TogglePathItem(DetectedPathItem item)
     {
+        if (item.IsDisabled) return;
         item.IsSelected = !item.IsSelected;
         SearchVM.UpdateSelectedPathsStats();
     }

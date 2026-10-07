@@ -53,14 +53,27 @@ public class BackupService
         string? onlineCoverUrl = null)
     {
         using var trace = LoggingService.BeginTrace("Backup_BackupGameAsync", new { GameName = gameInfo.GameName });
-        var pathsToBackup = selectedPaths != null && selectedPaths.Count > 0
+        var rawPaths = selectedPaths != null && selectedPaths.Count > 0
             ? selectedPaths
             : gameInfo.DetectedPathItems.Where(p => p.IsSelected).Select(p => p.Path).ToList();
 
-        if (pathsToBackup.Count == 0)
+        if (rawPaths.Count == 0)
         {
-            pathsToBackup = gameInfo.DetectedPathsOnDisk;
+            rawPaths = gameInfo.DetectedPathsOnDisk;
         }
+
+        if (rawPaths.Count == 0 && gameInfo.RawPatterns != null && gameInfo.RawPatterns.Count > 0)
+        {
+            rawPaths = gameInfo.RawPatterns;
+        }
+
+        // BẮT BUỘC: Giải mã và remap toàn bộ đường dẫn tương đối (%APPDATA%, %LOCALAPPDATA%, %USERPROFILE%,...)
+        // sang đường dẫn tuyệt đối thực tế trên máy hiện tại trước khi kiểm tra và sao lưu
+        var pathsToBackup = rawPaths
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => PathResolverService.RemapPathToCurrentMachine(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         if (pathsToBackup.Count == 0)
         {
@@ -242,7 +255,7 @@ public class BackupService
             manifest.Items.Add(new BackupManifestItem
             {
                 SubFolder = subFolder,
-                SourcePath = src,
+                SourcePath = PathResolverService.NormalizePathToPlaceholder(src),
                 FileCount = itemFiles,
                 TotalSizeBytes = itemBytes
             });
@@ -279,9 +292,10 @@ public class BackupService
         }
         catch { /* Ignore */ }
 
-        var sourcePathRecord = pathsToBackup.Count == 1
-            ? pathsToBackup[0]
-            : string.Join(" | ", pathsToBackup);
+        var normalizedPaths = pathsToBackup.Select(p => PathResolverService.NormalizePathToPlaceholder(p)).ToList();
+        var sourcePathRecord = normalizedPaths.Count == 1
+            ? normalizedPaths[0]
+            : string.Join(" | ", normalizedPaths);
 
         // Báo tiến trình tải và chuẩn hóa ảnh bìa game (width = 200px)
         progress?.Report(new BackupProgress 
@@ -323,7 +337,7 @@ public class BackupService
             GameName = gameInfo.GameName,
             BackupPath = new BackupPathLocations { LocalPath = finalBackupPath }.ToJson(),
             SourcePath = sourcePathRecord,
-            SavePaths = JsonSerializer.Serialize(pathsToBackup),
+            SavePaths = JsonSerializer.Serialize(normalizedPaths),
             ManifestJson = manifestJson,
             FileCount = totalCopiedFiles,
             TotalSizeBytes = totalCopiedBytes,
@@ -373,7 +387,7 @@ public class BackupService
                 {
                     gameInfo.OnlineCoverUrl = coverPath;
                 }
-                if (pathsToBackup.Count > 0 && gameInfo.RawPatterns.Count == 0)
+                if (pathsToBackup.Count > 0 && (gameInfo.RawPatterns == null || gameInfo.RawPatterns.Count == 0))
                 {
                     gameInfo.RawPatterns = new List<string>(pathsToBackup);
                     gameInfo.ResolvedPaths = new List<string>(pathsToBackup);
@@ -396,16 +410,18 @@ public class BackupService
         BackupHistoryDetail detail,
         ICloudStorageService cloudService,
         IProgress<BackupProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<string, ICloudStorageService?>? cloudServiceResolver = null)
     {
         using var trace = LoggingService.BeginTrace("Backup_SyncSnapshotToCloudAsync", new { SnapshotId = detail?.Id, Provider = cloudService?.ProviderName });
         if (detail == null) throw new ArgumentNullException(nameof(detail));
         if (cloudService == null) throw new ArgumentNullException(nameof(cloudService));
 
-        string fileToUpload = detail.LocalBackupPath;
+        string? fileToUpload = detail.LocalBackupPath;
         string? tempZipToCleanup = null;
+        bool isCrossCloudSync = false;
 
-        if (!detail.IsCompressed && Directory.Exists(fileToUpload))
+        if (!string.IsNullOrEmpty(fileToUpload) && !detail.IsCompressed && Directory.Exists(fileToUpload))
         {
             progress?.Report(new BackupProgress { Percent = 5, Message = "Đang đóng gói file zip để đồng bộ Cloud..." });
             tempZipToCleanup = Path.Combine(Path.GetTempPath(), $"{SanitizeFolderName(detail.GameName)}_{detail.BackupDate:yyyy-MM-dd_HH-mm-ss}.zip");
@@ -413,15 +429,82 @@ public class BackupService
             fileToUpload = tempZipToCleanup;
         }
 
-        if (!File.Exists(fileToUpload))
+        // Nếu file cục bộ không tồn tại: Kiểm tra xem có trên Cloud khác không để tải đệm về temp
+        if (string.IsNullOrEmpty(fileToUpload) || !File.Exists(fileToUpload))
         {
-            throw new FileNotFoundException($"Không tìm thấy file sao lưu trên ổ đĩa để đồng bộ: {fileToUpload}");
+            var allCloudTargets = GetAllCloudTargets(detail, null);
+            var sourceTargets = allCloudTargets
+                .Where(t => !string.IsNullOrEmpty(t.FileId) && !t.Provider.Equals(cloudService.ProviderName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            ICloudStorageService? sourceService = null;
+            CloudSyncInfo? sourceTarget = null;
+
+            foreach (var st in sourceTargets)
+            {
+                var resolved = ResolveCloudProvider(st.Provider, null, cloudServiceResolver);
+                if (resolved != null && resolved.IsAuthenticated)
+                {
+                    sourceService = resolved;
+                    sourceTarget = st;
+                    break;
+                }
+            }
+
+            if (sourceService == null || sourceTarget == null)
+            {
+                throw new FileNotFoundException($"Không tìm thấy file sao lưu trên máy tính hoặc trên Cloud nào khác để đồng bộ: {detail.GameName}");
+            }
+
+            isCrossCloudSync = true;
+            tempZipToCleanup = Path.Combine(Path.GetTempPath(), $"SaveVault_Resync_{Guid.NewGuid():N}.zip");
+            progress?.Report(new BackupProgress { Percent = 0, Message = $"[1/2] Đang tải file đệm từ {sourceService.DisplayName}..." });
+
+            var dlProgress = new Progress<BackupProgress>(p =>
+            {
+                progress?.Report(new BackupProgress
+                {
+                    Percent = (int)(p.Percent * 0.5),
+                    CurrentFile = p.CurrentFile,
+                    ProcessedBytes = p.ProcessedBytes,
+                    TotalBytes = p.TotalBytes,
+                    SpeedText = p.SpeedText,
+                    Message = $"[1/2] Đang tải file đệm từ {sourceService.DisplayName} ({p.Percent}%)..."
+                });
+            });
+
+            await sourceService.DownloadFileAsync(sourceTarget.FileId, tempZipToCleanup, dlProgress, cancellationToken);
+
+            if (!File.Exists(tempZipToCleanup))
+            {
+                throw new FileNotFoundException($"Không thể tải file tạm từ {sourceService.DisplayName}");
+            }
+
+            fileToUpload = tempZipToCleanup;
         }
 
         try
         {
             var remoteGameFolder = SanitizeFolderName(detail.GameName);
-            var uploadResult = await cloudService.UploadFileAsync(fileToUpload, remoteGameFolder, progress, cancellationToken);
+            IProgress<BackupProgress>? uploadProgress = progress;
+
+            if (isCrossCloudSync)
+            {
+                uploadProgress = new Progress<BackupProgress>(p =>
+                {
+                    progress?.Report(new BackupProgress
+                    {
+                        Percent = 50 + (int)(p.Percent * 0.5),
+                        CurrentFile = p.CurrentFile,
+                        ProcessedBytes = p.ProcessedBytes,
+                        TotalBytes = p.TotalBytes,
+                        SpeedText = p.SpeedText,
+                        Message = $"[2/2] Đang đồng bộ lên {cloudService.DisplayName} ({p.Percent}%)..."
+                    });
+                });
+            }
+
+            var uploadResult = await cloudService.UploadFileAsync(fileToUpload, remoteGameFolder, uploadProgress, cancellationToken);
 
             if (uploadResult.Success)
             {
@@ -490,6 +573,107 @@ public class BackupService
         }
     }
 
+    public async Task<string> SyncSnapshotToLocalAsync(
+        BackupHistoryDetail detail,
+        ICloudStorageService? preferredCloudService = null,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken cancellationToken = default,
+        Func<string, ICloudStorageService?>? cloudServiceResolver = null)
+    {
+        using var trace = LoggingService.BeginTrace("Backup_SyncSnapshotToLocalAsync", new { SnapshotId = detail?.Id });
+        if (detail == null) throw new ArgumentNullException(nameof(detail));
+
+        var allTargets = GetAllCloudTargets(detail, preferredCloudService);
+        CloudSyncInfo? sourceTarget = null;
+        ICloudStorageService? sourceService = null;
+
+        if (preferredCloudService != null && preferredCloudService.IsAuthenticated)
+        {
+            var match = allTargets.FirstOrDefault(t => t.Provider.Equals(preferredCloudService.ProviderName, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(t.FileId));
+            if (match != null)
+            {
+                sourceTarget = match;
+                sourceService = preferredCloudService;
+            }
+        }
+
+        if (sourceService == null || sourceTarget == null)
+        {
+            foreach (var t in allTargets)
+            {
+                if (string.IsNullOrEmpty(t.FileId)) continue;
+                var resolved = ResolveCloudProvider(t.Provider, preferredCloudService, cloudServiceResolver);
+                if (resolved != null && resolved.IsAuthenticated)
+                {
+                    sourceService = resolved;
+                    sourceTarget = t;
+                    break;
+                }
+            }
+        }
+
+        if (sourceService == null || sourceTarget == null)
+        {
+            throw new InvalidOperationException("Không tìm thấy bản sao lưu trên dịch vụ Cloud nào hoặc tài khoản Cloud tương ứng chưa đăng nhập!");
+        }
+
+        string destPath = detail.LocalBackupPath;
+        if (string.IsNullOrWhiteSpace(destPath))
+        {
+            var folder = Path.Combine(DatabaseService.DefaultBackupDir, SanitizeFolderName(detail.GameName));
+            var fileName = !string.IsNullOrEmpty(sourceTarget.FileName)
+                ? sourceTarget.FileName
+                : $"{SanitizeFolderName(detail.GameName)}_{detail.BackupDate:yyyy-MM-dd_HH-mm-ss}.zip";
+            destPath = Path.Combine(folder, fileName);
+        }
+
+        var destDir = Path.GetDirectoryName(destPath);
+        if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
+        {
+            Directory.CreateDirectory(destDir);
+        }
+
+        var tempDl = Path.Combine(Path.GetTempPath(), $"SaveVault_DlLocal_{Guid.NewGuid():N}.zip");
+        try
+        {
+            progress?.Report(new BackupProgress { Percent = 0, Message = $"Đang tải bản sao lưu từ {sourceService.DisplayName} về máy..." });
+
+            await sourceService.DownloadFileAsync(sourceTarget.FileId, tempDl, progress, cancellationToken);
+
+            if (!File.Exists(tempDl))
+            {
+                throw new FileNotFoundException($"Không thể tải file từ {sourceService.DisplayName}");
+            }
+
+            if (File.Exists(destPath))
+            {
+                try { File.Delete(destPath); } catch { }
+            }
+
+            File.Move(tempDl, destPath);
+
+            // Cập nhật LocalBackupPath trong detail
+            detail.SetLocalPath(destPath);
+            if (detail.TotalSizeBytes <= 0 && File.Exists(destPath))
+            {
+                detail.TotalSizeBytes = new FileInfo(destPath).Length;
+            }
+
+            // Cập nhật CSDL
+            await _databaseService.UpdateSnapshotLocationsAsync(detail.Id, detail);
+            progress?.Report(new BackupProgress { Percent = 100, Message = "Đã khôi phục file sao lưu về máy thành công!" });
+
+            return destPath;
+        }
+        finally
+        {
+            if (File.Exists(tempDl))
+            {
+                try { File.Delete(tempDl); } catch { }
+            }
+        }
+    }
+
     public List<RestoreItemTarget> GetRestoreItemsFromBackup(BackupRecord record)
     {
         var result = new List<RestoreItemTarget>();
@@ -516,27 +700,28 @@ public class BackupService
                         for (int i = 0; i < manifest.Items.Count; i++)
                         {
                             var item = manifest.Items[i];
-                            string destPath;
+                            string rawDest;
                             if (manifest.Items.Count == 1 && !string.IsNullOrWhiteSpace(record.SourcePath))
                             {
-                                destPath = record.SourcePath;
+                                rawDest = record.SourcePath;
                             }
                             else if (recordPaths.Count > i && !string.IsNullOrWhiteSpace(recordPaths[i]))
                             {
-                                destPath = recordPaths[i];
+                                rawDest = recordPaths[i];
                             }
                             else
                             {
-                                destPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : record.SourcePath;
+                                rawDest = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : record.SourcePath;
                             }
 
-                            var origPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : destPath;
+                            var origPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : rawDest;
+                            var remappedDest = PathResolverService.RemapPathToCurrentMachine(rawDest);
 
                             result.Add(new RestoreItemTarget
                             {
                                 IsSelected = true,
                                 OriginalSourcePath = origPath,
-                                RestoreDestinationPath = destPath,
+                                RestoreDestinationPath = remappedDest,
                                 SubFolder = item.SubFolder,
                                 FileCount = item.FileCount,
                                 TotalSizeBytes = item.TotalSizeBytes
@@ -563,27 +748,28 @@ public class BackupService
                         for (int i = 0; i < manifest.Items.Count; i++)
                         {
                             var item = manifest.Items[i];
-                            string destPath;
+                            string rawDest;
                             if (manifest.Items.Count == 1 && !string.IsNullOrWhiteSpace(record.SourcePath))
                             {
-                                destPath = record.SourcePath;
+                                rawDest = record.SourcePath;
                             }
                             else if (recordPaths.Count > i && !string.IsNullOrWhiteSpace(recordPaths[i]))
                             {
-                                destPath = recordPaths[i];
+                                rawDest = recordPaths[i];
                             }
                             else
                             {
-                                destPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : record.SourcePath;
+                                rawDest = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : record.SourcePath;
                             }
 
-                            var origPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : destPath;
+                            var origPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : rawDest;
+                            var remappedDest = PathResolverService.RemapPathToCurrentMachine(rawDest);
 
                             result.Add(new RestoreItemTarget
                             {
                                 IsSelected = true,
                                 OriginalSourcePath = origPath,
-                                RestoreDestinationPath = destPath,
+                                RestoreDestinationPath = remappedDest,
                                 SubFolder = item.SubFolder,
                                 FileCount = item.FileCount,
                                 TotalSizeBytes = item.TotalSizeBytes
@@ -610,11 +796,13 @@ public class BackupService
                     ? $"{i + 1}_{SanitizeFolderName(Path.GetFileName(p.TrimEnd('\\', '/')))}"
                     : string.Empty;
 
+                var remappedDest = PathResolverService.RemapPathToCurrentMachine(p);
+
                 result.Add(new RestoreItemTarget
                 {
                     IsSelected = true,
                     OriginalSourcePath = p,
-                    RestoreDestinationPath = p,
+                    RestoreDestinationPath = remappedDest,
                     SubFolder = subFolder,
                     FileCount = avgFiles,
                     TotalSizeBytes = avgBytes
@@ -623,11 +811,12 @@ public class BackupService
         }
         else if (!string.IsNullOrWhiteSpace(record.SourcePath))
         {
+            var remappedDest = PathResolverService.RemapPathToCurrentMachine(record.SourcePath);
             result.Add(new RestoreItemTarget
             {
                 IsSelected = true,
                 OriginalSourcePath = record.SourcePath,
-                RestoreDestinationPath = record.SourcePath,
+                RestoreDestinationPath = remappedDest,
                 SubFolder = string.Empty,
                 FileCount = record.FileCount,
                 TotalSizeBytes = record.TotalSizeBytes
@@ -653,27 +842,28 @@ public class BackupService
                     for (int i = 0; i < manifest.Items.Count; i++)
                     {
                         var item = manifest.Items[i];
-                        string destPath;
+                        string rawDest;
                         if (manifest.Items.Count == 1 && !string.IsNullOrWhiteSpace(detail.SourcePath))
                         {
-                            destPath = detail.SourcePath;
+                            rawDest = detail.SourcePath;
                         }
                         else if (detailPaths.Count > i && !string.IsNullOrWhiteSpace(detailPaths[i]))
                         {
-                            destPath = detailPaths[i];
+                            rawDest = detailPaths[i];
                         }
                         else
                         {
-                            destPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : detail.SourcePath;
+                            rawDest = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : detail.SourcePath;
                         }
 
-                        var origPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : destPath;
+                        var origPath = !string.IsNullOrWhiteSpace(item.SourcePath) ? item.SourcePath : rawDest;
+                        var remappedDest = PathResolverService.RemapPathToCurrentMachine(rawDest);
 
                         result.Add(new RestoreItemTarget
                         {
                             IsSelected = true,
                             OriginalSourcePath = origPath,
-                            RestoreDestinationPath = destPath,
+                            RestoreDestinationPath = remappedDest,
                             SubFolder = item.SubFolder,
                             FileCount = item.FileCount,
                             TotalSizeBytes = item.TotalSizeBytes
@@ -699,11 +889,13 @@ public class BackupService
                     ? $"{i + 1}_{SanitizeFolderName(Path.GetFileName(p.TrimEnd('\\', '/')))}"
                     : string.Empty;
 
+                var remappedDest = PathResolverService.RemapPathToCurrentMachine(p);
+
                 result.Add(new RestoreItemTarget
                 {
                     IsSelected = true,
                     OriginalSourcePath = p,
-                    RestoreDestinationPath = p,
+                    RestoreDestinationPath = remappedDest,
                     SubFolder = subFolder,
                     FileCount = avgFiles,
                     TotalSizeBytes = avgBytes
@@ -712,11 +904,12 @@ public class BackupService
         }
         else if (!string.IsNullOrWhiteSpace(detail.SourcePath))
         {
+            var remappedDest = PathResolverService.RemapPathToCurrentMachine(detail.SourcePath);
             result.Add(new RestoreItemTarget
             {
                 IsSelected = true,
                 OriginalSourcePath = detail.SourcePath,
-                RestoreDestinationPath = detail.SourcePath,
+                RestoreDestinationPath = remappedDest,
                 SubFolder = string.Empty,
                 FileCount = detail.FileCount,
                 TotalSizeBytes = detail.TotalSizeBytes
